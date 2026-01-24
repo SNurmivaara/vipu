@@ -1,0 +1,51 @@
+# Environment
+.env
+.env.local
+.env*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Database
+*.db
+*.sqlite*
+postgres-data/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets & Private Data
+*.pem
+*.key
+secrets/
+.private/
+
+# Claude
+.claude/
+
+# Next.js (for later)
+.next/
+out/
+node_modules/
+
+# Coverage
+htmlcov/
+.coverage
+coverage.xml
