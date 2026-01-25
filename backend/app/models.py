@@ -148,6 +148,41 @@ class BudgetSettings(Base):
         }
 
 
+class NetWorthGroup(Base):
+    """User-defined group for categorizing net worth items."""
+
+    __tablename__ = "networth_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    group_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "asset" or "liability"
+    color: Mapped[str] = mapped_column(
+        String(7), nullable=False, default="#6b7280"
+    )  # Hex color for charts
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    # Relationships
+    categories: Mapped[list["NetWorthCategory"]] = relationship(
+        "NetWorthCategory", back_populates="group"
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "group_type": self.group_type,
+            "color": self.color,
+            "display_order": self.display_order,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 class NetWorthCategory(Base):
     """User-defined net worth category (asset or liability type)."""
 
@@ -155,12 +190,9 @@ class NetWorthCategory(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    category_type: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "asset" or "liability"
-    category_group: Mapped[str] = mapped_column(
-        String(20), nullable=False
-    )  # "cash", "investment", "crypto", "property", "loan", "credit"
+    group_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("networth_groups.id"), nullable=False
+    )
     is_personal: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )  # True = personal, False = company
@@ -170,6 +202,9 @@ class NetWorthCategory(Base):
     )
 
     # Relationships
+    group: Mapped["NetWorthGroup"] = relationship(
+        "NetWorthGroup", back_populates="categories"
+    )
     entries: Mapped[list["NetWorthEntry"]] = relationship(
         "NetWorthEntry", back_populates="category"
     )
@@ -179,8 +214,8 @@ class NetWorthCategory(Base):
         return {
             "id": self.id,
             "name": self.name,
-            "category_type": self.category_type,
-            "category_group": self.category_group,
+            "group_id": self.group_id,
+            "group": self.group.to_dict() if self.group else None,
             "is_personal": self.is_personal,
             "display_order": self.display_order,
             "created_at": self.created_at.isoformat(),
@@ -247,8 +282,9 @@ class NetWorthSnapshot(Base):
         for entry in self.entries:
             amount = entry.amount if entry.amount is not None else zero
             category = entry.category
+            group = category.group
 
-            if category.category_type == "asset":
+            if group.group_type == "asset":
                 self.total_assets += amount
                 if category.is_personal:
                     self.personal_wealth += amount
@@ -291,23 +327,29 @@ class NetWorthSnapshot(Base):
         if include_entries:
             result["entries"] = [e.to_dict() for e in self.entries]
 
-            # Calculate group totals and percentages
+            # Calculate group totals and percentages (for assets only)
             zero = Decimal(0)
-            group_totals: dict[str, Decimal] = {}
+            group_totals: dict[int, Decimal] = {}  # group_id -> total
+            group_names: dict[int, str] = {}  # group_id -> name
             for entry in self.entries:
-                if entry.category.category_type == "asset":
-                    group = entry.category.category_group
+                group = entry.category.group
+                if group.group_type == "asset":
                     amount = entry.amount if entry.amount is not None else zero
-                    group_totals[group] = group_totals.get(group, zero) + amount
+                    group_totals[group.id] = group_totals.get(group.id, zero) + amount
+                    group_names[group.id] = group.name
 
-            result["by_group"] = {k: float(v) for k, v in group_totals.items()}
+            result["by_group"] = {
+                group_names[gid]: float(total) for gid, total in group_totals.items()
+            }
 
             # Percentages (avoid division by zero)
             total_assets = self.total_assets if self.total_assets else zero
             if total_assets > 0:
                 result["percentages"] = {
-                    f"{k}_pct": round(float(v / total_assets * 100), 2)
-                    for k, v in group_totals.items()
+                    f"{group_names[gid]}_pct": round(
+                        float(total / total_assets * 100), 2
+                    )
+                    for gid, total in group_totals.items()
                 }
             else:
                 result["percentages"] = {}

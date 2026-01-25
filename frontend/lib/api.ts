@@ -9,6 +9,13 @@ import {
   ExpenseFormData,
   BudgetSettings,
   SettingsFormData,
+  NetWorthGroup,
+  NetWorthCategory,
+  NetWorthSnapshot,
+  CreateSnapshotInput,
+  UpdateSnapshotInput,
+  GroupFormData,
+  CategoryFormData,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -142,4 +149,85 @@ export const importBudget = async (
 ): Promise<{ message: string }> => {
   const { data } = await api.post<{ message: string }>("/import", importData);
   return data;
+};
+
+// Net Worth Categories
+export const fetchCategories = async (): Promise<NetWorthCategory[]> => {
+  const { data } = await api.get<NetWorthCategory[]>("/networth/categories");
+  return data;
+};
+
+export const seedCategories = async (): Promise<{ message: string }> => {
+  const { data } = await api.post<{ message: string }>("/networth/categories/seed");
+  return data;
+};
+
+// Net Worth Snapshots
+export const fetchSnapshots = async (): Promise<NetWorthSnapshot[]> => {
+  const { data } = await api.get<NetWorthSnapshot[]>("/networth");
+  return data;
+};
+
+export const fetchSnapshot = async (year: number, month: number): Promise<NetWorthSnapshot> => {
+  const { data } = await api.get<NetWorthSnapshot>(`/networth/${year}/${month}`);
+  return data;
+};
+
+export const createSnapshot = async (input: CreateSnapshotInput): Promise<NetWorthSnapshot> => {
+  const { data } = await api.post<NetWorthSnapshot>("/networth", input);
+  return data;
+};
+
+export const updateSnapshot = async (id: number, input: UpdateSnapshotInput): Promise<NetWorthSnapshot> => {
+  const { data } = await api.put<NetWorthSnapshot>(`/networth/${id}`, input);
+  return data;
+};
+
+export const deleteSnapshot = async (id: number): Promise<void> => {
+  await api.delete(`/networth/${id}`);
+};
+
+export const seedNetWorth = async (): Promise<{ message: string }> => {
+  const { data } = await api.post<{ message: string }>("/networth/seed");
+  return data;
+};
+
+export const resetNetWorth = async (): Promise<{ message: string }> => {
+  const { data } = await api.post<{ message: string }>("/networth/reset");
+  return data;
+};
+
+// Category CRUD
+export const createCategory = async (category: CategoryFormData): Promise<NetWorthCategory> => {
+  const { data } = await api.post<NetWorthCategory>("/networth/categories", category);
+  return data;
+};
+
+export const updateCategory = async (id: number, category: Partial<CategoryFormData>): Promise<NetWorthCategory> => {
+  const { data } = await api.put<NetWorthCategory>(`/networth/categories/${id}`, category);
+  return data;
+};
+
+export const deleteCategory = async (id: number): Promise<void> => {
+  await api.delete(`/networth/categories/${id}`);
+};
+
+// Net Worth Groups
+export const fetchGroups = async (): Promise<NetWorthGroup[]> => {
+  const { data } = await api.get<NetWorthGroup[]>("/networth/groups");
+  return data;
+};
+
+export const createGroup = async (group: GroupFormData): Promise<NetWorthGroup> => {
+  const { data } = await api.post<NetWorthGroup>("/networth/groups", group);
+  return data;
+};
+
+export const updateGroup = async (id: number, group: Partial<GroupFormData>): Promise<NetWorthGroup> => {
+  const { data } = await api.put<NetWorthGroup>(`/networth/groups/${id}`, group);
+  return data;
+};
+
+export const deleteGroup = async (id: number): Promise<void> => {
+  await api.delete(`/networth/groups/${id}`);
 };
