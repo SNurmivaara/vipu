@@ -1,6 +1,67 @@
 """Tests for budget API endpoints."""
 
 
+class TestValidation:
+    """Tests for input validation across all budget endpoints."""
+
+    def test_account_missing_name(self, client):
+        """POST /api/accounts requires name."""
+        response = client.post("/api/accounts", json={"balance": 1000})
+        assert response.status_code == 400
+        assert "name" in response.json["error"].lower()
+
+    def test_account_empty_name(self, client):
+        """POST /api/accounts rejects empty name."""
+        response = client.post("/api/accounts", json={"name": "", "balance": 1000})
+        assert response.status_code == 400
+
+    def test_account_name_too_long(self, client):
+        """POST /api/accounts rejects name > 100 chars."""
+        response = client.post("/api/accounts", json={"name": "x" * 101, "balance": 0})
+        assert response.status_code == 400
+
+    def test_account_balance_exceeds_max(self, client):
+        """POST /api/accounts rejects balance > 1 billion."""
+        response = client.post(
+            "/api/accounts", json={"name": "Big", "balance": 1_000_000_001}
+        )
+        assert response.status_code == 400
+
+    def test_account_no_body(self, client):
+        """POST /api/accounts with no body returns 400."""
+        response = client.post("/api/accounts", content_type="application/json")
+        assert response.status_code == 400
+
+    def test_income_missing_name(self, client):
+        """POST /api/income requires name."""
+        response = client.post("/api/income", json={"gross_amount": 1000})
+        assert response.status_code == 400
+
+    def test_income_amount_exceeds_max(self, client):
+        """POST /api/income rejects amount > 1 billion."""
+        response = client.post(
+            "/api/income", json={"name": "Big", "gross_amount": 1_000_000_001}
+        )
+        assert response.status_code == 400
+
+    def test_expense_missing_name(self, client):
+        """POST /api/expenses requires name."""
+        response = client.post("/api/expenses", json={"amount": 100})
+        assert response.status_code == 400
+
+    def test_expense_amount_exceeds_max(self, client):
+        """POST /api/expenses rejects amount > 1 billion."""
+        response = client.post(
+            "/api/expenses", json={"name": "Big", "amount": 1_000_000_001}
+        )
+        assert response.status_code == 400
+
+    def test_settings_no_body(self, client):
+        """PUT /api/settings with no body returns 400."""
+        response = client.put("/api/settings", content_type="application/json")
+        assert response.status_code == 400
+
+
 class TestHealth:
     """Tests for health endpoint."""
 
@@ -368,3 +429,216 @@ class TestNetIncomeCalculation:
         # Gross = 0 (deductions are excluded from gross income)
         assert totals["gross_income"] == 0.0
         assert totals["net_income"] == -150.0
+
+
+class TestEdgeCases:
+    """Tests for edge cases and boundary conditions."""
+
+    def test_account_negative_balance(self, client):
+        """Accounts can have negative balances (credit cards)."""
+        response = client.post(
+            "/api/accounts",
+            json={"name": "Credit Card", "balance": -500, "is_credit": True},
+        )
+        assert response.status_code == 201
+        assert response.json["balance"] == -500.0
+
+    def test_account_zero_balance(self, client):
+        """Accounts can have zero balance."""
+        response = client.post("/api/accounts", json={"name": "Empty", "balance": 0})
+        assert response.status_code == 201
+        assert response.json["balance"] == 0.0
+
+    def test_account_decimal_precision(self, client):
+        """Account balances preserve decimal precision."""
+        response = client.post(
+            "/api/accounts", json={"name": "Precise", "balance": 1234.56}
+        )
+        assert response.status_code == 201
+        assert response.json["balance"] == 1234.56
+
+    def test_income_zero_amount(self, client):
+        """Income items can have zero amount."""
+        response = client.post(
+            "/api/income", json={"name": "Placeholder", "gross_amount": 0}
+        )
+        assert response.status_code == 201
+        assert response.json["gross_amount"] == 0.0
+
+    def test_expense_zero_amount(self, client):
+        """Expense items can have zero amount."""
+        response = client.post("/api/expenses", json={"name": "Free", "amount": 0})
+        assert response.status_code == 201
+        assert response.json["amount"] == 0.0
+
+    def test_budget_totals_with_negative_balance(self, client):
+        """Budget totals correctly include negative account balances."""
+        client.post("/api/accounts", json={"name": "Checking", "balance": 1000})
+        client.post(
+            "/api/accounts",
+            json={"name": "Credit Card", "balance": -300, "is_credit": True},
+        )
+
+        response = client.get("/api/budget/current")
+        assert response.json["totals"]["current_balance"] == 700.0
+
+    def test_budget_totals_all_negative(self, client):
+        """Budget handles all-negative account balances."""
+        client.post(
+            "/api/accounts",
+            json={"name": "Credit Card 1", "balance": -500, "is_credit": True},
+        )
+        client.post(
+            "/api/accounts",
+            json={"name": "Credit Card 2", "balance": -300, "is_credit": True},
+        )
+
+        response = client.get("/api/budget/current")
+        assert response.json["totals"]["current_balance"] == -800.0
+
+    def test_net_position_negative(self, client):
+        """Net position can be negative (expenses > balance)."""
+        client.post("/api/accounts", json={"name": "Checking", "balance": 500})
+        client.post("/api/expenses", json={"name": "Rent", "amount": 1200})
+
+        response = client.get("/api/budget/current")
+        # Net position = 500 - 1200 = -700
+        assert response.json["totals"]["net_position"] == -700.0
+
+    def test_partial_update_account(self, client):
+        """PUT /api/accounts/<id> with partial data preserves other fields."""
+        create_response = client.post(
+            "/api/accounts",
+            json={"name": "Test", "balance": 1000, "is_credit": True},
+        )
+        account_id = create_response.json["id"]
+
+        # Update only balance
+        response = client.put(f"/api/accounts/{account_id}", json={"balance": 2000})
+        assert response.status_code == 200
+        assert response.json["balance"] == 2000.0
+        assert response.json["name"] == "Test"  # Preserved
+        assert response.json["is_credit"] is True  # Preserved
+
+    def test_partial_update_income(self, client):
+        """PUT /api/income/<id> with partial data preserves other fields."""
+        create_response = client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 5000, "is_taxed": True},
+        )
+        income_id = create_response.json["id"]
+
+        response = client.put(f"/api/income/{income_id}", json={"gross_amount": 6000})
+        assert response.status_code == 200
+        assert response.json["gross_amount"] == 6000.0
+        assert response.json["name"] == "Salary"
+        assert response.json["is_taxed"] is True
+
+    def test_partial_update_expense(self, client):
+        """PUT /api/expenses/<id> with partial data preserves other fields."""
+        create_response = client.post(
+            "/api/expenses",
+            json={"name": "Rent", "amount": 1200, "is_savings_goal": False},
+        )
+        expense_id = create_response.json["id"]
+
+        response = client.put(f"/api/expenses/{expense_id}", json={"amount": 1300})
+        assert response.status_code == 200
+        assert response.json["amount"] == 1300.0
+        assert response.json["name"] == "Rent"
+
+    def test_tax_percentage_boundary_values(self, client):
+        """Tax percentage accepts boundary values 0 and 100."""
+        response = client.put("/api/settings", json={"tax_percentage": 0})
+        assert response.status_code == 200
+        assert response.json["tax_percentage"] == 0.0
+
+        response = client.put("/api/settings", json={"tax_percentage": 100})
+        assert response.status_code == 200
+        assert response.json["tax_percentage"] == 100.0
+
+    def test_net_income_zero_tax(self, client):
+        """Net income equals gross when tax is 0%."""
+        client.put("/api/settings", json={"tax_percentage": 0})
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 5000, "is_taxed": True},
+        )
+
+        response = client.get("/api/budget/current")
+        assert response.json["totals"]["gross_income"] == 5000.0
+        assert response.json["totals"]["net_income"] == 5000.0
+
+    def test_net_income_100_percent_tax(self, client):
+        """Net income is 0 when tax is 100%."""
+        client.put("/api/settings", json={"tax_percentage": 100})
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 5000, "is_taxed": True},
+        )
+
+        response = client.get("/api/budget/current")
+        assert response.json["totals"]["gross_income"] == 5000.0
+        assert response.json["totals"]["net_income"] == 0.0
+
+    def test_income_not_found(self, client):
+        """PUT/DELETE return 404 for non-existent income."""
+        response = client.put("/api/income/999", json={"name": "Test"})
+        assert response.status_code == 404
+
+        response = client.delete("/api/income/999")
+        assert response.status_code == 404
+
+    def test_expense_not_found(self, client):
+        """PUT/DELETE return 404 for non-existent expense."""
+        response = client.put("/api/expenses/999", json={"name": "Test"})
+        assert response.status_code == 404
+
+        response = client.delete("/api/expenses/999")
+        assert response.status_code == 404
+
+    def test_update_account_validates_balance(self, client):
+        """PUT /api/accounts/<id> validates balance."""
+        create_response = client.post(
+            "/api/accounts", json={"name": "Test", "balance": 100}
+        )
+        account_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/accounts/{account_id}", json={"balance": 1_000_000_001}
+        )
+        assert response.status_code == 400
+
+    def test_update_account_validates_name(self, client):
+        """PUT /api/accounts/<id> validates name."""
+        create_response = client.post(
+            "/api/accounts", json={"name": "Test", "balance": 100}
+        )
+        account_id = create_response.json["id"]
+
+        response = client.put(f"/api/accounts/{account_id}", json={"name": "x" * 101})
+        assert response.status_code == 400
+
+    def test_savings_goal_flag(self, client):
+        """Expenses can be marked as savings goals."""
+        response = client.post(
+            "/api/expenses",
+            json={"name": "Emergency Fund", "amount": 500, "is_savings_goal": True},
+        )
+        assert response.status_code == 201
+        assert response.json["is_savings_goal"] is True
+
+    def test_deduction_flag(self, client):
+        """Income can be marked as deduction."""
+        response = client.post(
+            "/api/income",
+            json={
+                "name": "Lunch",
+                "gross_amount": 200,
+                "is_taxed": True,
+                "is_deduction": True,
+                "tax_percentage": 75,
+            },
+        )
+        assert response.status_code == 201
+        assert response.json["is_deduction"] is True
