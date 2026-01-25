@@ -61,7 +61,7 @@ curl http://localhost:5000/api/health
 
 # Seed example data
 curl -X POST http://localhost:5000/api/seed
-# {"message": "Database seeded with example data"}
+# {"message": "Example data seeded successfully", "counts": {...}}
 
 # Get current budget
 curl http://localhost:5000/api/budget/current
