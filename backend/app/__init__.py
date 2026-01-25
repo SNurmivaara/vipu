@@ -33,7 +33,10 @@ def create_app(config_class: type | None = None) -> APIFlask:
 
     app.config.from_object(config_class)
 
-    CORS(app, origins=["http://localhost:3000"])
+    # Parse CORS origins from config (comma-separated string)
+    cors_config = app.config.get("CORS_ORIGINS", "")
+    cors_origins = [o.strip() for o in cors_config.split(",") if o.strip()]
+    CORS(app, origins=cors_origins or ["http://localhost:3000"])
 
     engine = create_engine(app.config["SQLALCHEMY_DATABASE_URI"])
     session_factory = sessionmaker(bind=engine)
