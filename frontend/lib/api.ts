@@ -19,6 +19,8 @@ import {
   Goal,
   GoalFormData,
   GoalProgress,
+  NetWorthForecast,
+  ForecastPeriod,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -116,7 +118,19 @@ export const resetBudget = async (): Promise<{ message: string }> => {
   return data;
 };
 
-// Export data type
+// Get budget accounts for snapshot prefill
+export interface SnapshotPrefillItem {
+  name: string;
+  amount: number;
+  is_liability: boolean;
+}
+
+export const getSnapshotPrefill = async (): Promise<SnapshotPrefillItem[]> => {
+  const { data } = await api.get<SnapshotPrefillItem[]>("/budget/snapshot-prefill");
+  return data;
+};
+
+// Export data type (version 2 includes net worth and goals)
 export interface ExportData {
   version: number;
   settings: {
@@ -132,11 +146,42 @@ export interface ExportData {
     gross_amount: number;
     is_taxed: boolean;
     tax_percentage: number | null;
+    is_deduction?: boolean;
   }[];
   expenses: {
     name: string;
     amount: number;
     is_savings_goal: boolean;
+  }[];
+  // Net worth data (version 2)
+  networth_groups?: {
+    name: string;
+    group_type: "asset" | "liability";
+    color: string;
+    display_order: number;
+  }[];
+  networth_categories?: {
+    name: string;
+    group_name: string;
+    is_personal: boolean;
+    display_order: number;
+  }[];
+  networth_snapshots?: {
+    month: number;
+    year: number;
+    entries: {
+      category_name: string;
+      amount: number;
+    }[];
+  }[];
+  goals?: {
+    name: string;
+    goal_type: string;
+    target_value: number;
+    category_name: string | null;
+    tracking_period: string | null;
+    target_date: string | null;
+    is_active: boolean;
   }[];
 }
 
@@ -261,4 +306,26 @@ export const updateGoal = async (
 
 export const deleteGoal = async (id: number): Promise<void> => {
   await api.delete(`/goals/${id}`);
+};
+
+// Forecast
+export interface FetchForecastParams {
+  period?: ForecastPeriod;
+  months_ahead?: number;
+}
+
+export const fetchForecast = async (
+  params: FetchForecastParams = {}
+): Promise<NetWorthForecast> => {
+  const searchParams = new URLSearchParams();
+  if (params.period) {
+    searchParams.set("period", params.period);
+  }
+  if (params.months_ahead) {
+    searchParams.set("months_ahead", params.months_ahead.toString());
+  }
+  const queryString = searchParams.toString();
+  const url = queryString ? `/networth/forecast?${queryString}` : "/networth/forecast";
+  const { data } = await api.get<NetWorthForecast>(url);
+  return data;
 };

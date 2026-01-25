@@ -166,6 +166,14 @@ export interface GoalProgressDetails {
   months_tracked?: number;
 }
 
+export interface GoalForecast {
+  forecast_date: string | null;
+  months_until_target: number | null;
+  on_track: boolean;
+  required_monthly_change: number;
+  current_monthly_change: number;
+}
+
 export interface GoalProgress {
   goal: Goal;
   current_value: number;
@@ -173,4 +181,22 @@ export interface GoalProgress {
   progress_percentage: number;
   is_achieved: boolean;
   details: GoalProgressDetails;
+  forecast: GoalForecast | null;
+}
+
+// Forecast types
+export type ForecastPeriod = "month" | "quarter" | "half_year" | "year";
+
+export interface ForecastPoint {
+  month: number;
+  year: number;
+  projected_net_worth: number;
+}
+
+export interface NetWorthForecast {
+  period: ForecastPeriod;
+  months_ahead: number;
+  monthly_change_rate: number;
+  data_points_used: number;
+  projections: ForecastPoint[];
 }

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 import { Providers } from "./providers";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -21,9 +22,9 @@ export default function RootLayout({
           <ToastProvider>
             <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
               <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <Link href="/" className="text-2xl font-bold text-gray-900 dark:text-gray-100 hover:text-gray-700 dark:hover:text-gray-300 transition-colors">
                   Vipu
-                </h1>
+                </Link>
                 <Navigation />
               </div>
             </header>

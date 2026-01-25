@@ -6,6 +6,7 @@ from flask import Response, jsonify, request
 from sqlalchemy.orm import Session
 
 from app import get_session
+from app.forecasting import calculate_goal_forecast
 from app.models import (
     BudgetSettings,
     Goal,
@@ -295,6 +296,12 @@ def _calculate_goal_progress(
     - progress_percentage: 0-100 percentage (capped at 100)
     - is_achieved: whether goal is met
     - details: additional context (varies by goal type)
+    - forecast: projection information (for target-based goals)
+      - forecast_date: when goal will be reached at current pace
+      - months_until_target: months until goal reached
+      - on_track: whether goal will be met by target_date
+      - required_monthly_change: change needed to meet goal on time
+      - current_monthly_change: current average monthly change
     """
     zero = Decimal("0")
     current_value = zero
@@ -432,6 +439,23 @@ def _calculate_goal_progress(
     # Check if goal is achieved
     is_achieved = current_value >= target
 
+    # Calculate forecast for target-based goals
+    forecast_info: dict | None = None
+    if goal.goal_type in ("net_worth_target", "category_target"):
+        forecast = calculate_goal_forecast(
+            goal=goal,
+            current_value=float(current_value),
+            snapshots=snapshots,
+            category_id=goal.category_id,
+        )
+        forecast_info = {
+            "forecast_date": forecast.forecast_date,
+            "months_until_target": forecast.months_until_target,
+            "on_track": forecast.on_track,
+            "required_monthly_change": forecast.required_monthly_change,
+            "current_monthly_change": forecast.current_monthly_change,
+        }
+
     return {
         "goal": goal.to_dict(),
         "current_value": float(current_value),
@@ -439,6 +463,7 @@ def _calculate_goal_progress(
         "progress_percentage": round(progress_pct, 2),
         "is_achieved": is_achieved,
         "details": details,
+        "forecast": forecast_info,
     }
 
 

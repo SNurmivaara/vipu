@@ -6,6 +6,7 @@ from flask import Response, jsonify, request
 from sqlalchemy.orm import Session
 
 from app import get_session
+from app.forecasting import generate_net_worth_forecast
 from app.models import NetWorthCategory, NetWorthEntry, NetWorthGroup, NetWorthSnapshot
 
 bp = APIBlueprint("networth", __name__, tag="Net Worth")
@@ -336,7 +337,7 @@ def seed_categories() -> Response | tuple[Response, int]:
         ("Crypto", "asset", "#f59e0b", 3),  # amber
         ("Property", "asset", "#8b5cf6", 4),  # purple
         ("Loans", "liability", "#ef4444", 10),  # red
-        ("Credit Cards", "liability", "#f97316", 11),  # orange
+        ("Credit Card", "liability", "#f97316", 11),  # orange
     ]
 
     group_by_name: dict[str, NetWorthGroup] = {}
@@ -354,7 +355,7 @@ def seed_categories() -> Response | tuple[Response, int]:
     # Default categories (name, group_name, is_personal, display_order)
     default_categories = [
         # Cash group
-        ("Cash", "Cash", True, 1),
+        ("Checking", "Cash", True, 1),
         ("Savings", "Cash", True, 2),
         ("Rent Account", "Cash", True, 3),
         ("Company Checkings", "Cash", False, 4),
@@ -368,8 +369,8 @@ def seed_categories() -> Response | tuple[Response, int]:
         ("House/Apartment", "Property", True, 30),
         # Loans group
         ("Student Loan", "Loans", True, 50),
-        # Credit Cards group
-        ("Credit Cards", "Credit Cards", True, 60),
+        # Credit Card group
+        ("Credit Card", "Credit Card", True, 60),
     ]
 
     for name, group_name, is_personal, order in default_categories:
@@ -748,7 +749,7 @@ def seed_networth() -> Response | tuple[Response, int]:
 
     # Required categories for seed data
     required_cats = [
-        "Cash",
+        "Checking",
         "Savings",
         "Rent Account",
         "Crypto",
@@ -757,7 +758,7 @@ def seed_networth() -> Response | tuple[Response, int]:
         "Company Investments",
         "Company Checkings",
         "Student Loan",
-        "Credit Cards",
+        "Credit Card",
     ]
     missing = [name for name in required_cats if name not in cat_by_name]
     if missing:
@@ -775,7 +776,7 @@ def seed_networth() -> Response | tuple[Response, int]:
         (
             1,
             {
-                "Cash": 3500,
+                "Checking": 3500,
                 "Savings": 8000,
                 "Rent Account": 1200,
                 "Crypto": 2500,
@@ -784,13 +785,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 8000,
                 "Company Checkings": 2000,
                 "Student Loan": -5000,
-                "Credit Cards": -500,
+                "Credit Card": -500,
             },
         ),
         (
             2,
             {
-                "Cash": 3200,
+                "Checking": 3200,
                 "Savings": 8500,
                 "Rent Account": 1300,
                 "Crypto": 2800,
@@ -799,13 +800,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 8500,
                 "Company Checkings": 2200,
                 "Student Loan": -4800,
-                "Credit Cards": -300,
+                "Credit Card": -300,
             },
         ),
         (
             3,
             {
-                "Cash": 4000,
+                "Checking": 4000,
                 "Savings": 9000,
                 "Rent Account": 1400,
                 "Crypto": 3200,
@@ -814,13 +815,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 9000,
                 "Company Checkings": 2500,
                 "Student Loan": -4600,
-                "Credit Cards": -400,
+                "Credit Card": -400,
             },
         ),
         (
             4,
             {
-                "Cash": 3800,
+                "Checking": 3800,
                 "Savings": 9500,
                 "Rent Account": 1500,
                 "Crypto": 2900,
@@ -829,13 +830,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 9500,
                 "Company Checkings": 2800,
                 "Student Loan": -4400,
-                "Credit Cards": -200,
+                "Credit Card": -200,
             },
         ),
         (
             5,
             {
-                "Cash": 4200,
+                "Checking": 4200,
                 "Savings": 10000,
                 "Rent Account": 1600,
                 "Crypto": 3500,
@@ -844,13 +845,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 10000,
                 "Company Checkings": 3000,
                 "Student Loan": -4200,
-                "Credit Cards": -300,
+                "Credit Card": -300,
             },
         ),
         (
             6,
             {
-                "Cash": 4500,
+                "Checking": 4500,
                 "Savings": 10500,
                 "Rent Account": 1700,
                 "Crypto": 4000,
@@ -859,13 +860,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 10500,
                 "Company Checkings": 3200,
                 "Student Loan": -4000,
-                "Credit Cards": -250,
+                "Credit Card": -250,
             },
         ),
         (
             7,
             {
-                "Cash": 4800,
+                "Checking": 4800,
                 "Savings": 11000,
                 "Rent Account": 1800,
                 "Crypto": 4500,
@@ -874,13 +875,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 11000,
                 "Company Checkings": 3500,
                 "Student Loan": -3800,
-                "Credit Cards": -200,
+                "Credit Card": -200,
             },
         ),
         (
             8,
             {
-                "Cash": 5000,
+                "Checking": 5000,
                 "Savings": 11500,
                 "Rent Account": 1900,
                 "Crypto": 5000,
@@ -889,13 +890,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 11500,
                 "Company Checkings": 3800,
                 "Student Loan": -3600,
-                "Credit Cards": -150,
+                "Credit Card": -150,
             },
         ),
         (
             9,
             {
-                "Cash": 5200,
+                "Checking": 5200,
                 "Savings": 12000,
                 "Rent Account": 2000,
                 "Crypto": 4800,
@@ -904,13 +905,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 12000,
                 "Company Checkings": 4000,
                 "Student Loan": -3400,
-                "Credit Cards": -100,
+                "Credit Card": -100,
             },
         ),
         (
             10,
             {
-                "Cash": 5500,
+                "Checking": 5500,
                 "Savings": 12500,
                 "Rent Account": 2100,
                 "Crypto": 5500,
@@ -919,13 +920,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 12500,
                 "Company Checkings": 4200,
                 "Student Loan": -3200,
-                "Credit Cards": -80,
+                "Credit Card": -80,
             },
         ),
         (
             11,
             {
-                "Cash": 5800,
+                "Checking": 5800,
                 "Savings": 13000,
                 "Rent Account": 2200,
                 "Crypto": 6000,
@@ -934,13 +935,13 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 13000,
                 "Company Checkings": 4500,
                 "Student Loan": -3000,
-                "Credit Cards": -50,
+                "Credit Card": -50,
             },
         ),
         (
             12,
             {
-                "Cash": 6000,
+                "Checking": 6000,
                 "Savings": 13500,
                 "Rent Account": 2300,
                 "Crypto": 6500,
@@ -949,7 +950,7 @@ def seed_networth() -> Response | tuple[Response, int]:
                 "Company Investments": 13500,
                 "Company Checkings": 4800,
                 "Student Loan": -2800,
-                "Credit Cards": 0,
+                "Credit Card": 0,
             },
         ),
     ]
@@ -987,4 +988,72 @@ def seed_networth() -> Response | tuple[Response, int]:
             {"message": "Seeded 12 months of net worth data", "count": len(snapshots)}
         ),
         201,
+    )
+
+
+# =============================================================================
+# Forecast Endpoints
+# =============================================================================
+
+
+VALID_FORECAST_PERIODS = {"month", "quarter", "half_year", "year"}
+
+
+@bp.get("/api/networth/forecast")
+def get_forecast() -> Response | tuple[Response, int]:
+    """Get net worth forecast based on historical trend.
+
+    Query parameters:
+    - period: Time period to base projection on (month, quarter, half_year, year)
+              Default: quarter
+    - months_ahead: Number of months to project (1-36). Default: 12
+
+    Returns projected net worth values and the monthly change rate used.
+    """
+    session = get_session()
+
+    # Parse and validate query parameters
+    period = request.args.get("period", "quarter")
+    if period not in VALID_FORECAST_PERIODS:
+        return (
+            jsonify({"error": f"period must be one of: {VALID_FORECAST_PERIODS}"}),
+            400,
+        )
+
+    try:
+        months_ahead = int(request.args.get("months_ahead", 12))
+        if months_ahead < 1 or months_ahead > 36:
+            return jsonify({"error": "months_ahead must be between 1 and 36"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "months_ahead must be an integer"}), 400
+
+    # Get snapshots ordered newest first
+    snapshots = (
+        session.query(NetWorthSnapshot)
+        .order_by(NetWorthSnapshot.year.desc(), NetWorthSnapshot.month.desc())
+        .all()
+    )
+
+    # Generate forecast
+    forecast = generate_net_worth_forecast(
+        snapshots=snapshots,
+        period=period,  # type: ignore[arg-type]
+        months_ahead=months_ahead,
+    )
+
+    return jsonify(
+        {
+            "period": forecast.period,
+            "months_ahead": forecast.months_ahead,
+            "monthly_change_rate": forecast.monthly_change_rate,
+            "data_points_used": forecast.data_points_used,
+            "projections": [
+                {
+                    "month": p.month,
+                    "year": p.year,
+                    "projected_net_worth": p.projected_net_worth,
+                }
+                for p in forecast.projections
+            ],
+        }
     )

@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { useBudget } from "@/hooks/useBudget";
 import { useTheme } from "@/hooks/useTheme";
+import { useNetWorthCategories } from "@/hooks/useNetWorth";
 import {
   IncomeSection,
   DeductionsSection,
@@ -13,20 +14,29 @@ import {
   SettingsCard,
   BudgetSummary,
 } from "@/components/budget";
+import { SnapshotForm } from "@/components/networth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { seedData, resetBudget, exportBudget, importBudget, ExportData } from "@/lib/api";
+import {
+  seedData,
+  resetBudget,
+  exportBudget,
+  importBudget,
+  ExportData,
+} from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import * as Dialog from "@radix-ui/react-dialog";
 
 export default function BudgetPage() {
   const { data, isLoading, error } = useBudget();
+  const { data: categories = [] } = useNetWorthCategories();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<ExportData | null>(null);
+  const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleTheme = () => {
@@ -60,6 +70,12 @@ export default function BudgetPage() {
     mutationFn: importBudget,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budget"] });
+      // Invalidate net worth queries for version 2 imports
+      queryClient.invalidateQueries({ queryKey: ["networth-groups"] });
+      queryClient.invalidateQueries({ queryKey: ["networth-categories"] });
+      queryClient.invalidateQueries({ queryKey: ["networth-snapshots"] });
+      queryClient.invalidateQueries({ queryKey: ["goals"] });
+      queryClient.invalidateQueries({ queryKey: ["goals-progress"] });
       toast({ title: "Data imported successfully", type: "success" });
       setConfirmImportOpen(false);
       setPendingImportData(null);
@@ -78,7 +94,7 @@ export default function BudgetPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `vipu-budget-${new Date().toISOString().split("T")[0]}.json`;
+      a.download = `vipu-export-${new Date().toISOString().split("T")[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -101,7 +117,7 @@ export default function BudgetPage() {
       const text = await file.text();
       const importData = JSON.parse(text) as ExportData;
 
-      if (importData.version !== 1) {
+      if (importData.version !== 1 && importData.version !== 2) {
         toast({ title: "Unsupported file version", type: "error" });
         return;
       }
@@ -152,6 +168,14 @@ export default function BudgetPage() {
           Monthly Budget
         </h2>
         <div className="flex items-center gap-3">
+          {categories.length > 0 && (
+            <button
+              onClick={() => setSnapshotFormOpen(true)}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Record balances
+            </button>
+          )}
           <SettingsCard settings={data.settings} />
           <Menu
             trigger={
@@ -295,7 +319,11 @@ export default function BudgetPage() {
               action cannot be undone.
             </Dialog.Description>
             {pendingImportData && (
-              <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300">
+              <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Version {pendingImportData.version}
+                  {pendingImportData.version === 2 && " (includes net worth)"}
+                </p>
                 <p>
                   <strong>Accounts:</strong> {pendingImportData.accounts.length}
                 </p>
@@ -305,6 +333,17 @@ export default function BudgetPage() {
                 <p>
                   <strong>Expenses:</strong> {pendingImportData.expenses.length}
                 </p>
+                {pendingImportData.version === 2 && (
+                  <>
+                    <p>
+                      <strong>Net worth snapshots:</strong>{" "}
+                      {pendingImportData.networth_snapshots?.length ?? 0}
+                    </p>
+                    <p>
+                      <strong>Goals:</strong> {pendingImportData.goals?.length ?? 0}
+                    </p>
+                  </>
+                )}
               </div>
             )}
             <div className="flex justify-end gap-3 mt-6">
@@ -329,6 +368,13 @@ export default function BudgetPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      {/* Snapshot Form */}
+      <SnapshotForm
+        open={snapshotFormOpen}
+        onOpenChange={setSnapshotFormOpen}
+        categories={categories}
+      />
     </div>
   );
 }
