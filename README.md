@@ -6,6 +6,8 @@
 
 **Vipu** (Finnish for "lever") is a personal finance tracker designed to answer one simple question: *"Do I have enough money to cover next month's expenses?"*
 
+> **Note:** This app is built with Finnish personal finance in mind (tax percentages, payroll deductions, €). The core budgeting features work anywhere, but some features assume Finnish conventions.
+
 ## Features
 
 ### Weekly Budget Tracking
