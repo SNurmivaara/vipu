@@ -392,3 +392,60 @@ class NetWorthEntry(Base):
             "category": self.category.to_dict() if self.category else None,
             "amount": float(self.amount) if self.amount is not None else 0.0,
         }
+
+
+class Goal(Base):
+    """Financial goal for tracking progress.
+
+    Goal types:
+    - net_worth_target: Overall net worth target
+    - category_target: Target balance for a specific category
+    - category_monthly: Monthly contribution to a category
+    - category_rate: Percentage of income growth in a category
+
+    Tracking periods (for category_monthly and category_rate):
+    - month: Compare current month to previous month
+    - quarter: Average over last 3 months
+    - half_year: Average over last 6 months
+    - year: Average over last 12 months
+    """
+
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    goal_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "net_worth_target", "category_target", "category_monthly", "category_rate"
+    target_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("networth_categories.id"), nullable=True
+    )
+    tracking_period: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # "month", "quarter", "half_year", "year" - for monthly/rate goals
+    target_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    # Relationships
+    category: Mapped["NetWorthCategory | None"] = relationship("NetWorthCategory")
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "goal_type": self.goal_type,
+            "target_value": float(self.target_value),
+            "category_id": self.category_id,
+            "category": self.category.to_dict() if self.category else None,
+            "tracking_period": self.tracking_period,
+            "target_date": self.target_date.isoformat() if self.target_date else None,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat(),
+        }

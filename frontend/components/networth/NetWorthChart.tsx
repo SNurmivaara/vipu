@@ -9,12 +9,14 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
-import { NetWorthSnapshot } from "@/types";
+import { NetWorthSnapshot, GoalProgress } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 
 interface NetWorthChartProps {
   snapshots: NetWorthSnapshot[];
+  netWorthGoals?: GoalProgress[];
 }
 
 const MONTH_NAMES = [
@@ -22,7 +24,7 @@ const MONTH_NAMES = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
-export function NetWorthChart({ snapshots }: NetWorthChartProps) {
+export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartProps) {
   const chartData = useMemo(() => {
     return [...snapshots]
       .reverse()
@@ -33,6 +35,17 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
         liabilities: Math.abs(snapshot.total_liabilities),
       }));
   }, [snapshots]);
+
+  // Filter for net worth goals only
+  const netWorthGoalLines = useMemo(() => {
+    return netWorthGoals
+      .filter((g) => g.goal.goal_type === "net_worth_target" && g.goal.is_active)
+      .map((g) => ({
+        name: g.goal.name,
+        value: g.target_value,
+        achieved: g.is_achieved,
+      }));
+  }, [netWorthGoals]);
 
   if (chartData.length === 0) {
     return (
@@ -133,6 +146,21 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
               strokeWidth={2}
               fill="url(#netWorthGradient)"
             />
+            {netWorthGoalLines.map((goal, index) => (
+              <ReferenceLine
+                key={`goal-${index}`}
+                y={goal.value}
+                stroke={goal.achieved ? "#10b981" : "#f59e0b"}
+                strokeDasharray="5 5"
+                strokeWidth={2}
+                label={{
+                  value: goal.name,
+                  position: "right",
+                  fill: goal.achieved ? "#10b981" : "#f59e0b",
+                  fontSize: 11,
+                }}
+              />
+            ))}
           </AreaChart>
         </ResponsiveContainer>
       </div>
