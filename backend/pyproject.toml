@@ -19,6 +19,7 @@ dev = [
     "ruff>=0.4",
     "black>=24.0",
     "mypy>=1.10",
+    "types-Flask-Cors>=4.0",
 ]
 
 [tool.ruff]
@@ -38,6 +39,11 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_ignores = true
 disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

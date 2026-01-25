@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from app import get_session
 from app.models import Account
@@ -9,7 +9,7 @@ bp = Blueprint("accounts", __name__)
 
 
 @bp.route("/api/accounts", methods=["GET"])
-def list_accounts():
+def list_accounts() -> Response:
     """List all accounts."""
     session = get_session()
     accounts = session.query(Account).order_by(Account.name).all()
@@ -17,7 +17,7 @@ def list_accounts():
 
 
 @bp.route("/api/accounts", methods=["POST"])
-def create_account():
+def create_account() -> Response | tuple[Response, int]:
     """Create a new account."""
     session = get_session()
     data = request.get_json()
@@ -40,7 +40,7 @@ def create_account():
 
 
 @bp.route("/api/accounts/<int:account_id>", methods=["PUT"])
-def update_account(account_id: int):
+def update_account(account_id: int) -> Response | tuple[Response, int]:
     """Update an existing account."""
     session = get_session()
     account = session.query(Account).filter_by(id=account_id).first()
@@ -64,7 +64,7 @@ def update_account(account_id: int):
 
 
 @bp.route("/api/accounts/<int:account_id>", methods=["DELETE"])
-def delete_account(account_id: int):
+def delete_account(account_id: int) -> tuple[Response, int]:
     """Delete an account."""
     session = get_session()
     account = session.query(Account).filter_by(id=account_id).first()

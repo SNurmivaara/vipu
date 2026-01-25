@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from app import get_session
 from app.models import BudgetSettings
@@ -20,14 +20,14 @@ def get_or_create_settings() -> BudgetSettings:
 
 
 @bp.route("/api/settings", methods=["GET"])
-def get_settings():
+def get_settings() -> Response:
     """Get current budget settings."""
     settings = get_or_create_settings()
     return jsonify(settings.to_dict())
 
 
 @bp.route("/api/settings", methods=["PUT"])
-def update_settings():
+def update_settings() -> Response | tuple[Response, int]:
     """Update budget settings."""
     session = get_session()
     data = request.get_json()

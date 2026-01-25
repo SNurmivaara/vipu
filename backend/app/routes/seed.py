@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, Response, jsonify
 
 from app import get_session
 from app.models import Account, BudgetSettings, ExpenseItem, IncomeItem
@@ -9,7 +9,7 @@ bp = Blueprint("seed", __name__)
 
 
 @bp.route("/api/seed", methods=["POST"])
-def seed_data():
+def seed_data() -> Response:
     """Seed example data for demos/testing."""
     session = get_session()
 

@@ -1,13 +1,16 @@
+from typing import Any
+
 from flask import Flask
 from flask_cors import CORS
 from sqlalchemy import create_engine
+from sqlalchemy.orm import Session as SQLAlchemySession
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 from app.config import get_config
 from app.models import Base
 
-engine = None
-Session = None
+engine: Any = None
+Session: scoped_session[SQLAlchemySession] | None = None
 
 
 def create_app(config_class: type | None = None) -> Flask:
@@ -48,6 +51,8 @@ def create_app(config_class: type | None = None) -> Flask:
     return app
 
 
-def get_session():
+def get_session() -> SQLAlchemySession:
     """Get the current database session."""
+    if Session is None:
+        raise RuntimeError("Database session not initialized. Call create_app first.")
     return Session()
