@@ -8,6 +8,9 @@ from app.models import IncomeItem
 
 bp = APIBlueprint("income", __name__, tag="Income")
 
+MAX_NAME_LENGTH = 100
+MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+
 
 @bp.get("/api/income")
 def list_income() -> Response:
@@ -35,16 +38,26 @@ def create_income() -> Response | tuple[Response, int]:
     if "gross_amount" not in data:
         return jsonify({"error": "gross_amount is required"}), 400
 
+    name = str(data["name"]).strip()
+    if not name or len(name) > MAX_NAME_LENGTH:
+        return jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}), 400
+
+    gross_amount = Decimal(str(data["gross_amount"]))
+    if abs(gross_amount) > MAX_AMOUNT_VALUE:
+        return jsonify({"error": "gross_amount exceeds maximum allowed value"}), 400
+
     tax_pct = data.get("tax_percentage")
     if tax_pct is not None:
         tax_pct = Decimal(str(tax_pct))
+        if tax_pct < 0 or tax_pct > 100:
+            return jsonify({"error": "tax_percentage must be between 0 and 100"}), 400
 
     item = IncomeItem(
-        name=data["name"],
-        gross_amount=Decimal(str(data["gross_amount"])),
-        is_taxed=data.get("is_taxed", True),
+        name=name,
+        gross_amount=gross_amount,
+        is_taxed=bool(data.get("is_taxed", True)),
         tax_percentage=tax_pct,
-        is_deduction=data.get("is_deduction", False),
+        is_deduction=bool(data.get("is_deduction", False)),
     )
     session.add(item)
     session.commit()
@@ -66,16 +79,32 @@ def update_income(income_id: int) -> Response | tuple[Response, int]:
         return jsonify({"error": "No data provided"}), 400
 
     if "name" in data:
-        item.name = data["name"]
+        name = str(data["name"]).strip()
+        if not name or len(name) > MAX_NAME_LENGTH:
+            return (
+                jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}),
+                400,
+            )
+        item.name = name
     if "gross_amount" in data:
-        item.gross_amount = Decimal(str(data["gross_amount"]))
+        gross_amount = Decimal(str(data["gross_amount"]))
+        if abs(gross_amount) > MAX_AMOUNT_VALUE:
+            return jsonify({"error": "gross_amount exceeds maximum allowed value"}), 400
+        item.gross_amount = gross_amount
     if "is_taxed" in data:
-        item.is_taxed = data["is_taxed"]
+        item.is_taxed = bool(data["is_taxed"])
     if "tax_percentage" in data:
         tax_pct = data["tax_percentage"]
-        item.tax_percentage = Decimal(str(tax_pct)) if tax_pct is not None else None
+        if tax_pct is not None:
+            tax_pct = Decimal(str(tax_pct))
+            if tax_pct < 0 or tax_pct > 100:
+                return (
+                    jsonify({"error": "tax_percentage must be between 0 and 100"}),
+                    400,
+                )
+        item.tax_percentage = tax_pct
     if "is_deduction" in data:
-        item.is_deduction = data["is_deduction"]
+        item.is_deduction = bool(data["is_deduction"])
 
     session.commit()
     return jsonify(item.to_dict())

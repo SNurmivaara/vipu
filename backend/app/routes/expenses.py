@@ -8,6 +8,9 @@ from app.models import ExpenseItem
 
 bp = APIBlueprint("expenses", __name__, tag="Expenses")
 
+MAX_NAME_LENGTH = 100
+MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+
 
 @bp.get("/api/expenses")
 def list_expenses() -> Response:
@@ -35,10 +38,18 @@ def create_expense() -> Response | tuple[Response, int]:
     if "amount" not in data:
         return jsonify({"error": "amount is required"}), 400
 
+    name = str(data["name"]).strip()
+    if not name or len(name) > MAX_NAME_LENGTH:
+        return jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}), 400
+
+    amount = Decimal(str(data["amount"]))
+    if abs(amount) > MAX_AMOUNT_VALUE:
+        return jsonify({"error": "amount exceeds maximum allowed value"}), 400
+
     item = ExpenseItem(
-        name=data["name"],
-        amount=Decimal(str(data["amount"])),
-        is_savings_goal=data.get("is_savings_goal", False),
+        name=name,
+        amount=amount,
+        is_savings_goal=bool(data.get("is_savings_goal", False)),
     )
     session.add(item)
     session.commit()
@@ -60,11 +71,20 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
         return jsonify({"error": "No data provided"}), 400
 
     if "name" in data:
-        item.name = data["name"]
+        name = str(data["name"]).strip()
+        if not name or len(name) > MAX_NAME_LENGTH:
+            return (
+                jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}),
+                400,
+            )
+        item.name = name
     if "amount" in data:
-        item.amount = Decimal(str(data["amount"]))
+        amount = Decimal(str(data["amount"]))
+        if abs(amount) > MAX_AMOUNT_VALUE:
+            return jsonify({"error": "amount exceeds maximum allowed value"}), 400
+        item.amount = amount
     if "is_savings_goal" in data:
-        item.is_savings_goal = data["is_savings_goal"]
+        item.is_savings_goal = bool(data["is_savings_goal"])
 
     session.commit()
     return jsonify(item.to_dict())

@@ -10,6 +10,7 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
 
     @staticmethod
     def get_database_url() -> str:
@@ -33,11 +34,23 @@ class TestingConfig(Config):
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
 
 
+def _require_env(name: str) -> str:
+    """Get required environment variable or raise error."""
+    value = os.environ.get(name)
+    if not value:
+        raise ValueError(f"{name} environment variable must be set in production")
+    return value
+
+
 class ProductionConfig(Config):
     """Production configuration."""
 
     DEBUG = False
-    SQLALCHEMY_DATABASE_URI = Config.get_database_url()
+    _is_prod = os.environ.get("FLASK_ENV") == "production"
+    SECRET_KEY = _require_env("SECRET_KEY") if _is_prod else Config.SECRET_KEY
+    SQLALCHEMY_DATABASE_URI = (
+        _require_env("DATABASE_URL") if _is_prod else Config.get_database_url()
+    )
 
 
 config = {
