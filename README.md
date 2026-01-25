@@ -16,10 +16,12 @@
 - Update account balances weekly
 - See your net position at a glance: `Current Balance - Monthly Expenses`
 
-### Monthly Net Worth *(Coming Soon)*
+### Monthly Net Worth
 - Track assets and liabilities over time
-- Visualize wealth growth with charts
-- Monitor investment allocation
+- User-defined categories (cash, investments, crypto, property, loans, credit)
+- Personal vs company wealth separation
+- Automatic calculation of totals, percentages, and month-over-month changes
+- Frontend with charts *(Coming Soon)*
 
 ## Tech Stack
 
@@ -198,7 +200,7 @@ vipu/
 - [x] Backend API (Weekly Budget)
 - [x] CI/CD with GitHub Actions
 - [x] Frontend (Weekly Budget)
-- [ ] Net Worth tracking backend
+- [x] Net Worth tracking backend
 - [ ] Net Worth frontend with charts
 - [ ] Goals and targets
 

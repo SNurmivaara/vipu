@@ -50,3 +50,77 @@ export type DeductionFormData = Omit<IncomeItem, "id">;
 export type ExpenseFormData = Omit<ExpenseItem, "id">;
 export type SavingsGoalFormData = Omit<ExpenseItem, "id">;
 export type SettingsFormData = Pick<BudgetSettings, "tax_percentage">;
+
+// Net Worth types
+export type GroupType = "asset" | "liability";
+
+export interface NetWorthGroup {
+  id: number;
+  name: string;
+  group_type: GroupType;
+  color: string;
+  display_order: number;
+  created_at: string;
+}
+
+export interface NetWorthCategory {
+  id: number;
+  name: string;
+  group_id: number;
+  group: NetWorthGroup;
+  is_personal: boolean;
+  display_order: number;
+  created_at: string;
+}
+
+export interface NetWorthEntry {
+  id: number;
+  category_id: number;
+  category: NetWorthCategory;
+  amount: number;
+}
+
+export interface NetWorthSnapshot {
+  id: number;
+  month: number;
+  year: number;
+  timestamp: string;
+  total_assets: number;
+  total_liabilities: number;
+  net_worth: number;
+  change_from_previous: number;
+  personal_wealth: number;
+  company_wealth: number;
+  entries: NetWorthEntry[];
+  by_group: Record<string, number>;
+  percentages: Record<string, number>;
+}
+
+export interface NetWorthEntryInput {
+  category_id: number;
+  amount: number;
+}
+
+export interface CreateSnapshotInput {
+  month: number;
+  year: number;
+  entries: NetWorthEntryInput[];
+}
+
+export interface UpdateSnapshotInput {
+  entries: NetWorthEntryInput[];
+}
+
+export interface CategoryFormData {
+  name: string;
+  group_id: number;
+  is_personal: boolean;
+  display_order: number;
+}
+
+export interface GroupFormData {
+  name: string;
+  group_type: GroupType;
+  color: string;
+  display_order: number;
+}

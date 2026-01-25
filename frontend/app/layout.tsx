@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { ToastProvider } from "@/components/ui/Toast";
+import { Navigation } from "@/components/ui/Navigation";
 
 export const metadata: Metadata = {
   title: "Vipu - Personal Finance Tracker",
@@ -19,10 +20,11 @@ export default function RootLayout({
         <Providers>
           <ToastProvider>
             <header className="border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-              <div className="max-w-4xl mx-auto px-4 py-4">
+              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
                   Vipu
                 </h1>
+                <Navigation />
               </div>
             </header>
             <main className="max-w-4xl mx-auto px-4 py-6">{children}</main>

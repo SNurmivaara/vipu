@@ -6,16 +6,165 @@ from flask import Response, jsonify, request
 from sqlalchemy.orm import Session
 
 from app import get_session
-from app.models import NetWorthCategory, NetWorthEntry, NetWorthSnapshot
+from app.models import NetWorthCategory, NetWorthEntry, NetWorthGroup, NetWorthSnapshot
 
 bp = APIBlueprint("networth", __name__, tag="Net Worth")
 
 MAX_NAME_LENGTH = 100
 MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
 
-# Valid category types and groups
-VALID_CATEGORY_TYPES = {"asset", "liability"}
-VALID_CATEGORY_GROUPS = {"cash", "investment", "crypto", "property", "loan", "credit"}
+# Valid group types
+VALID_GROUP_TYPES = {"asset", "liability"}
+
+
+# =============================================================================
+# Group Endpoints
+# =============================================================================
+
+
+@bp.get("/api/networth/groups")
+def list_groups() -> Response:
+    """List all net worth groups, sorted by display order then name."""
+    session = get_session()
+    groups = (
+        session.query(NetWorthGroup)
+        .order_by(NetWorthGroup.display_order, NetWorthGroup.name)
+        .all()
+    )
+    return jsonify([g.to_dict() for g in groups])
+
+
+@bp.post("/api/networth/groups")
+def create_group() -> Response | tuple[Response, int]:
+    """Create a new net worth group."""
+    session = get_session()
+    data = request.get_json()
+
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Validate required fields
+    if "name" not in data:
+        return jsonify({"error": "name is required"}), 400
+    if "group_type" not in data:
+        return jsonify({"error": "group_type is required"}), 400
+
+    # Validate name
+    name = str(data["name"]).strip()
+    if not name or len(name) > MAX_NAME_LENGTH:
+        return (
+            jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}),
+            400,
+        )
+
+    # Validate group_type
+    group_type = str(data["group_type"]).lower()
+    if group_type not in VALID_GROUP_TYPES:
+        return (
+            jsonify({"error": f"group_type must be one of: {VALID_GROUP_TYPES}"}),
+            400,
+        )
+
+    # Get optional fields
+    color = str(data.get("color", "#6b7280"))
+    if not color.startswith("#") or len(color) != 7:
+        return (
+            jsonify({"error": "color must be a valid hex color (e.g., #6b7280)"}),
+            400,
+        )
+
+    try:
+        display_order = int(data.get("display_order", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "display_order must be an integer"}), 400
+
+    group = NetWorthGroup(
+        name=name,
+        group_type=group_type,
+        color=color,
+        display_order=display_order,
+    )
+    session.add(group)
+    session.commit()
+
+    return jsonify(group.to_dict()), 201
+
+
+@bp.put("/api/networth/groups/<int:group_id>")
+def update_group(group_id: int) -> Response | tuple[Response, int]:
+    """Update an existing group."""
+    session = get_session()
+    group = session.query(NetWorthGroup).filter_by(id=group_id).first()
+
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    # Update fields if provided
+    if "name" in data:
+        name = str(data["name"]).strip()
+        if not name or len(name) > MAX_NAME_LENGTH:
+            return (
+                jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}),
+                400,
+            )
+        group.name = name
+
+    if "group_type" in data:
+        group_type = str(data["group_type"]).lower()
+        if group_type not in VALID_GROUP_TYPES:
+            return (
+                jsonify({"error": f"group_type must be one of: {VALID_GROUP_TYPES}"}),
+                400,
+            )
+        group.group_type = group_type
+
+    if "color" in data:
+        color = str(data["color"])
+        if not color.startswith("#") or len(color) != 7:
+            return (
+                jsonify({"error": "color must be a valid hex color (e.g., #6b7280)"}),
+                400,
+            )
+        group.color = color
+
+    if "display_order" in data:
+        try:
+            group.display_order = int(data["display_order"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "display_order must be an integer"}), 400
+
+    session.commit()
+    return jsonify(group.to_dict())
+
+
+@bp.delete("/api/networth/groups/<int:group_id>")
+def delete_group(group_id: int) -> Response | tuple[Response, int]:
+    """Delete a group. Fails if group has categories."""
+    session = get_session()
+
+    # Lock the group row to prevent race conditions
+    group = (
+        session.query(NetWorthGroup).filter_by(id=group_id).with_for_update().first()
+    )
+
+    if not group:
+        return jsonify({"error": "Group not found"}), 404
+
+    # Check if group has categories
+    category_count = (
+        session.query(NetWorthCategory).filter_by(group_id=group_id).count()
+    )
+    if category_count > 0:
+        msg = f"Cannot delete group: has {category_count} categories"
+        return jsonify({"error": msg}), 409
+
+    session.delete(group)
+    session.commit()
+    return jsonify({"message": "Group deleted"})
 
 
 # =============================================================================
@@ -47,10 +196,8 @@ def create_category() -> Response | tuple[Response, int]:
     # Validate required fields
     if "name" not in data:
         return jsonify({"error": "name is required"}), 400
-    if "category_type" not in data:
-        return jsonify({"error": "category_type is required"}), 400
-    if "category_group" not in data:
-        return jsonify({"error": "category_group is required"}), 400
+    if "group_id" not in data:
+        return jsonify({"error": "group_id is required"}), 400
 
     # Validate name
     name = str(data["name"]).strip()
@@ -60,23 +207,15 @@ def create_category() -> Response | tuple[Response, int]:
             400,
         )
 
-    # Validate category_type
-    category_type = str(data["category_type"]).lower()
-    if category_type not in VALID_CATEGORY_TYPES:
-        return (
-            jsonify({"error": f"category_type must be one of: {VALID_CATEGORY_TYPES}"}),
-            400,
-        )
+    # Validate group exists
+    try:
+        group_id = int(data["group_id"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "group_id must be an integer"}), 400
 
-    # Validate category_group
-    category_group = str(data["category_group"]).lower()
-    if category_group not in VALID_CATEGORY_GROUPS:
-        return (
-            jsonify(
-                {"error": f"category_group must be one of: {VALID_CATEGORY_GROUPS}"}
-            ),
-            400,
-        )
+    group = session.query(NetWorthGroup).filter_by(id=group_id).first()
+    if not group:
+        return jsonify({"error": f"Group {group_id} not found"}), 400
 
     # Get optional fields
     is_personal = bool(data.get("is_personal", True))
@@ -87,8 +226,7 @@ def create_category() -> Response | tuple[Response, int]:
 
     category = NetWorthCategory(
         name=name,
-        category_type=category_type,
-        category_group=category_group,
+        group_id=group_id,
         is_personal=is_personal,
         display_order=display_order,
     )
@@ -121,27 +259,16 @@ def update_category(category_id: int) -> Response | tuple[Response, int]:
             )
         category.name = name
 
-    if "category_type" in data:
-        category_type = str(data["category_type"]).lower()
-        if category_type not in VALID_CATEGORY_TYPES:
-            return (
-                jsonify(
-                    {"error": f"category_type must be one of: {VALID_CATEGORY_TYPES}"}
-                ),
-                400,
-            )
-        category.category_type = category_type
+    if "group_id" in data:
+        try:
+            group_id = int(data["group_id"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "group_id must be an integer"}), 400
 
-    if "category_group" in data:
-        category_group = str(data["category_group"]).lower()
-        if category_group not in VALID_CATEGORY_GROUPS:
-            return (
-                jsonify(
-                    {"error": f"category_group must be one of: {VALID_CATEGORY_GROUPS}"}
-                ),
-                400,
-            )
-        category.category_group = category_group
+        group = session.query(NetWorthGroup).filter_by(id=group_id).first()
+        if not group:
+            return jsonify({"error": f"Group {group_id} not found"}), 400
+        category.group_id = group_id
 
     if "is_personal" in data:
         category.is_personal = bool(data["is_personal"])
@@ -187,43 +314,68 @@ def delete_category(category_id: int) -> Response | tuple[Response, int]:
 
 @bp.post("/api/networth/categories/seed")
 def seed_categories() -> Response | tuple[Response, int]:
-    """Seed default net worth categories."""
+    """Seed default net worth groups and categories."""
     session = get_session()
 
-    # Check if categories already exist
-    existing = session.query(NetWorthCategory).first()
-    if existing:
+    # Check if groups or categories already exist
+    existing_group = session.query(NetWorthGroup).first()
+    existing_category = session.query(NetWorthCategory).first()
+    if existing_group or existing_category:
         return (
-            jsonify({"error": "Categories already exist. Delete first to reseed."}),
+            jsonify(
+                {"error": "Groups or categories already exist. Delete first to reseed."}
+            ),
             409,
         )
 
-    # Default categories matching the original column-based design
-    default_categories = [
-        # Personal Assets - Cash
-        ("Cash", "asset", "cash", True, 1),
-        ("Savings", "asset", "cash", True, 2),
-        ("Rent Account", "asset", "cash", True, 3),
-        # Personal Assets - Investments
-        ("Personal Investments", "asset", "investment", True, 10),
-        ("Personal Bonds", "asset", "investment", True, 11),
-        # Personal Assets - Crypto
-        ("Crypto", "asset", "crypto", True, 20),
-        # Personal Assets - Property
-        ("House/Apartment", "asset", "property", True, 30),
-        # Company Assets
-        ("Company Investments", "asset", "investment", False, 40),
-        ("Company Checkings", "asset", "cash", False, 41),
-        # Liabilities
-        ("Student Loan", "liability", "loan", True, 50),
-        ("Credit Cards", "liability", "credit", True, 51),
+    # Default groups with colors
+    default_groups = [
+        # (name, group_type, color, display_order)
+        ("Cash", "asset", "#22c55e", 1),  # green
+        ("Investments", "asset", "#3b82f6", 2),  # blue
+        ("Crypto", "asset", "#f59e0b", 3),  # amber
+        ("Property", "asset", "#8b5cf6", 4),  # purple
+        ("Loans", "liability", "#ef4444", 10),  # red
+        ("Credit Cards", "liability", "#f97316", 11),  # orange
     ]
 
-    for name, cat_type, cat_group, is_personal, order in default_categories:
+    group_by_name: dict[str, NetWorthGroup] = {}
+    for name, group_type, color, order in default_groups:
+        group = NetWorthGroup(
+            name=name,
+            group_type=group_type,
+            color=color,
+            display_order=order,
+        )
+        session.add(group)
+        session.flush()  # Get the ID
+        group_by_name[name] = group
+
+    # Default categories (name, group_name, is_personal, display_order)
+    default_categories = [
+        # Cash group
+        ("Cash", "Cash", True, 1),
+        ("Savings", "Cash", True, 2),
+        ("Rent Account", "Cash", True, 3),
+        ("Company Checkings", "Cash", False, 4),
+        # Investments group
+        ("Personal Investments", "Investments", True, 10),
+        ("Personal Bonds", "Investments", True, 11),
+        ("Company Investments", "Investments", False, 12),
+        # Crypto group
+        ("Crypto", "Crypto", True, 20),
+        # Property group
+        ("House/Apartment", "Property", True, 30),
+        # Loans group
+        ("Student Loan", "Loans", True, 50),
+        # Credit Cards group
+        ("Credit Cards", "Credit Cards", True, 60),
+    ]
+
+    for name, group_name, is_personal, order in default_categories:
         category = NetWorthCategory(
             name=name,
-            category_type=cat_type,
-            category_group=cat_group,
+            group_id=group_by_name[group_name].id,
             is_personal=is_personal,
             display_order=order,
         )
@@ -232,8 +384,15 @@ def seed_categories() -> Response | tuple[Response, int]:
     session.commit()
 
     categories = session.query(NetWorthCategory).all()
+    groups = session.query(NetWorthGroup).all()
     return (
-        jsonify({"message": "Seeded default categories", "count": len(categories)}),
+        jsonify(
+            {
+                "message": "Seeded default groups and categories",
+                "groups": len(groups),
+                "categories": len(categories),
+            }
+        ),
         201,
     )
 
@@ -536,6 +695,25 @@ def delete_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
     session.delete(snapshot)
     session.commit()
     return jsonify({"message": "Snapshot deleted"})
+
+
+@bp.post("/api/networth/reset")
+def reset_networth() -> Response:
+    """Reset all net worth data.
+
+    Clears all snapshots, entries, categories, and groups.
+    """
+    session = get_session()
+
+    # Delete in FK order: entries -> snapshots -> categories -> groups
+    session.query(NetWorthEntry).delete()
+    session.query(NetWorthSnapshot).delete()
+    session.query(NetWorthCategory).delete()
+    session.query(NetWorthGroup).delete()
+
+    session.commit()
+
+    return jsonify({"message": "Net worth data reset successfully"})
 
 
 @bp.post("/api/networth/seed")

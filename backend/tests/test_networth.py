@@ -3,8 +3,216 @@
 import pytest
 
 # =============================================================================
+# Group Tests
+# =============================================================================
+
+
+class TestGroupList:
+    """Tests for listing groups."""
+
+    def test_list_groups_empty(self, client):
+        """GET /api/networth/groups returns empty list initially."""
+        response = client.get("/api/networth/groups")
+        assert response.status_code == 200
+        assert response.json == []
+
+    def test_list_groups_sorted(self, client):
+        """GET /api/networth/groups returns groups sorted by display_order."""
+        client.post(
+            "/api/networth/groups",
+            json={
+                "name": "Second",
+                "group_type": "asset",
+                "display_order": 2,
+            },
+        )
+        client.post(
+            "/api/networth/groups",
+            json={
+                "name": "First",
+                "group_type": "asset",
+                "display_order": 1,
+            },
+        )
+
+        response = client.get("/api/networth/groups")
+        assert response.status_code == 200
+        assert len(response.json) == 2
+        assert response.json[0]["name"] == "First"
+        assert response.json[1]["name"] == "Second"
+
+
+class TestGroupCreate:
+    """Tests for creating groups."""
+
+    def test_create_group_minimal(self, client):
+        """POST /api/networth/groups creates group with required fields."""
+        response = client.post(
+            "/api/networth/groups",
+            json={
+                "name": "Cash",
+                "group_type": "asset",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json
+
+        assert data["name"] == "Cash"
+        assert data["group_type"] == "asset"
+        assert data["color"] == "#6b7280"  # Default
+        assert data["display_order"] == 0  # Default
+        assert "id" in data
+        assert "created_at" in data
+
+    def test_create_group_full(self, client):
+        """POST /api/networth/groups creates group with all fields."""
+        response = client.post(
+            "/api/networth/groups",
+            json={
+                "name": "Investments",
+                "group_type": "asset",
+                "color": "#3b82f6",
+                "display_order": 10,
+            },
+        )
+        assert response.status_code == 201
+        data = response.json
+
+        assert data["color"] == "#3b82f6"
+        assert data["display_order"] == 10
+
+    def test_create_group_missing_name(self, client):
+        """POST /api/networth/groups requires name."""
+        response = client.post(
+            "/api/networth/groups",
+            json={"group_type": "asset"},
+        )
+        assert response.status_code == 400
+        assert "name" in response.json["error"].lower()
+
+    def test_create_group_missing_type(self, client):
+        """POST /api/networth/groups requires group_type."""
+        response = client.post(
+            "/api/networth/groups",
+            json={"name": "Test"},
+        )
+        assert response.status_code == 400
+        assert "group_type" in response.json["error"].lower()
+
+    def test_create_group_invalid_type(self, client):
+        """POST /api/networth/groups validates group_type."""
+        response = client.post(
+            "/api/networth/groups",
+            json={"name": "Test", "group_type": "invalid"},
+        )
+        assert response.status_code == 400
+        assert "group_type" in response.json["error"].lower()
+
+    def test_create_group_invalid_color(self, client):
+        """POST /api/networth/groups validates color format."""
+        response = client.post(
+            "/api/networth/groups",
+            json={"name": "Test", "group_type": "asset", "color": "invalid"},
+        )
+        assert response.status_code == 400
+        assert "color" in response.json["error"].lower()
+
+
+class TestGroupUpdate:
+    """Tests for updating groups."""
+
+    def test_update_group(self, client):
+        """PUT /api/networth/groups/<id> updates group."""
+        create_response = client.post(
+            "/api/networth/groups",
+            json={
+                "name": "Old Name",
+                "group_type": "asset",
+            },
+        )
+        group_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/networth/groups/{group_id}",
+            json={"name": "New Name", "color": "#ef4444"},
+        )
+        assert response.status_code == 200
+        assert response.json["name"] == "New Name"
+        assert response.json["color"] == "#ef4444"
+
+    def test_update_group_not_found(self, client):
+        """PUT /api/networth/groups/<id> returns 404 for non-existent."""
+        response = client.put("/api/networth/groups/999", json={"name": "Test"})
+        assert response.status_code == 404
+
+
+class TestGroupDelete:
+    """Tests for deleting groups."""
+
+    def test_delete_group(self, client):
+        """DELETE /api/networth/groups/<id> removes group."""
+        create_response = client.post(
+            "/api/networth/groups",
+            json={"name": "Test", "group_type": "asset"},
+        )
+        group_id = create_response.json["id"]
+
+        response = client.delete(f"/api/networth/groups/{group_id}")
+        assert response.status_code == 200
+
+        # Verify it's gone
+        list_response = client.get("/api/networth/groups")
+        assert len(list_response.json) == 0
+
+    def test_delete_group_not_found(self, client):
+        """DELETE /api/networth/groups/<id> returns 404 for non-existent."""
+        response = client.delete("/api/networth/groups/999")
+        assert response.status_code == 404
+
+    def test_delete_group_has_categories(self, client):
+        """DELETE /api/networth/groups/<id> fails if group has categories."""
+        # Create group
+        group_response = client.post(
+            "/api/networth/groups",
+            json={"name": "Cash", "group_type": "asset"},
+        )
+        group_id = group_response.json["id"]
+
+        # Create category in this group
+        client.post(
+            "/api/networth/categories",
+            json={"name": "Checking", "group_id": group_id},
+        )
+
+        # Try to delete group
+        response = client.delete(f"/api/networth/groups/{group_id}")
+        assert response.status_code == 409
+        assert "categories" in response.json["error"].lower()
+
+
+# =============================================================================
 # Category Tests
 # =============================================================================
+
+
+@pytest.fixture
+def asset_group(client):
+    """Create an asset group for testing."""
+    response = client.post(
+        "/api/networth/groups",
+        json={"name": "Cash", "group_type": "asset"},
+    )
+    return response.json
+
+
+@pytest.fixture
+def liability_group(client):
+    """Create a liability group for testing."""
+    response = client.post(
+        "/api/networth/groups",
+        json={"name": "Loans", "group_type": "liability"},
+    )
+    return response.json
 
 
 class TestCategoryList:
@@ -16,14 +224,14 @@ class TestCategoryList:
         assert response.status_code == 200
         assert response.json == []
 
-    def test_list_categories_sorted(self, client):
+    def test_list_categories_sorted(self, client, asset_group):
         """GET /api/networth/categories returns categories sorted by display_order."""
+        group_id = asset_group["id"]
         client.post(
             "/api/networth/categories",
             json={
                 "name": "Second",
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": group_id,
                 "display_order": 2,
             },
         )
@@ -31,8 +239,7 @@ class TestCategoryList:
             "/api/networth/categories",
             json={
                 "name": "First",
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": group_id,
                 "display_order": 1,
             },
         )
@@ -47,35 +254,32 @@ class TestCategoryList:
 class TestCategoryCreate:
     """Tests for creating categories."""
 
-    def test_create_category_minimal(self, client):
+    def test_create_category_minimal(self, client, asset_group):
         """POST /api/networth/categories creates category with required fields."""
         response = client.post(
             "/api/networth/categories",
             json={
                 "name": "My Savings",
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": asset_group["id"],
             },
         )
         assert response.status_code == 201
         data = response.json
 
         assert data["name"] == "My Savings"
-        assert data["category_type"] == "asset"
-        assert data["category_group"] == "cash"
+        assert data["group_id"] == asset_group["id"]
         assert data["is_personal"] is True  # Default
         assert data["display_order"] == 0  # Default
         assert "id" in data
         assert "created_at" in data
 
-    def test_create_category_full(self, client):
+    def test_create_category_full(self, client, asset_group):
         """POST /api/networth/categories creates category with all fields."""
         response = client.post(
             "/api/networth/categories",
             json={
                 "name": "Company Account",
-                "category_type": "asset",
-                "category_group": "investment",
+                "group_id": asset_group["id"],
                 "is_personal": False,
                 "display_order": 10,
             },
@@ -86,63 +290,40 @@ class TestCategoryCreate:
         assert data["is_personal"] is False
         assert data["display_order"] == 10
 
-    def test_create_category_missing_name(self, client):
+    def test_create_category_missing_name(self, client, asset_group):
         """POST /api/networth/categories requires name."""
         response = client.post(
             "/api/networth/categories",
-            json={"category_type": "asset", "category_group": "cash"},
+            json={"group_id": asset_group["id"]},
         )
         assert response.status_code == 400
         assert "name" in response.json["error"].lower()
 
-    def test_create_category_missing_type(self, client):
-        """POST /api/networth/categories requires category_type."""
-        response = client.post(
-            "/api/networth/categories",
-            json={"name": "Test", "category_group": "cash"},
-        )
-        assert response.status_code == 400
-        assert "category_type" in response.json["error"].lower()
-
     def test_create_category_missing_group(self, client):
-        """POST /api/networth/categories requires category_group."""
+        """POST /api/networth/categories requires group_id."""
         response = client.post(
             "/api/networth/categories",
-            json={"name": "Test", "category_type": "asset"},
+            json={"name": "Test"},
         )
         assert response.status_code == 400
-        assert "category_group" in response.json["error"].lower()
-
-    def test_create_category_invalid_type(self, client):
-        """POST /api/networth/categories validates category_type."""
-        response = client.post(
-            "/api/networth/categories",
-            json={"name": "Test", "category_type": "invalid", "category_group": "cash"},
-        )
-        assert response.status_code == 400
-        assert "category_type" in response.json["error"].lower()
+        assert "group_id" in response.json["error"].lower()
 
     def test_create_category_invalid_group(self, client):
-        """POST /api/networth/categories validates category_group."""
+        """POST /api/networth/categories validates group_id exists."""
         response = client.post(
             "/api/networth/categories",
-            json={
-                "name": "Test",
-                "category_type": "asset",
-                "category_group": "invalid",
-            },
+            json={"name": "Test", "group_id": 999},
         )
         assert response.status_code == 400
-        assert "category_group" in response.json["error"].lower()
+        assert "group" in response.json["error"].lower()
 
-    def test_create_category_name_too_long(self, client):
+    def test_create_category_name_too_long(self, client, asset_group):
         """POST /api/networth/categories rejects name > 100 chars."""
         response = client.post(
             "/api/networth/categories",
             json={
                 "name": "x" * 101,
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": asset_group["id"],
             },
         )
         assert response.status_code == 400
@@ -158,14 +339,13 @@ class TestCategoryCreate:
 class TestCategoryUpdate:
     """Tests for updating categories."""
 
-    def test_update_category(self, client):
+    def test_update_category(self, client, asset_group):
         """PUT /api/networth/categories/<id> updates category."""
         create_response = client.post(
             "/api/networth/categories",
             json={
                 "name": "Old Name",
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": asset_group["id"],
             },
         )
         category_id = create_response.json["id"]
@@ -183,11 +363,11 @@ class TestCategoryUpdate:
         response = client.put("/api/networth/categories/999", json={"name": "Test"})
         assert response.status_code == 404
 
-    def test_update_category_no_body(self, client):
+    def test_update_category_no_body(self, client, asset_group):
         """PUT /api/networth/categories/<id> with no body returns 400."""
         create_response = client.post(
             "/api/networth/categories",
-            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
+            json={"name": "Test", "group_id": asset_group["id"]},
         )
         category_id = create_response.json["id"]
 
@@ -201,11 +381,11 @@ class TestCategoryUpdate:
 class TestCategoryDelete:
     """Tests for deleting categories."""
 
-    def test_delete_category(self, client):
+    def test_delete_category(self, client, asset_group):
         """DELETE /api/networth/categories/<id> removes category."""
         create_response = client.post(
             "/api/networth/categories",
-            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
+            json={"name": "Test", "group_id": asset_group["id"]},
         )
         category_id = create_response.json["id"]
 
@@ -221,12 +401,12 @@ class TestCategoryDelete:
         response = client.delete("/api/networth/categories/999")
         assert response.status_code == 404
 
-    def test_delete_category_in_use(self, client):
+    def test_delete_category_in_use(self, client, asset_group):
         """DELETE /api/networth/categories/<id> fails if category is used."""
         # Create category
         cat_response = client.post(
             "/api/networth/categories",
-            json={"name": "Cash", "category_type": "asset", "category_group": "cash"},
+            json={"name": "Cash", "group_id": asset_group["id"]},
         )
         category_id = cat_response.json["id"]
 
@@ -250,13 +430,14 @@ class TestCategorySeed:
     """Tests for seeding categories."""
 
     def test_seed_categories(self, client):
-        """POST /api/networth/categories/seed creates default categories."""
+        """POST /api/networth/categories/seed creates default groups and categories."""
         response = client.post("/api/networth/categories/seed")
         assert response.status_code == 201
-        assert response.json["count"] == 11
+        assert response.json["groups"] == 6
+        assert response.json["categories"] == 11
 
     def test_seed_categories_already_exists(self, client):
-        """POST /api/networth/categories/seed fails if categories exist."""
+        """POST /api/networth/categories/seed fails if groups/categories exist."""
         client.post("/api/networth/categories/seed")
 
         response = client.post("/api/networth/categories/seed")
@@ -696,11 +877,11 @@ class TestNetWorthCalculations:
         assert response.status_code == 201
         data = response.json
 
-        # Total assets = 10000
-        assert data["by_group"]["cash"] == 5000.0
-        assert data["by_group"]["investment"] == 5000.0
-        assert data["percentages"]["cash_pct"] == 50.0
-        assert data["percentages"]["investment_pct"] == 50.0
+        # Total assets = 10000, by group name
+        assert data["by_group"]["Cash"] == 5000.0
+        assert data["by_group"]["Investments"] == 5000.0
+        assert data["percentages"]["Cash_pct"] == 50.0
+        assert data["percentages"]["Investments_pct"] == 50.0
 
     def test_percentages_zero_assets(self, client):
         """Percentage calculations handle zero assets."""
@@ -836,8 +1017,8 @@ class TestNetWorthSeed:
         # Check that calculated fields are populated
         assert june["total_assets"] > 0
         assert june["net_worth"] > 0
-        assert "investment" in june["by_group"]
-        assert "cash" in june["by_group"]
+        assert "Investments" in june["by_group"]
+        assert "Cash" in june["by_group"]
 
 
 # =============================================================================
@@ -1103,25 +1284,24 @@ class TestEdgeCases:
 class TestDisplayOrderValidation:
     """Tests for display_order validation."""
 
-    def test_create_category_invalid_display_order(self, client):
+    def test_create_category_invalid_display_order(self, client, asset_group):
         """POST /api/networth/categories rejects non-integer display_order."""
         response = client.post(
             "/api/networth/categories",
             json={
                 "name": "Test",
-                "category_type": "asset",
-                "category_group": "cash",
+                "group_id": asset_group["id"],
                 "display_order": "not_an_int",
             },
         )
         assert response.status_code == 400
         assert "display_order" in response.json["error"].lower()
 
-    def test_update_category_invalid_display_order(self, client):
+    def test_update_category_invalid_display_order(self, client, asset_group):
         """PUT /api/networth/categories/<id> rejects non-integer display_order."""
         create_response = client.post(
             "/api/networth/categories",
-            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
+            json={"name": "Test", "group_id": asset_group["id"]},
         )
         category_id = create_response.json["id"]
 
