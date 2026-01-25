@@ -126,13 +126,21 @@ export interface GroupFormData {
 }
 
 // Goal types
-export type GoalType = "net_worth" | "savings_rate" | "monthly_savings";
+export type GoalType =
+  | "net_worth_target"
+  | "category_target"
+  | "category_monthly"
+  | "category_rate";
+
+export type TrackingPeriod = "month" | "quarter" | "half_year" | "year";
 
 export interface Goal {
   id: number;
   name: string;
   goal_type: GoalType;
   target_value: number;
+  category_id: number | null;
+  tracking_period: TrackingPeriod | null;
   target_date: string | null;
   is_active: boolean;
   created_at: string;
@@ -142,14 +150,20 @@ export interface GoalFormData {
   name: string;
   goal_type: GoalType;
   target_value: number;
+  category_id: number | null;
+  tracking_period: TrackingPeriod | null;
   target_date: string | null;
   is_active: boolean;
 }
 
 export interface GoalProgressDetails {
   latest_month?: string | null;
+  category_name?: string | null;
+  tracking_period?: TrackingPeriod;
   net_income?: number;
-  savings_amount?: number;
+  total_change?: number;
+  avg_monthly_change?: number;
+  months_tracked?: number;
 }
 
 export interface GoalProgress {

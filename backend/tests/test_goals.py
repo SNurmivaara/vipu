@@ -8,7 +8,7 @@ class TestGoalValidation:
         """POST /api/goals requires name."""
         response = client.post(
             "/api/goals",
-            json={"goal_type": "net_worth", "target_value": 100000},
+            json={"goal_type": "net_worth_target", "target_value": 100000},
         )
         assert response.status_code == 400
         assert "name" in response.json["error"].lower()
@@ -26,7 +26,7 @@ class TestGoalValidation:
         """POST /api/goals requires target_value."""
         response = client.post(
             "/api/goals",
-            json={"name": "Test Goal", "goal_type": "net_worth"},
+            json={"name": "Test Goal", "goal_type": "net_worth_target"},
         )
         assert response.status_code == 400
         assert "target_value" in response.json["error"].lower()
@@ -48,7 +48,11 @@ class TestGoalValidation:
         """POST /api/goals rejects empty name."""
         response = client.post(
             "/api/goals",
-            json={"name": "", "goal_type": "net_worth", "target_value": 100000},
+            json={
+                "name": "",
+                "goal_type": "net_worth_target",
+                "target_value": 100000,
+            },
         )
         assert response.status_code == 400
 
@@ -58,7 +62,7 @@ class TestGoalValidation:
             "/api/goals",
             json={
                 "name": "x" * 101,
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
@@ -70,32 +74,41 @@ class TestGoalValidation:
             "/api/goals",
             json={
                 "name": "Big Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 1_000_000_001,
             },
         )
         assert response.status_code == 400
 
-    def test_goal_savings_rate_exceeds_100(self, client):
-        """POST /api/goals rejects savings_rate > 100%."""
+    def test_goal_category_rate_exceeds_100(self, client):
+        """POST /api/goals rejects category_rate > 100%."""
+        # First seed categories to get a valid category_id
+        client.post("/api/networth/categories/seed")
+
         response = client.post(
             "/api/goals",
             json={
                 "name": "Save Too Much",
-                "goal_type": "savings_rate",
+                "goal_type": "category_rate",
                 "target_value": 101,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
         assert response.status_code == 400
 
-    def test_goal_savings_rate_negative(self, client):
-        """POST /api/goals rejects negative savings_rate."""
+    def test_goal_category_rate_negative(self, client):
+        """POST /api/goals rejects negative category_rate."""
+        client.post("/api/networth/categories/seed")
+
         response = client.post(
             "/api/goals",
             json={
-                "name": "Negative Savings",
-                "goal_type": "savings_rate",
+                "name": "Negative Rate",
+                "goal_type": "category_rate",
                 "target_value": -10,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
         assert response.status_code == 400
@@ -111,66 +124,201 @@ class TestGoalValidation:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
                 "target_date": "not-a-date",
             },
         )
         assert response.status_code == 400
 
+    def test_category_goal_requires_category_id(self, client):
+        """POST /api/goals with category_target requires category_id."""
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Category Target",
+                "goal_type": "category_target",
+                "target_value": 50000,
+            },
+        )
+        assert response.status_code == 400
+        assert "category_id" in response.json["error"].lower()
+
+    def test_category_monthly_requires_category_id(self, client):
+        """POST /api/goals with category_monthly requires category_id."""
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Monthly Savings",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "tracking_period": "month",
+            },
+        )
+        assert response.status_code == 400
+        assert "category_id" in response.json["error"].lower()
+
+    def test_category_rate_requires_category_id(self, client):
+        """POST /api/goals with category_rate requires category_id."""
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "tracking_period": "month",
+            },
+        )
+        assert response.status_code == 400
+        assert "category_id" in response.json["error"].lower()
+
+    def test_category_monthly_requires_tracking_period(self, client):
+        """POST /api/goals with category_monthly requires tracking_period."""
+        client.post("/api/networth/categories/seed")
+
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Monthly Savings",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+            },
+        )
+        assert response.status_code == 400
+        assert "tracking_period" in response.json["error"].lower()
+
+    def test_category_rate_requires_tracking_period(self, client):
+        """POST /api/goals with category_rate requires tracking_period."""
+        client.post("/api/networth/categories/seed")
+
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "category_id": 1,
+            },
+        )
+        assert response.status_code == 400
+        assert "tracking_period" in response.json["error"].lower()
+
+    def test_invalid_tracking_period(self, client):
+        """POST /api/goals rejects invalid tracking_period."""
+        client.post("/api/networth/categories/seed")
+
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Invalid Period",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "weekly",
+            },
+        )
+        assert response.status_code == 400
+        assert "tracking_period" in response.json["error"].lower()
+
+    def test_nonexistent_category(self, client):
+        """POST /api/goals with nonexistent category_id returns 404."""
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Bad Category",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 99999,
+            },
+        )
+        assert response.status_code == 404
+
 
 class TestGoalCRUD:
     """Tests for goal CRUD operations."""
 
-    def test_create_net_worth_goal(self, client):
-        """POST /api/goals creates a net worth goal."""
+    def test_create_net_worth_target_goal(self, client):
+        """POST /api/goals creates a net worth target goal."""
         response = client.post(
             "/api/goals",
             json={
                 "name": "100k Net Worth",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
         assert response.status_code == 201
         data = response.json
         assert data["name"] == "100k Net Worth"
-        assert data["goal_type"] == "net_worth"
+        assert data["goal_type"] == "net_worth_target"
         assert data["target_value"] == 100000
         assert data["is_active"] is True
         assert data["target_date"] is None
+        assert data["category_id"] is None
+        assert data["tracking_period"] is None
         assert "id" in data
         assert "created_at" in data
 
-    def test_create_savings_rate_goal(self, client):
-        """POST /api/goals creates a savings rate goal."""
+    def test_create_category_target_goal(self, client):
+        """POST /api/goals creates a category target goal."""
+        client.post("/api/networth/categories/seed")
+
         response = client.post(
             "/api/goals",
             json={
-                "name": "30% Savings Rate",
-                "goal_type": "savings_rate",
-                "target_value": 30,
+                "name": "50k Emergency Fund",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 1,
             },
         )
         assert response.status_code == 201
         data = response.json
-        assert data["goal_type"] == "savings_rate"
-        assert data["target_value"] == 30
+        assert data["goal_type"] == "category_target"
+        assert data["target_value"] == 50000
+        assert data["category_id"] == 1
 
-    def test_create_monthly_savings_goal(self, client):
-        """POST /api/goals creates a monthly savings goal."""
+    def test_create_category_monthly_goal(self, client):
+        """POST /api/goals creates a category monthly goal."""
+        client.post("/api/networth/categories/seed")
+
         response = client.post(
             "/api/goals",
             json={
                 "name": "Save 500€/month",
-                "goal_type": "monthly_savings",
+                "goal_type": "category_monthly",
                 "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "quarter",
             },
         )
         assert response.status_code == 201
         data = response.json
-        assert data["goal_type"] == "monthly_savings"
+        assert data["goal_type"] == "category_monthly"
         assert data["target_value"] == 500
+        assert data["category_id"] == 1
+        assert data["tracking_period"] == "quarter"
+
+    def test_create_category_rate_goal(self, client):
+        """POST /api/goals creates a category rate goal."""
+        client.post("/api/networth/categories/seed")
+
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "30% Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "category_id": 1,
+                "tracking_period": "year",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json
+        assert data["goal_type"] == "category_rate"
+        assert data["target_value"] == 30
+        assert data["tracking_period"] == "year"
 
     def test_create_goal_with_target_date(self, client):
         """POST /api/goals with target_date."""
@@ -178,7 +326,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Goal with Date",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
                 "target_date": "2025-12-31T00:00:00+00:00",
             },
@@ -194,7 +342,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Inactive Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 10000,
                 "is_active": False,
             },
@@ -210,12 +358,13 @@ class TestGoalCRUD:
 
     def test_list_goals(self, client):
         """GET /api/goals returns all goals."""
-        # Create multiple goals
+        client.post("/api/networth/categories/seed")
+
         client.post(
             "/api/goals",
             json={
                 "name": "Goal 1",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 10000,
             },
         )
@@ -223,8 +372,9 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Goal 2",
-                "goal_type": "savings_rate",
-                "target_value": 25,
+                "goal_type": "category_target",
+                "target_value": 25000,
+                "category_id": 1,
             },
         )
 
@@ -238,7 +388,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -260,7 +410,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Original Name",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -276,7 +426,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -288,21 +438,24 @@ class TestGoalCRUD:
 
     def test_update_goal_type(self, client):
         """PUT /api/goals/<id> updates goal_type."""
+        client.post("/api/networth/categories/seed")
+
         create_response = client.post(
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
-                "target_value": 50,
+                "goal_type": "net_worth_target",
+                "target_value": 50000,
             },
         )
         goal_id = create_response.json["id"]
 
         response = client.put(
-            f"/api/goals/{goal_id}", json={"goal_type": "savings_rate"}
+            f"/api/goals/{goal_id}",
+            json={"goal_type": "category_target", "category_id": 1},
         )
         assert response.status_code == 200
-        assert response.json["goal_type"] == "savings_rate"
+        assert response.json["goal_type"] == "category_target"
 
     def test_update_goal_add_target_date(self, client):
         """PUT /api/goals/<id> adds target_date."""
@@ -310,7 +463,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -329,7 +482,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
                 "target_date": "2025-12-31T00:00:00+00:00",
             },
@@ -346,7 +499,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -355,6 +508,47 @@ class TestGoalCRUD:
         response = client.put(f"/api/goals/{goal_id}", json={"is_active": False})
         assert response.status_code == 200
         assert response.json["is_active"] is False
+
+    def test_update_goal_category_id(self, client):
+        """PUT /api/goals/<id> updates category_id."""
+        client.post("/api/networth/categories/seed")
+
+        create_response = client.post(
+            "/api/goals",
+            json={
+                "name": "Category Goal",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 1,
+            },
+        )
+        goal_id = create_response.json["id"]
+
+        response = client.put(f"/api/goals/{goal_id}", json={"category_id": 2})
+        assert response.status_code == 200
+        assert response.json["category_id"] == 2
+
+    def test_update_goal_tracking_period(self, client):
+        """PUT /api/goals/<id> updates tracking_period."""
+        client.post("/api/networth/categories/seed")
+
+        create_response = client.post(
+            "/api/goals",
+            json={
+                "name": "Monthly Goal",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "month",
+            },
+        )
+        goal_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/goals/{goal_id}", json={"tracking_period": "quarter"}
+        )
+        assert response.status_code == 200
+        assert response.json["tracking_period"] == "quarter"
 
     def test_update_nonexistent_goal(self, client):
         """PUT /api/goals/<id> returns 404 for nonexistent goal."""
@@ -367,7 +561,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -382,7 +576,7 @@ class TestGoalCRUD:
             "/api/goals",
             json={
                 "name": "Test Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 50000,
             },
         )
@@ -416,7 +610,7 @@ class TestGoalProgress:
             "/api/goals",
             json={
                 "name": "Inactive Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
                 "is_active": False,
             },
@@ -426,13 +620,13 @@ class TestGoalProgress:
         assert response.status_code == 200
         assert response.json == []
 
-    def test_progress_net_worth_no_snapshot(self, client):
-        """GET /api/goals/progress with net_worth goal but no snapshots."""
+    def test_progress_net_worth_target_no_snapshot(self, client):
+        """GET /api/goals/progress with net_worth_target but no snapshots."""
         client.post(
             "/api/goals",
             json={
                 "name": "100k Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
@@ -448,9 +642,8 @@ class TestGoalProgress:
         assert progress["is_achieved"] is False
         assert progress["details"]["latest_month"] is None
 
-    def test_progress_net_worth_with_snapshot(self, client):
-        """GET /api/goals/progress with net_worth goal and snapshot data."""
-        # First, seed categories and create a snapshot
+    def test_progress_net_worth_target_with_snapshot(self, client):
+        """GET /api/goals/progress with net_worth_target and snapshot data."""
         client.post("/api/networth/categories/seed")
 
         # Create a snapshot with net worth of 50000
@@ -466,12 +659,11 @@ class TestGoalProgress:
             },
         )
 
-        # Create goal
         client.post(
             "/api/goals",
             json={
                 "name": "100k Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
@@ -487,11 +679,10 @@ class TestGoalProgress:
         assert progress["is_achieved"] is False
         assert progress["details"]["latest_month"] == "2025-01"
 
-    def test_progress_net_worth_achieved(self, client):
-        """GET /api/goals/progress when net_worth goal is achieved."""
+    def test_progress_net_worth_target_achieved(self, client):
+        """GET /api/goals/progress when net_worth_target is achieved."""
         client.post("/api/networth/categories/seed")
 
-        # Create a snapshot with net worth of 120000
         client.post(
             "/api/networth",
             json={
@@ -507,7 +698,7 @@ class TestGoalProgress:
             "/api/goals",
             json={
                 "name": "100k Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
@@ -519,14 +710,73 @@ class TestGoalProgress:
         assert progress["progress_percentage"] == 100.0
         assert progress["is_achieved"] is True
 
-    def test_progress_savings_rate_no_income(self, client):
-        """GET /api/goals/progress with savings_rate but no income."""
+    def test_progress_category_target_no_snapshot(self, client):
+        """GET /api/goals/progress with category_target but no snapshots."""
+        client.post("/api/networth/categories/seed")
+
         client.post(
             "/api/goals",
             json={
-                "name": "30% Savings Rate",
-                "goal_type": "savings_rate",
-                "target_value": 30,
+                "name": "50k Emergency Fund",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 1,
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        assert progress["current_value"] == 0
+        assert progress["target_value"] == 50000
+        assert progress["progress_percentage"] == 0
+        assert progress["is_achieved"] is False
+
+    def test_progress_category_target_with_snapshot(self, client):
+        """GET /api/goals/progress with category_target and snapshot."""
+        client.post("/api/networth/categories/seed")
+
+        # Create snapshot with category 1 having 25000
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 1, "amount": 25000},
+                ],
+            },
+        )
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "50k Emergency Fund",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 1,
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        assert progress["current_value"] == 25000
+        assert progress["target_value"] == 50000
+        assert progress["progress_percentage"] == 50.0
+        assert progress["is_achieved"] is False
+        assert progress["details"]["category_name"] is not None
+
+    def test_progress_category_monthly_no_snapshots(self, client):
+        """GET /api/goals/progress with category_monthly but no snapshots."""
+        client.post("/api/networth/categories/seed")
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Save 500/month",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
 
@@ -536,112 +786,254 @@ class TestGoalProgress:
         assert progress["progress_percentage"] == 0
         assert progress["is_achieved"] is False
 
-    def test_progress_savings_rate_with_income(self, client):
-        """GET /api/goals/progress with savings_rate goal."""
-        # Create income
+    def test_progress_category_monthly_with_change(self, client):
+        """GET /api/goals/progress tracks monthly change in category."""
+        client.post("/api/networth/categories/seed")
+
+        # Create two snapshots to calculate change
+        # Older snapshot
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10000}],
+            },
+        )
+
+        # Newer snapshot with 600 increase
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10600}],
+            },
+        )
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Save 500/month",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "month",
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        # Change from 10000 to 10600 = 600, which exceeds target of 500
+        assert progress["current_value"] == 600
+        assert progress["target_value"] == 500
+        assert progress["progress_percentage"] == 100.0
+        assert progress["is_achieved"] is True
+        assert progress["details"]["tracking_period"] == "month"
+        assert progress["details"]["months_tracked"] == 1
+
+    def test_progress_category_monthly_quarter_average(self, client):
+        """GET /api/goals/progress averages monthly changes over quarter."""
+        client.post("/api/networth/categories/seed")
+
+        # Create 4 snapshots for a quarter
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10600}],  # +600
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 3,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 11000}],  # +400
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 4,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 11500}],  # +500
+            },
+        )
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Save 500/month",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "quarter",
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        # Average: (500 + 400 + 600) / 3 = 500
+        assert progress["current_value"] == 500
+        assert progress["target_value"] == 500
+        assert progress["is_achieved"] is True
+        assert progress["details"]["months_tracked"] == 3
+
+    def test_progress_category_rate_no_income(self, client):
+        """GET /api/goals/progress with category_rate but no income."""
+        client.post("/api/networth/categories/seed")
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "30% Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "category_id": 1,
+                "tracking_period": "month",
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        # No income means 0 rate
+        assert progress["current_value"] == 0
+        assert progress["progress_percentage"] == 0
+        assert progress["is_achieved"] is False
+
+    def test_progress_category_rate_with_income(self, client):
+        """GET /api/goals/progress calculates rate as % of income."""
+        client.post("/api/networth/categories/seed")
+
+        # Create income: 5000 gross, 25% tax = 3750 net
         client.post(
             "/api/income",
             json={"name": "Salary", "gross_amount": 5000, "is_taxed": True},
         )
 
-        # Create savings goal expense (is_savings_goal=True)
+        # Create snapshots showing 1000/month savings
         client.post(
-            "/api/expenses",
-            json={"name": "Emergency Fund", "amount": 500, "is_savings_goal": True},
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 11000}],  # +1000
+            },
         )
 
-        # Create savings rate goal
         client.post(
             "/api/goals",
             json={
-                "name": "20% Savings Rate",
-                "goal_type": "savings_rate",
-                "target_value": 20,
+                "name": "30% Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
 
         response = client.get("/api/goals/progress")
         progress = response.json[0]
-
-        # net_income = 5000 * 0.75 = 3750 (25% tax)
-        # savings_rate = 500 / 3750 * 100 = 13.33%
-        # progress = 13.33 / 20 * 100 = 66.67%
-        assert progress["current_value"] > 0
-        assert progress["target_value"] == 20
+        # 1000 / 3750 * 100 = 26.67%
+        # progress = 26.67 / 30 * 100 = 88.89%
+        assert 25 < progress["current_value"] < 28  # ~26.67%
+        assert progress["target_value"] == 30
         assert progress["is_achieved"] is False
         assert "net_income" in progress["details"]
-        assert "savings_amount" in progress["details"]
+        assert progress["details"]["net_income"] == 3750
 
-    def test_progress_monthly_savings_no_savings(self, client):
-        """GET /api/goals/progress with monthly_savings but no savings goals."""
+    def test_progress_category_rate_achieved(self, client):
+        """GET /api/goals/progress when category_rate is achieved."""
+        client.post("/api/networth/categories/seed")
+
+        # Create income: 5000 gross, 25% tax = 3750 net
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 5000, "is_taxed": True},
+        )
+
+        # Create snapshots showing 1500/month savings
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 10000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 11500}],  # +1500
+            },
+        )
+
         client.post(
             "/api/goals",
             json={
-                "name": "Save 500€",
-                "goal_type": "monthly_savings",
-                "target_value": 500,
+                "name": "30% Savings Rate",
+                "goal_type": "category_rate",
+                "target_value": 30,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
 
         response = client.get("/api/goals/progress")
         progress = response.json[0]
-        assert progress["current_value"] == 0
-        assert progress["progress_percentage"] == 0
-        assert progress["is_achieved"] is False
-
-    def test_progress_monthly_savings_with_savings(self, client):
-        """GET /api/goals/progress with monthly_savings goal."""
-        # Create savings goal expenses
-        client.post(
-            "/api/expenses",
-            json={"name": "Emergency Fund", "amount": 300, "is_savings_goal": True},
-        )
-        client.post(
-            "/api/expenses",
-            json={"name": "Vacation Fund", "amount": 200, "is_savings_goal": True},
-        )
-
-        # Create monthly savings goal
-        client.post(
-            "/api/goals",
-            json={
-                "name": "Save 500€",
-                "goal_type": "monthly_savings",
-                "target_value": 500,
-            },
-        )
-
-        response = client.get("/api/goals/progress")
-        progress = response.json[0]
-        assert progress["current_value"] == 500
-        assert progress["target_value"] == 500
-        assert progress["progress_percentage"] == 100.0
+        # 1500 / 3750 * 100 = 40%
+        assert progress["current_value"] == 40
         assert progress["is_achieved"] is True
 
     def test_progress_multiple_goals(self, client):
         """GET /api/goals/progress returns progress for all active goals."""
+        client.post("/api/networth/categories/seed")
+
         client.post(
             "/api/goals",
             json={
                 "name": "Net Worth Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
         client.post(
             "/api/goals",
             json={
-                "name": "Savings Rate Goal",
-                "goal_type": "savings_rate",
-                "target_value": 30,
+                "name": "Category Target",
+                "goal_type": "category_target",
+                "target_value": 50000,
+                "category_id": 1,
             },
         )
         client.post(
             "/api/goals",
             json={
-                "name": "Monthly Savings Goal",
-                "goal_type": "monthly_savings",
+                "name": "Monthly Savings",
+                "goal_type": "category_monthly",
                 "target_value": 500,
+                "category_id": 1,
+                "tracking_period": "month",
             },
         )
 
@@ -686,7 +1078,7 @@ class TestGoalProgress:
             "/api/goals",
             json={
                 "name": "100k Goal",
-                "goal_type": "net_worth",
+                "goal_type": "net_worth_target",
                 "target_value": 100000,
             },
         )
@@ -696,3 +1088,95 @@ class TestGoalProgress:
         # Should use June 2024 (50000), not January (30000)
         assert progress["current_value"] == 50000
         assert progress["details"]["latest_month"] == "2024-06"
+
+    def test_progress_liability_category_target(self, client):
+        """GET /api/goals/progress handles liability target correctly."""
+        client.post("/api/networth/categories/seed")
+
+        # Create snapshot with liability (category 11 = loans, negative value)
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": -15000}],
+            },
+        )
+
+        # Goal: Pay down loan to 10000
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Pay Down Loan",
+                "goal_type": "category_target",
+                "target_value": 10000,
+                "category_id": 11,
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        # For liability, we show absolute value
+        assert progress["current_value"] == 15000
+        assert progress["target_value"] == 10000
+
+    def test_progress_liability_monthly_paydown(self, client):
+        """GET /api/goals/progress tracks liability paydown correctly."""
+        client.post("/api/networth/categories/seed")
+
+        # Create snapshots showing loan paydown
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": -20000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": -19500}],  # Paid 500
+            },
+        )
+
+        # Goal: Pay 500/month toward loan
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Pay 500/month",
+                "goal_type": "category_monthly",
+                "target_value": 500,
+                "category_id": 11,
+                "tracking_period": "month",
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+        # For liability, decrease = positive progress
+        # -19500 - (-20000) = 500, flipped sign = 500
+        assert progress["current_value"] == 500
+        assert progress["is_achieved"] is True
+
+    def test_valid_tracking_periods(self, client):
+        """POST /api/goals accepts all valid tracking periods."""
+        client.post("/api/networth/categories/seed")
+
+        valid_periods = ["month", "quarter", "half_year", "year"]
+
+        for period in valid_periods:
+            response = client.post(
+                "/api/goals",
+                json={
+                    "name": f"Goal with {period}",
+                    "goal_type": "category_monthly",
+                    "target_value": 500,
+                    "category_id": 1,
+                    "tracking_period": period,
+                },
+            )
+            assert response.status_code == 201, f"Failed for period: {period}"
+            assert response.json["tracking_period"] == period
