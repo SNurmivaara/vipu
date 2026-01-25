@@ -257,8 +257,8 @@ class TestBudget:
         # Check totals
         totals = data["totals"]
 
-        # Gross income: 5000 + 500 + 200 = 5700
-        assert totals["gross_income"] == 5700.0
+        # Gross income: 5000 + 500 = 5500 (lunch benefit excluded as deduction)
+        assert totals["gross_income"] == 5500.0
 
         # Net income calculation:
         # Salary: 5000 * 0.75 = 3750
@@ -364,5 +364,6 @@ class TestNetIncomeCalculation:
         totals = response.json["totals"]
 
         # Net = -200 * 0.75 = -150 (deduction from pay)
-        assert totals["gross_income"] == 200.0
+        # Gross = 0 (deductions are excluded from gross income)
+        assert totals["gross_income"] == 0.0
         assert totals["net_income"] == -150.0
