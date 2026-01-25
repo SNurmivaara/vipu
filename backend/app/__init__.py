@@ -45,7 +45,16 @@ def create_app(config_class: type | None = None) -> APIFlask:
     # Use checkfirst=True to avoid race conditions with multiple workers
     Base.metadata.create_all(engine, checkfirst=True)
 
-    from app.routes import accounts, budget, expenses, health, income, seed, settings
+    from app.routes import (
+        accounts,
+        budget,
+        expenses,
+        health,
+        income,
+        networth,
+        seed,
+        settings,
+    )
 
     app.register_blueprint(health.bp)
     app.register_blueprint(budget.bp)
@@ -54,6 +63,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
     app.register_blueprint(expenses.bp)
     app.register_blueprint(settings.bp)
     app.register_blueprint(seed.bp)
+    app.register_blueprint(networth.bp)
 
     @app.teardown_appcontext
     def shutdown_session(exception: BaseException | None = None) -> None:

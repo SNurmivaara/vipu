@@ -1,7 +1,15 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, Numeric, String
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -136,4 +144,200 @@ class BudgetSettings(Base):
             "id": self.id,
             "tax_percentage": float(self.tax_percentage),
             "updated_at": self.updated_at.isoformat(),
+        }
+
+
+class NetWorthSnapshot(Base):
+    """Monthly net worth snapshot for tracking wealth over time."""
+
+    __tablename__ = "networth_snapshots"
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_networth_year_month"),
+        Index("ix_networth_year_month", "year", "month"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    # Assets (stored as positive values)
+    cash: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    savings: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    rent_account: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    crypto: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    house_worth: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    personal_investments: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    personal_bonds: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    company_investments: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    company_checkings: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+
+    # Liabilities (stored as negative values)
+    student_loan: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    credit_cards: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+
+    # Calculated fields (stored for historical record)
+    total_assets: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    total_liabilities: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    net_worth: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    change_from_previous: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    personal_wealth: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    company_wealth: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    total_investments: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    stocks_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0
+    )
+    crypto_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0
+    )
+    cash_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0)
+
+    def calculate_derived_fields(
+        self, previous_net_worth: Decimal | None = None
+    ) -> None:
+        """Calculate all derived fields from the input values.
+
+        SQLAlchemy column defaults don't apply pre-flush, so we handle None values.
+        """
+        zero = Decimal(0)
+        cash = self.cash if self.cash is not None else zero
+        savings = self.savings if self.savings is not None else zero
+        rent_account = self.rent_account if self.rent_account is not None else zero
+        crypto = self.crypto if self.crypto is not None else zero
+        house_worth = self.house_worth if self.house_worth is not None else zero
+        personal_investments = (
+            self.personal_investments if self.personal_investments is not None else zero
+        )
+        personal_bonds = (
+            self.personal_bonds if self.personal_bonds is not None else zero
+        )
+        company_investments = (
+            self.company_investments if self.company_investments is not None else zero
+        )
+        company_checkings = (
+            self.company_checkings if self.company_checkings is not None else zero
+        )
+        student_loan = self.student_loan if self.student_loan is not None else zero
+        credit_cards = self.credit_cards if self.credit_cards is not None else zero
+
+        # Total assets = sum of all asset fields
+        self.total_assets = (
+            cash
+            + savings
+            + rent_account
+            + crypto
+            + house_worth
+            + personal_investments
+            + personal_bonds
+            + company_investments
+            + company_checkings
+        )
+
+        # Total liabilities (student_loan and credit_cards are stored as negative)
+        self.total_liabilities = student_loan + credit_cards
+
+        # Net worth
+        self.net_worth = self.total_assets + self.total_liabilities
+
+        # Personal wealth (personal assets + liabilities)
+        self.personal_wealth = (
+            cash
+            + savings
+            + rent_account
+            + crypto
+            + personal_investments
+            + personal_bonds
+        ) + self.total_liabilities
+
+        # Company wealth
+        self.company_wealth = company_investments + company_checkings
+
+        # Total investments
+        self.total_investments = personal_investments + company_investments
+
+        # Percentage calculations (avoid division by zero)
+        if self.total_assets > 0:
+            self.stocks_pct = (self.total_investments / self.total_assets) * 100
+            self.crypto_pct = (crypto / self.total_assets) * 100
+            self.cash_pct = (
+                (cash + savings + company_checkings) / self.total_assets
+            ) * 100
+        else:
+            self.stocks_pct = zero
+            self.crypto_pct = zero
+            self.cash_pct = zero
+
+        # Change from previous month
+        if previous_net_worth is not None:
+            self.change_from_previous = self.net_worth - previous_net_worth
+        else:
+            self.change_from_previous = zero
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+
+        def to_float(val: Decimal | None) -> float:
+            return float(val) if val is not None else 0.0
+
+        return {
+            "id": self.id,
+            "month": self.month,
+            "year": self.year,
+            "timestamp": self.timestamp.isoformat(),
+            # Assets
+            "cash": to_float(self.cash),
+            "savings": to_float(self.savings),
+            "rent_account": to_float(self.rent_account),
+            "crypto": to_float(self.crypto),
+            "house_worth": to_float(self.house_worth),
+            "personal_investments": to_float(self.personal_investments),
+            "personal_bonds": to_float(self.personal_bonds),
+            "company_investments": to_float(self.company_investments),
+            "company_checkings": to_float(self.company_checkings),
+            # Liabilities
+            "student_loan": to_float(self.student_loan),
+            "credit_cards": to_float(self.credit_cards),
+            # Calculated fields
+            "total_assets": to_float(self.total_assets),
+            "total_liabilities": to_float(self.total_liabilities),
+            "net_worth": to_float(self.net_worth),
+            "change_from_previous": to_float(self.change_from_previous),
+            "personal_wealth": to_float(self.personal_wealth),
+            "company_wealth": to_float(self.company_wealth),
+            "total_investments": to_float(self.total_investments),
+            "stocks_pct": to_float(self.stocks_pct),
+            "crypto_pct": to_float(self.crypto_pct),
+            "cash_pct": to_float(self.cash_pct),
         }
