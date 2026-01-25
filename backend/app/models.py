@@ -95,7 +95,9 @@ class ExpenseItem(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
-    is_savings_goal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_savings_goal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
