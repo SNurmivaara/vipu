@@ -1,6 +1,6 @@
 from typing import Any
 
-from flask import Flask
+from apiflask import APIFlask
 from flask_cors import CORS
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session as SQLAlchemySession
@@ -13,11 +13,20 @@ engine: Any = None
 Session: scoped_session[SQLAlchemySession] | None = None
 
 
-def create_app(config_class: type | None = None) -> Flask:
+def create_app(config_class: type | None = None) -> APIFlask:
     """Create and configure the Flask application."""
     global engine, Session
 
-    app = Flask(__name__)
+    app = APIFlask(
+        __name__,
+        title="Vipu API",
+        version="0.1.0",
+        docs_ui="redoc",
+    )
+    app.config["DESCRIPTION"] = "Personal finance tracker API"
+    app.config["SERVERS"] = [
+        {"name": "Local", "url": "http://localhost:5000"},
+    ]
 
     if config_class is None:
         config_class = get_config()

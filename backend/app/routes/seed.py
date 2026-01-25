@@ -1,16 +1,20 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify
+from apiflask import APIBlueprint
+from flask import Response, jsonify
 
 from app import get_session
 from app.models import Account, BudgetSettings, ExpenseItem, IncomeItem
 
-bp = Blueprint("seed", __name__)
+bp = APIBlueprint("seed", __name__, tag="Seed")
 
 
-@bp.route("/api/seed", methods=["POST"])
+@bp.post("/api/seed")
 def seed_data() -> Response:
-    """Seed example data for demos/testing."""
+    """Seed example data for demos/testing.
+
+    Clears all existing data and creates example accounts, income, and expenses.
+    """
     session = get_session()
 
     # Clear existing data

@@ -1,0 +1,483 @@
+{
+  "info": {
+    "description": "Personal finance tracker API",
+    "title": "Vipu API",
+    "version": "0.1.0"
+  },
+  "tags": [
+    {
+      "name": "Health"
+    },
+    {
+      "name": "Budget"
+    },
+    {
+      "name": "Accounts"
+    },
+    {
+      "name": "Income"
+    },
+    {
+      "name": "Expenses"
+    },
+    {
+      "name": "Settings"
+    },
+    {
+      "name": "Seed"
+    }
+  ],
+  "servers": [
+    {
+      "name": "Local",
+      "url": "http://localhost:5000"
+    }
+  ],
+  "paths": {
+    "/api/seed": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Seed"
+        ],
+        "summary": "Seed example data for demos/testing.",
+        "description": "Clears all existing data and creates example accounts, income, and expenses."
+      }
+    },
+    "/api/health": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check endpoint."
+      }
+    },
+    "/api/income": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Income"
+        ],
+        "summary": "List all income items."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Income"
+        ],
+        "summary": "Create a new income item.",
+        "description": "Requires name and gross_amount. Optional: is_taxed (default true), tax_percentage."
+      }
+    },
+    "/api/accounts": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "List all accounts."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Create a new account.",
+        "description": "Requires name. Optional: balance (default 0), is_credit (default false)."
+      }
+    },
+    "/api/expenses": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "summary": "List all expense items."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "summary": "Create a new expense item.",
+        "description": "Requires name and amount."
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get current budget settings."
+      },
+      "put": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update budget settings.",
+        "description": "Accepts tax_percentage (0-100)."
+      }
+    },
+    "/api/budget/current": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          }
+        },
+        "tags": [
+          "Budget"
+        ],
+        "summary": "Get current budget state with calculated totals.",
+        "description": "Returns all income, accounts, expenses, settings, and computed totals."
+      }
+    },
+    "/api/income/{income_id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "income_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Income"
+        ],
+        "summary": "Update an existing income item."
+      },
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "income_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Income"
+        ],
+        "summary": "Delete an income item."
+      }
+    },
+    "/api/accounts/{account_id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Update an existing account."
+      },
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Accounts"
+        ],
+        "summary": "Delete an account."
+      }
+    },
+    "/api/expenses/{expense_id}": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "expense_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "summary": "Update an existing expense item."
+      },
+      "delete": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "expense_id",
+            "schema": {
+              "type": "integer"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPError"
+                }
+              }
+            },
+            "description": "Not found"
+          }
+        },
+        "tags": [
+          "Expenses"
+        ],
+        "summary": "Delete an expense item."
+      }
+    }
+  },
+  "openapi": "3.0.3",
+  "components": {
+    "schemas": {
+      "HTTPError": {
+        "properties": {
+          "detail": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  }
+}

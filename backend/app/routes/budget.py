@@ -1,11 +1,12 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify
+from apiflask import APIBlueprint
+from flask import Response, jsonify
 
 from app import get_session
 from app.models import Account, BudgetSettings, ExpenseItem, IncomeItem
 
-bp = Blueprint("budget", __name__)
+bp = APIBlueprint("budget", __name__, tag="Budget")
 
 
 def calculate_net_income(
@@ -18,9 +19,12 @@ def calculate_net_income(
     return total
 
 
-@bp.route("/api/budget/current", methods=["GET"])
+@bp.get("/api/budget/current")
 def get_current_budget() -> Response:
-    """Get current budget state with calculated totals."""
+    """Get current budget state with calculated totals.
+
+    Returns all income, accounts, expenses, settings, and computed totals.
+    """
     session = get_session()
 
     # Get or create settings
