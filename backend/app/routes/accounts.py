@@ -1,14 +1,15 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify, request
+from apiflask import APIBlueprint
+from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import Account
 
-bp = Blueprint("accounts", __name__)
+bp = APIBlueprint("accounts", __name__, tag="Accounts")
 
 
-@bp.route("/api/accounts", methods=["GET"])
+@bp.get("/api/accounts")
 def list_accounts() -> Response:
     """List all accounts."""
     session = get_session()
@@ -16,9 +17,12 @@ def list_accounts() -> Response:
     return jsonify([a.to_dict() for a in accounts])
 
 
-@bp.route("/api/accounts", methods=["POST"])
+@bp.post("/api/accounts")
 def create_account() -> Response | tuple[Response, int]:
-    """Create a new account."""
+    """Create a new account.
+
+    Requires name. Optional: balance (default 0), is_credit (default false).
+    """
     session = get_session()
     data = request.get_json()
 
@@ -39,7 +43,7 @@ def create_account() -> Response | tuple[Response, int]:
     return jsonify(account.to_dict()), 201
 
 
-@bp.route("/api/accounts/<int:account_id>", methods=["PUT"])
+@bp.put("/api/accounts/<int:account_id>")
 def update_account(account_id: int) -> Response | tuple[Response, int]:
     """Update an existing account."""
     session = get_session()
@@ -63,7 +67,7 @@ def update_account(account_id: int) -> Response | tuple[Response, int]:
     return jsonify(account.to_dict())
 
 
-@bp.route("/api/accounts/<int:account_id>", methods=["DELETE"])
+@bp.delete("/api/accounts/<int:account_id>")
 def delete_account(account_id: int) -> tuple[Response, int]:
     """Delete an account."""
     session = get_session()

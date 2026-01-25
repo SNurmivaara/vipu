@@ -1,14 +1,15 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify, request
+from apiflask import APIBlueprint
+from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import ExpenseItem
 
-bp = Blueprint("expenses", __name__)
+bp = APIBlueprint("expenses", __name__, tag="Expenses")
 
 
-@bp.route("/api/expenses", methods=["GET"])
+@bp.get("/api/expenses")
 def list_expenses() -> Response:
     """List all expense items."""
     session = get_session()
@@ -16,9 +17,12 @@ def list_expenses() -> Response:
     return jsonify([e.to_dict() for e in items])
 
 
-@bp.route("/api/expenses", methods=["POST"])
+@bp.post("/api/expenses")
 def create_expense() -> Response | tuple[Response, int]:
-    """Create a new expense item."""
+    """Create a new expense item.
+
+    Requires name and amount.
+    """
     session = get_session()
     data = request.get_json()
 
@@ -41,7 +45,7 @@ def create_expense() -> Response | tuple[Response, int]:
     return jsonify(item.to_dict()), 201
 
 
-@bp.route("/api/expenses/<int:expense_id>", methods=["PUT"])
+@bp.put("/api/expenses/<int:expense_id>")
 def update_expense(expense_id: int) -> Response | tuple[Response, int]:
     """Update an existing expense item."""
     session = get_session()
@@ -63,7 +67,7 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
     return jsonify(item.to_dict())
 
 
-@bp.route("/api/expenses/<int:expense_id>", methods=["DELETE"])
+@bp.delete("/api/expenses/<int:expense_id>")
 def delete_expense(expense_id: int) -> tuple[Response, int]:
     """Delete an expense item."""
     session = get_session()

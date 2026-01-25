@@ -1,9 +1,10 @@
-from flask import Blueprint, Response, jsonify
+from apiflask import APIBlueprint
+from flask import Response, jsonify
 
-bp = Blueprint("health", __name__)
+bp = APIBlueprint("health", __name__, tag="Health")
 
 
-@bp.route("/api/health", methods=["GET"])
+@bp.get("/api/health")
 def health_check() -> Response:
     """Health check endpoint."""
     return jsonify({"status": "ok"})

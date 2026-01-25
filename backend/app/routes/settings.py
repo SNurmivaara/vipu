@@ -1,11 +1,12 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify, request
+from apiflask import APIBlueprint
+from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import BudgetSettings
 
-bp = Blueprint("settings", __name__)
+bp = APIBlueprint("settings", __name__, tag="Settings")
 
 
 def get_or_create_settings() -> BudgetSettings:
@@ -19,16 +20,19 @@ def get_or_create_settings() -> BudgetSettings:
     return settings
 
 
-@bp.route("/api/settings", methods=["GET"])
+@bp.get("/api/settings")
 def get_settings() -> Response:
     """Get current budget settings."""
     settings = get_or_create_settings()
     return jsonify(settings.to_dict())
 
 
-@bp.route("/api/settings", methods=["PUT"])
+@bp.put("/api/settings")
 def update_settings() -> Response | tuple[Response, int]:
-    """Update budget settings."""
+    """Update budget settings.
+
+    Accepts tax_percentage (0-100).
+    """
     session = get_session()
     data = request.get_json()
 

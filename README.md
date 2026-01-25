@@ -69,50 +69,9 @@ curl http://localhost:5000/api/budget/current
 
 ## API Documentation
 
-### Health
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Health check |
+Full API documentation is available at **[snurmivaara.github.io/vipu](https://snurmivaara.github.io/vipu/)**.
 
-### Budget
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/budget/current` | Get complete budget with calculated totals |
-
-### Settings
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/settings` | Get current settings (tax percentage) |
-| PUT | `/api/settings` | Update settings |
-
-### Accounts
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/accounts` | List all accounts |
-| POST | `/api/accounts` | Create new account |
-| PUT | `/api/accounts/{id}` | Update account |
-| DELETE | `/api/accounts/{id}` | Delete account |
-
-### Income
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/income` | List all income items |
-| POST | `/api/income` | Create new income item |
-| PUT | `/api/income/{id}` | Update income item |
-| DELETE | `/api/income/{id}` | Delete income item |
-
-### Expenses
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/expenses` | List all expenses |
-| POST | `/api/expenses` | Create new expense |
-| PUT | `/api/expenses/{id}` | Update expense |
-| DELETE | `/api/expenses/{id}` | Delete expense |
-
-### Seed
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/seed` | Seed database with example data |
+When running locally, interactive docs are also available at `http://localhost:5000/docs`.
 
 ## Development Setup
 

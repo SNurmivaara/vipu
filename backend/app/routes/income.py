@@ -1,14 +1,15 @@
 from decimal import Decimal
 
-from flask import Blueprint, Response, jsonify, request
+from apiflask import APIBlueprint
+from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import IncomeItem
 
-bp = Blueprint("income", __name__)
+bp = APIBlueprint("income", __name__, tag="Income")
 
 
-@bp.route("/api/income", methods=["GET"])
+@bp.get("/api/income")
 def list_income() -> Response:
     """List all income items."""
     session = get_session()
@@ -16,9 +17,12 @@ def list_income() -> Response:
     return jsonify([i.to_dict() for i in items])
 
 
-@bp.route("/api/income", methods=["POST"])
+@bp.post("/api/income")
 def create_income() -> Response | tuple[Response, int]:
-    """Create a new income item."""
+    """Create a new income item.
+
+    Requires name and gross_amount. Optional: is_taxed (default true), tax_percentage.
+    """
     session = get_session()
     data = request.get_json()
 
@@ -47,7 +51,7 @@ def create_income() -> Response | tuple[Response, int]:
     return jsonify(item.to_dict()), 201
 
 
-@bp.route("/api/income/<int:income_id>", methods=["PUT"])
+@bp.put("/api/income/<int:income_id>")
 def update_income(income_id: int) -> Response | tuple[Response, int]:
     """Update an existing income item."""
     session = get_session()
@@ -74,7 +78,7 @@ def update_income(income_id: int) -> Response | tuple[Response, int]:
     return jsonify(item.to_dict())
 
 
-@bp.route("/api/income/<int:income_id>", methods=["DELETE"])
+@bp.delete("/api/income/<int:income_id>")
 def delete_income(income_id: int) -> tuple[Response, int]:
     """Delete an income item."""
     session = get_session()
