@@ -72,6 +72,21 @@ curl -X POST http://localhost:5000/api/seed
 curl http://localhost:5000/api/budget/current
 ```
 
+## Production Deployment
+
+For homelab or production deployments, pre-built images are published to GitHub Container Registry (GHCR) via the release workflow.
+
+- GHCR images (built on tag push):
+	- `ghcr.io/snurmivaara/vipu-backend:TAG` and `ghcr.io/snurmivaara/vipu-backend:latest`
+	- `ghcr.io/snurmivaara/vipu-frontend:TAG` and `ghcr.io/snurmivaara/vipu-frontend:latest`
+
+- Quick tag to create a release (triggers the GHCR build):
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## API Documentation
 
 Full API documentation is available at **[snurmivaara.github.io/vipu](https://snurmivaara.github.io/vipu/)**.
@@ -205,8 +220,9 @@ vipu/
 - [x] Frontend (Weekly Budget)
 - [x] Net Worth tracking backend
 - [x] Net Worth frontend with charts
-- [ ] Goals and targets
-- [ ] Data import/export
+- [x] Goals and targets
+- [x] Data import/export
+- [x] Release 1.0 to GHCR
 
 ## License
 
