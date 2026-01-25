@@ -4,7 +4,17 @@ from apiflask import APIBlueprint
 from flask import Response, jsonify, request
 
 from app import get_session
-from app.models import Account, BudgetSettings, ExpenseItem, IncomeItem
+from app.models import (
+    Account,
+    BudgetSettings,
+    ExpenseItem,
+    Goal,
+    IncomeItem,
+    NetWorthCategory,
+    NetWorthEntry,
+    NetWorthGroup,
+    NetWorthSnapshot,
+)
 
 bp = APIBlueprint("seed", __name__, tag="Data Management")
 
@@ -123,19 +133,39 @@ def reset_data() -> Response:
 
 @bp.get("/api/export")
 def export_data() -> Response:
-    """Export all budget data as JSON.
+    """Export all data as JSON.
 
-    Returns all accounts, income items, expenses, and settings for backup/transfer.
+    Returns all budget data, net worth data, and goals for backup/transfer.
+    Version 2 includes net worth groups, categories, snapshots, and goals.
     """
     session = get_session()
 
+    # Budget data
     settings = session.query(BudgetSettings).first()
     accounts = session.query(Account).all()
     income_items = session.query(IncomeItem).all()
     expenses = session.query(ExpenseItem).all()
 
+    # Net worth data
+    groups = session.query(NetWorthGroup).order_by(NetWorthGroup.display_order).all()
+    categories = (
+        session.query(NetWorthCategory).order_by(NetWorthCategory.display_order).all()
+    )
+    snapshots = (
+        session.query(NetWorthSnapshot)
+        .order_by(NetWorthSnapshot.year, NetWorthSnapshot.month)
+        .all()
+    )
+    goals = session.query(Goal).all()
+
+    # Build group name lookup for categories
+    group_lookup = {g.id: g.name for g in groups}
+    # Build category name lookup for snapshots and goals
+    category_lookup = {c.id: c.name for c in categories}
+
     export = {
-        "version": 1,
+        "version": 2,
+        # Budget data
         "settings": {
             "tax_percentage": float(settings.tax_percentage) if settings else 25.0,
         },
@@ -167,6 +197,53 @@ def export_data() -> Response:
             }
             for e in expenses
         ],
+        # Net worth data
+        "networth_groups": [
+            {
+                "name": g.name,
+                "group_type": g.group_type,
+                "color": g.color,
+                "display_order": g.display_order,
+            }
+            for g in groups
+        ],
+        "networth_categories": [
+            {
+                "name": c.name,
+                "group_name": group_lookup.get(c.group_id, ""),
+                "is_personal": c.is_personal,
+                "display_order": c.display_order,
+            }
+            for c in categories
+        ],
+        "networth_snapshots": [
+            {
+                "month": s.month,
+                "year": s.year,
+                "entries": [
+                    {
+                        "category_name": category_lookup.get(e.category_id, ""),
+                        "amount": float(e.amount) if e.amount else 0,
+                    }
+                    for e in s.entries
+                ],
+            }
+            for s in snapshots
+        ],
+        "goals": [
+            {
+                "name": g.name,
+                "goal_type": g.goal_type,
+                "target_value": float(g.target_value),
+                "category_name": (
+                    category_lookup.get(g.category_id, "") if g.category_id else None
+                ),
+                "tracking_period": g.tracking_period,
+                "target_date": g.target_date.isoformat() if g.target_date else None,
+                "is_active": g.is_active,
+            }
+            for g in goals
+        ],
     }
 
     return jsonify(export)
@@ -174,9 +251,10 @@ def export_data() -> Response:
 
 @bp.post("/api/import")
 def import_data() -> Response | tuple[Response, int]:
-    """Import budget data from JSON.
+    """Import data from JSON.
 
     Replaces all existing data with the imported data.
+    Supports version 1 (budget only) and version 2 (full data with net worth).
     """
     session = get_session()
     data = request.get_json()
@@ -186,14 +264,22 @@ def import_data() -> Response | tuple[Response, int]:
 
     # Validate version
     version = data.get("version", 1)
-    if version != 1:
+    if version not in (1, 2):
         return jsonify({"error": f"Unsupported export version: {version}"}), 400
 
-    # Clear existing data
+    # Clear existing budget data
     session.query(Account).delete()
     session.query(IncomeItem).delete()
     session.query(ExpenseItem).delete()
     session.query(BudgetSettings).delete()
+
+    # Clear net worth data if version 2
+    if version == 2:
+        session.query(Goal).delete()
+        session.query(NetWorthEntry).delete()
+        session.query(NetWorthSnapshot).delete()
+        session.query(NetWorthCategory).delete()
+        session.query(NetWorthGroup).delete()
 
     # Import settings
     settings_data = data.get("settings", {})
@@ -238,15 +324,128 @@ def import_data() -> Response | tuple[Response, int]:
         )
         session.add(expense)
 
+    counts: dict = {
+        "accounts": len(accounts_data),
+        "income": len(income_data),
+        "expenses": len(expenses_data),
+    }
+
+    # Import net worth data if version 2
+    if version == 2:
+        # Import groups first
+        groups_data = data.get("networth_groups", [])
+        group_name_to_id: dict[str, int] = {}
+
+        for g in groups_data:
+            group = NetWorthGroup(
+                name=g["name"],
+                group_type=g["group_type"],
+                color=g.get("color", "#6b7280"),
+                display_order=g.get("display_order", 0),
+            )
+            session.add(group)
+            session.flush()  # Get the ID
+            group_name_to_id[g["name"]] = group.id
+
+        # Import categories
+        categories_data = data.get("networth_categories", [])
+        category_name_to_id: dict[str, int] = {}
+
+        for c in categories_data:
+            group_id = group_name_to_id.get(c.get("group_name", ""))
+            if not group_id:
+                continue  # Skip if group not found
+
+            category = NetWorthCategory(
+                name=c["name"],
+                group_id=group_id,
+                is_personal=c.get("is_personal", True),
+                display_order=c.get("display_order", 0),
+            )
+            session.add(category)
+            session.flush()  # Get the ID
+            category_name_to_id[c["name"]] = category.id
+
+        # Import snapshots with entries
+        snapshots_data = data.get("networth_snapshots", [])
+        for s in snapshots_data:
+            snapshot = NetWorthSnapshot(
+                month=s["month"],
+                year=s["year"],
+            )
+            session.add(snapshot)
+            session.flush()  # Get the ID
+
+            # Add entries
+            for entry_data in s.get("entries", []):
+                category_id = category_name_to_id.get(entry_data.get("category_name"))
+                if not category_id:
+                    continue  # Skip if category not found
+
+                entry = NetWorthEntry(
+                    snapshot_id=snapshot.id,
+                    category_id=category_id,
+                    amount=Decimal(str(entry_data.get("amount", 0))),
+                )
+                session.add(entry)
+
+            # Calculate snapshot totals
+            snapshot.calculate_totals()
+
+        # Import goals
+        goals_data = data.get("goals", [])
+        for g in goals_data:
+            category_id = None
+            if g.get("category_name"):
+                category_id = category_name_to_id.get(g["category_name"])
+
+            from datetime import datetime
+
+            target_date = None
+            if g.get("target_date"):
+                target_date = datetime.fromisoformat(
+                    g["target_date"].replace("Z", "+00:00")
+                )
+
+            goal = Goal(
+                name=g["name"],
+                goal_type=g["goal_type"],
+                target_value=Decimal(str(g["target_value"])),
+                category_id=category_id,
+                tracking_period=g.get("tracking_period"),
+                target_date=target_date,
+                is_active=g.get("is_active", True),
+            )
+            session.add(goal)
+
+        counts["networth_groups"] = len(groups_data)
+        counts["networth_categories"] = len(categories_data)
+        counts["networth_snapshots"] = len(snapshots_data)
+        counts["goals"] = len(goals_data)
+
     session.commit()
 
-    return jsonify(
+    return jsonify({"message": "Data imported successfully", "counts": counts})
+
+
+@bp.get("/api/budget/snapshot-prefill")
+def get_snapshot_prefill() -> Response:
+    """Get budget account balances formatted for snapshot prefill.
+
+    Returns accounts with their balances, suitable for pre-filling a net worth
+    snapshot form. Credit cards are returned as liabilities (positive amounts).
+    """
+    session = get_session()
+
+    accounts = session.query(Account).all()
+
+    prefill_items = [
         {
-            "message": "Data imported successfully",
-            "counts": {
-                "accounts": len(accounts_data),
-                "income": len(income_data),
-                "expenses": len(expenses_data),
-            },
+            "name": a.name,
+            "amount": abs(float(a.balance)),
+            "is_liability": a.is_credit,
         }
-    )
+        for a in accounts
+    ]
+
+    return jsonify(prefill_items)

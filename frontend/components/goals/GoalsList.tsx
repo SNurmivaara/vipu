@@ -43,6 +43,21 @@ function formatTargetDate(dateString: string | null): string | null {
   });
 }
 
+function formatMonthsRemaining(months: number | null): string | null {
+  if (months === null) return null;
+  if (months === 0) return "Now";
+  if (months === 1) return "1 month";
+  if (months < 12) return `${months} months`;
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  if (remainingMonths === 0) {
+    return years === 1 ? "1 year" : `${years} years`;
+  }
+  return years === 1
+    ? `1 year ${remainingMonths}mo`
+    : `${years}y ${remainingMonths}mo`;
+}
+
 export function GoalsList({ goals }: GoalsListProps) {
   const [editingGoal, setEditingGoal] = useState<GoalProgress | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<{
@@ -156,8 +171,10 @@ function GoalCard({ item, onEdit, onDelete }: GoalCardProps) {
     progress_percentage,
     is_achieved,
     details,
+    forecast,
   } = item;
   const targetDate = formatTargetDate(goal.target_date);
+  const hasTargetDate = goal.target_date !== null;
 
   // Build subtitle showing category and/or tracking period
   const subtitleParts: string[] = [];
@@ -280,13 +297,72 @@ function GoalCard({ item, onEdit, onDelete }: GoalCardProps) {
         </span>
       </div>
 
+      {/* Forecast info for target-based goals */}
+      {forecast && !is_achieved && (
+        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            {/* On-track indicator */}
+            {hasTargetDate && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
+                  forecast.on_track
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300"
+                )}
+              >
+                {forecast.on_track ? (
+                  <>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    On track
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Behind
+                  </>
+                )}
+              </span>
+            )}
+
+            {/* Projected completion */}
+            {forecast.months_until_target !== null && (
+              <span className="text-gray-500 dark:text-gray-400">
+                ETA: {formatMonthsRemaining(forecast.months_until_target)}
+              </span>
+            )}
+            {forecast.months_until_target === null && forecast.current_monthly_change <= 0 && (
+              <span className="text-gray-500 dark:text-gray-400">
+                Not on track to reach goal
+              </span>
+            )}
+          </div>
+
+          {/* Required vs current rate */}
+          {hasTargetDate && !forecast.on_track && forecast.required_monthly_change > 0 && (
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>
+                Need {formatCurrency(forecast.required_monthly_change)}/mo
+                {forecast.current_monthly_change > 0 && (
+                  <span> (current: {formatCurrency(forecast.current_monthly_change)}/mo)</span>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Details */}
-      {goal.goal_type === "net_worth_target" && details.latest_month && (
+      {goal.goal_type === "net_worth_target" && details.latest_month && !forecast && (
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           Based on {details.latest_month} snapshot
         </p>
       )}
-      {goal.goal_type === "category_target" && details.latest_month && (
+      {goal.goal_type === "category_target" && details.latest_month && !forecast && (
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
           Based on {details.latest_month} snapshot
         </p>

@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NetWorthCategory, NetWorthSnapshot, NetWorthGroup } from "@/types";
-import { createSnapshot, updateSnapshot } from "@/lib/api";
+import { createSnapshot, updateSnapshot, getSnapshotPrefill } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
-import { useNetWorthGroups } from "@/hooks/useNetWorth";
+import { useNetWorthGroups, useNetWorthSnapshots } from "@/hooks/useNetWorth";
 
-interface SnapshotFormProps {
+export interface SnapshotFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   categories: NetWorthCategory[];
+  /** For editing an existing snapshot from the list */
   existingSnapshot?: NetWorthSnapshot | null;
 }
 
@@ -39,18 +40,34 @@ export function SnapshotForm({
   existingSnapshot,
 }: SnapshotFormProps) {
   const { data: groups = [] } = useNetWorthGroups();
+  const { data: allSnapshots = [] } = useNetWorthSnapshots();
   const now = useMemo(() => new Date(), []);
   const [month, setMonth] = useState(existingSnapshot?.month ?? now.getMonth() + 1);
   const [year, setYear] = useState(existingSnapshot?.year ?? now.getFullYear());
   const [amounts, setAmounts] = useState<Record<number, number>>({});
+  const [isPrefilling, setIsPrefilling] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const isEditing = !!existingSnapshot;
 
+  // Check if editing from snapshot list (fixed month/year)
+  const isEditingFromList = !!existingSnapshot;
+
+  // Find existing snapshot for current month/year selection
+  const existingSnapshotForSelection = useMemo(() => {
+    if (isEditingFromList) return null;
+    return allSnapshots.find((s) => s.month === month && s.year === year) ?? null;
+  }, [allSnapshots, month, year, isEditingFromList]);
+
+  // Determine if we're updating (either from list or updating existing for selected month)
+  const isUpdating = isEditingFromList || !!existingSnapshotForSelection;
+  const snapshotToUpdate = isEditingFromList ? existingSnapshot : existingSnapshotForSelection;
+
+  // Reset form when opening
   useEffect(() => {
     if (open) {
       if (existingSnapshot) {
+        // Editing from snapshot list
         setMonth(existingSnapshot.month);
         setYear(existingSnapshot.year);
         const entryAmounts: Record<number, number> = {};
@@ -59,6 +76,7 @@ export function SnapshotForm({
         });
         setAmounts(entryAmounts);
       } else {
+        // New snapshot - start with current month
         setMonth(now.getMonth() + 1);
         setYear(now.getFullYear());
         setAmounts({});
@@ -66,28 +84,84 @@ export function SnapshotForm({
     }
   }, [open, existingSnapshot, now]);
 
+  // When month/year changes, load existing snapshot data if available
+  useEffect(() => {
+    if (!open || isEditingFromList) return;
+
+    if (existingSnapshotForSelection) {
+      const entryAmounts: Record<number, number> = {};
+      existingSnapshotForSelection.entries.forEach((entry) => {
+        entryAmounts[entry.category_id] = Math.abs(entry.amount);
+      });
+      setAmounts(entryAmounts);
+    } else {
+      // New month - clear the form
+      setAmounts({});
+    }
+  }, [open, month, year, existingSnapshotForSelection, isEditingFromList]);
+
+  const handlePrefillFromBudget = useCallback(async () => {
+    setIsPrefilling(true);
+    try {
+      const prefillData = await getSnapshotPrefill();
+
+      setAmounts((prev) => {
+        const newAmounts = { ...prev };
+        for (const item of prefillData) {
+          const matchingCategory = categories.find(
+            (c) => c.name.toLowerCase() === item.name.toLowerCase()
+          );
+          if (matchingCategory) {
+            newAmounts[matchingCategory.id] = item.amount;
+          }
+        }
+        return newAmounts;
+      });
+
+      const matched = prefillData.filter((item) =>
+        categories.some((c) => c.name.toLowerCase() === item.name.toLowerCase())
+      ).length;
+
+      toast({
+        title: `Prefilled ${matched} of ${prefillData.length} accounts`,
+        type: "success",
+      });
+    } catch {
+      toast({ title: "Failed to load budget data", type: "error" });
+    } finally {
+      setIsPrefilling(false);
+    }
+  }, [categories, toast]);
+
   const createMutation = useMutation({
     mutationFn: createSnapshot,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["networth-snapshots"] });
-      toast({ title: "Snapshot created", type: "success" });
+      queryClient.invalidateQueries({ queryKey: ["goals-progress"] });
+      toast({ title: "Balances recorded", type: "success" });
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Failed to create snapshot", type: "error" });
+      toast({ title: "Failed to record balances", type: "error" });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, entries }: { id: number; entries: { category_id: number; amount: number }[] }) =>
-      updateSnapshot(id, { entries }),
+    mutationFn: ({
+      id,
+      entries,
+    }: {
+      id: number;
+      entries: { category_id: number; amount: number }[];
+    }) => updateSnapshot(id, { entries }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["networth-snapshots"] });
-      toast({ title: "Snapshot updated", type: "success" });
+      queryClient.invalidateQueries({ queryKey: ["goals-progress"] });
+      toast({ title: "Balances updated", type: "success" });
       onOpenChange(false);
     },
     onError: () => {
-      toast({ title: "Failed to update snapshot", type: "error" });
+      toast({ title: "Failed to update balances", type: "error" });
     },
   });
 
@@ -142,8 +216,8 @@ export function SnapshotForm({
         };
       });
 
-    if (isEditing && existingSnapshot) {
-      updateMutation.mutate({ id: existingSnapshot.id, entries });
+    if (isUpdating && snapshotToUpdate) {
+      updateMutation.mutate({ id: snapshotToUpdate.id, entries });
     } else {
       createMutation.mutate({ month, year, entries });
     }
@@ -162,85 +236,118 @@ export function SnapshotForm({
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg max-h-[85vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6">
           <Dialog.Title className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">
-            {isEditing ? "Edit Snapshot" : "New Snapshot"}
+            Record Balances
           </Dialog.Title>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Month/Year Selection */}
-            {!isEditing && (
-              <div className="flex gap-4">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Month
-                  </label>
-                  <Select.Root
-                    value={String(month)}
-                    onValueChange={(val) => setMonth(Number(val))}
+            {/* Month/Year Selection + Prefill Button */}
+            <div className="flex gap-4 items-end">
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Month
+                </label>
+                <Select.Root
+                  value={String(month)}
+                  onValueChange={(val) => setMonth(Number(val))}
+                  disabled={isEditingFromList}
+                >
+                  <Select.Trigger
+                    className={cn(
+                      "w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-left flex justify-between items-center",
+                      isEditingFromList && "opacity-50 cursor-not-allowed"
+                    )}
                   >
-                    <Select.Trigger className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-left flex justify-between items-center">
-                      <Select.Value />
-                      <Select.Icon className="text-gray-500">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </Select.Icon>
-                    </Select.Trigger>
-                    <Select.Portal>
-                      <Select.Content className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-[100] overflow-hidden">
-                        <Select.Viewport className="p-1">
-                          {MONTHS.map((m) => (
-                            <Select.Item
-                              key={m.value}
-                              value={String(m.value)}
-                              className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-900 dark:text-gray-100 outline-none"
-                            >
-                              <Select.ItemText>{m.label}</Select.ItemText>
-                            </Select.Item>
-                          ))}
-                        </Select.Viewport>
-                      </Select.Content>
-                    </Select.Portal>
-                  </Select.Root>
-                </div>
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Year
-                  </label>
-                  <Select.Root
-                    value={String(year)}
-                    onValueChange={(val) => setYear(Number(val))}
-                  >
-                    <Select.Trigger className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-left flex justify-between items-center">
-                      <Select.Value />
-                      <Select.Icon className="text-gray-500">
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                          <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                      </Select.Icon>
-                    </Select.Trigger>
-                    <Select.Portal>
-                      <Select.Content className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-[100] overflow-hidden">
-                        <Select.Viewport className="p-1">
-                          {years.map((y) => (
-                            <Select.Item
-                              key={y}
-                              value={String(y)}
-                              className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-900 dark:text-gray-100 outline-none"
-                            >
-                              <Select.ItemText>{y}</Select.ItemText>
-                            </Select.Item>
-                          ))}
-                        </Select.Viewport>
-                      </Select.Content>
-                    </Select.Portal>
-                  </Select.Root>
-                </div>
+                    <Select.Value />
+                    <Select.Icon className="text-gray-500">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M3 4.5L6 7.5L9 4.5"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </Select.Icon>
+                  </Select.Trigger>
+                  <Select.Portal>
+                    <Select.Content className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-[100] overflow-hidden">
+                      <Select.Viewport className="p-1">
+                        {MONTHS.map((m) => (
+                          <Select.Item
+                            key={m.value}
+                            value={String(m.value)}
+                            className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-900 dark:text-gray-100 outline-none"
+                          >
+                            <Select.ItemText>{m.label}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </Select.Viewport>
+                    </Select.Content>
+                  </Select.Portal>
+                </Select.Root>
               </div>
-            )}
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Year
+                </label>
+                <Select.Root
+                  value={String(year)}
+                  onValueChange={(val) => setYear(Number(val))}
+                  disabled={isEditingFromList}
+                >
+                  <Select.Trigger
+                    className={cn(
+                      "w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-left flex justify-between items-center",
+                      isEditingFromList && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <Select.Value />
+                    <Select.Icon className="text-gray-500">
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path
+                          d="M3 4.5L6 7.5L9 4.5"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </Select.Icon>
+                  </Select.Trigger>
+                  <Select.Portal>
+                    <Select.Content className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg z-[100] overflow-hidden">
+                      <Select.Viewport className="p-1">
+                        {years.map((y) => (
+                          <Select.Item
+                            key={y}
+                            value={String(y)}
+                            className="px-3 py-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-900 dark:text-gray-100 outline-none"
+                          >
+                            <Select.ItemText>{y}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </Select.Viewport>
+                    </Select.Content>
+                  </Select.Portal>
+                </Select.Root>
+              </div>
+              <button
+                type="button"
+                onClick={handlePrefillFromBudget}
+                disabled={isPrefilling}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 whitespace-nowrap"
+              >
+                {isPrefilling ? "Loading..." : "Prefill from budget"}
+              </button>
+            </div>
 
-            {isEditing && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                {MONTHS.find((m) => m.value === month)?.label} {year}
+            {/* Update indicator */}
+            {isUpdating && (
+              <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md text-sm">
+                <p className="text-amber-800 dark:text-amber-200">
+                  Updating existing snapshot for {MONTHS.find((m) => m.value === month)?.label} {year}
+                </p>
               </div>
             )}
 
@@ -308,7 +415,7 @@ export function SnapshotForm({
                 disabled={isPending}
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               >
-                {isPending ? "Saving..." : isEditing ? "Update" : "Create"}
+                {isPending ? "Saving..." : isUpdating ? "Update" : "Save"}
               </button>
             </div>
           </form>
