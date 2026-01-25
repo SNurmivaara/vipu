@@ -6,10 +6,13 @@ import { Account, AccountFormData } from "@/types";
 import { createAccount, updateAccount, deleteAccount } from "@/lib/api";
 import { formatCurrency, getBalanceColor, cn } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
 
 interface AccountsSectionProps {
   accounts: Account[];
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }
 
 const accountFields = [
@@ -17,13 +20,18 @@ const accountFields = [
   {
     name: "balance",
     label: "Balance (€)",
-    type: "number" as const,
+    type: "signed_number" as const,
     required: true,
     step: 0.01,
+    defaultSign: "positive" as const,
   },
 ];
 
-export function AccountsSection({ accounts }: AccountsSectionProps) {
+export function AccountsSection({
+  accounts,
+  collapsible = false,
+  defaultOpen = false,
+}: AccountsSectionProps) {
   const [editItem, setEditItem] = useState<Account | null>(null);
   const [isNew, setIsNew] = useState(false);
   const queryClient = useQueryClient();
@@ -98,6 +106,96 @@ export function AccountsSection({ accounts }: AccountsSectionProps) {
     setIsNew(false);
   };
 
+  const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+
+  const content = (
+    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <span>Account</span>
+        <span className="text-right">Balance</span>
+      </div>
+      {accounts.map((account) => (
+        <div
+          key={account.id}
+          onClick={() => openEdit(account)}
+          className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+        >
+          <span className="text-gray-900 dark:text-gray-100">
+            {account.name}
+          </span>
+          <span
+            className={cn(
+              "text-right font-medium",
+              getBalanceColor(account.balance)
+            )}
+          >
+            {formatCurrency(account.balance)}
+          </span>
+        </div>
+      ))}
+      {accounts.length === 0 && (
+        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+          No accounts yet
+        </div>
+      )}
+      {accounts.length > 0 && (
+        <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">
+            Total
+          </span>
+          <span
+            className={cn(
+              "text-right font-semibold",
+              getBalanceColor(totalBalance)
+            )}
+          >
+            {formatCurrency(totalBalance)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const dialog = (
+    <EditDialog
+      open={editItem !== null || isNew}
+      onOpenChange={(open) => !open && closeDialog()}
+      title={isNew ? "Add Account" : "Edit Account"}
+      fields={accountFields}
+      initialValues={
+        editItem
+          ? {
+              name: editItem.name,
+              balance: editItem.balance,
+            }
+          : {
+              name: "",
+              balance: 0,
+            }
+      }
+      onSave={handleSave}
+      onDelete={handleDelete}
+      isNew={isNew}
+    />
+  );
+
+  if (collapsible) {
+    return (
+      <>
+        <CollapsibleSection
+          title="Accounts"
+          total={formatCurrency(totalBalance)}
+          totalClassName={getBalanceColor(totalBalance)}
+          defaultOpen={defaultOpen}
+          onAdd={openNew}
+        >
+          {content}
+        </CollapsibleSection>
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
@@ -111,75 +209,8 @@ export function AccountsSection({ accounts }: AccountsSectionProps) {
           + Add
         </button>
       </div>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-        <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          <span>Account</span>
-          <span className="text-right">Balance</span>
-        </div>
-        {accounts.map((account) => (
-          <div
-            key={account.id}
-            onClick={() => openEdit(account)}
-            className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-          >
-            <span className="text-gray-900 dark:text-gray-100">
-              {account.name}
-            </span>
-            <span
-              className={cn(
-                "text-right font-medium",
-                getBalanceColor(account.balance)
-              )}
-            >
-              {formatCurrency(account.balance)}
-            </span>
-          </div>
-        ))}
-        {accounts.length === 0 && (
-          <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-            No accounts yet
-          </div>
-        )}
-        {accounts.length > 0 && (() => {
-          const totalBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
-          return (
-            <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-              <span className="font-semibold text-gray-900 dark:text-gray-100">
-                Total
-              </span>
-              <span
-                className={cn(
-                  "text-right font-semibold",
-                  getBalanceColor(totalBalance)
-                )}
-              >
-                {formatCurrency(totalBalance)}
-              </span>
-            </div>
-          );
-        })()}
-      </div>
-
-      <EditDialog
-        open={editItem !== null || isNew}
-        onOpenChange={(open) => !open && closeDialog()}
-        title={isNew ? "Add Account" : "Edit Account"}
-        fields={accountFields}
-        initialValues={
-          editItem
-            ? {
-                name: editItem.name,
-                balance: editItem.balance,
-              }
-            : {
-                name: "",
-                balance: 0,
-              }
-        }
-        onSave={handleSave}
-        onDelete={handleDelete}
-        isNew={isNew}
-      />
+      {content}
+      {dialog}
     </section>
   );
 }

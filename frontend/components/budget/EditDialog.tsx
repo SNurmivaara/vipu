@@ -8,11 +8,13 @@ import { cn } from "@/lib/utils";
 interface Field {
   name: string;
   label: string;
-  type: "text" | "number" | "checkbox";
+  type: "text" | "number" | "checkbox" | "signed_number";
   required?: boolean;
   min?: number;
+  max?: number;
   step?: number;
   placeholder?: string;
+  defaultSign?: "positive" | "negative";
 }
 
 interface EditDialogProps {
@@ -39,19 +41,48 @@ export function EditDialog({
   const [values, setValues] =
     useState<Record<string, string | number | boolean>>(initialValues);
 
+  // Track sign state for signed_number fields
+  const [signs, setSigns] = useState<Record<string, "positive" | "negative">>(
+    {}
+  );
+
   useEffect(() => {
     if (open) {
       setValues(initialValues);
+      // Initialize signs based on initial values and field defaults
+      const initialSigns: Record<string, "positive" | "negative"> = {};
+      fields.forEach((field) => {
+        if (field.type === "signed_number") {
+          const value = initialValues[field.name] as number;
+          if (value < 0) {
+            initialSigns[field.name] = "negative";
+          } else if (value > 0) {
+            initialSigns[field.name] = "positive";
+          } else {
+            initialSigns[field.name] = field.defaultSign || "positive";
+          }
+        }
+      });
+      setSigns(initialSigns);
     }
-  }, [open, initialValues]);
+  }, [open, initialValues, fields]);
 
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      onSave(values);
+      // Apply signs to signed_number fields
+      const finalValues = { ...values };
+      fields.forEach((field) => {
+        if (field.type === "signed_number") {
+          const absValue = Math.abs(finalValues[field.name] as number);
+          finalValues[field.name] =
+            signs[field.name] === "negative" ? -absValue : absValue;
+        }
+      });
+      onSave(finalValues);
       onOpenChange(false);
     },
-    [values, onSave, onOpenChange]
+    [values, signs, fields, onSave, onOpenChange]
   );
 
   const handleKeyDown = useCallback(
@@ -99,6 +130,58 @@ export function EditDialog({
                       {field.label}
                     </Label.Root>
                   </div>
+                ) : field.type === "signed_number" ? (
+                  <>
+                    <Label.Root
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {field.label}
+                    </Label.Root>
+                    <div className="flex">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSigns((prev) => ({
+                            ...prev,
+                            [field.name]:
+                              prev[field.name] === "positive"
+                                ? "negative"
+                                : "positive",
+                          }))
+                        }
+                        className={cn(
+                          "px-3 py-2 border border-r-0 rounded-l-md font-medium text-lg",
+                          "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:z-10",
+                          signs[field.name] === "negative"
+                            ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700"
+                            : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700"
+                        )}
+                      >
+                        {signs[field.name] === "negative" ? "−" : "+"}
+                      </button>
+                      <input
+                        type="number"
+                        id={field.name}
+                        value={Math.abs(values[field.name] as number)}
+                        onChange={(e) =>
+                          setValues((prev) => ({
+                            ...prev,
+                            [field.name]: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                        required={field.required}
+                        min={0}
+                        step={field.step}
+                        placeholder={field.placeholder}
+                        className={cn(
+                          "flex-1 px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-r-md",
+                          "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                          "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        )}
+                      />
+                    </div>
+                  </>
                 ) : (
                   <>
                     <Label.Root

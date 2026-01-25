@@ -1,4 +1,7 @@
+export { BudgetSummary } from "./BudgetSummary";
+export { CollapsibleSection } from "./CollapsibleSection";
 export { IncomeSection } from "./IncomeSection";
+export { DeductionsSection } from "./DeductionsSection";
 export { AccountsSection } from "./AccountsSection";
 export { CreditCardsSection } from "./CreditCardsSection";
 export { ExpensesSection } from "./ExpensesSection";

@@ -52,6 +52,7 @@ class IncomeItem(Base):
     )
     is_taxed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     tax_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    is_deduction: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -63,28 +64,35 @@ class IncomeItem(Base):
             "tax_percentage": (
                 float(self.tax_percentage) if self.tax_percentage is not None else None
             ),
+            "is_deduction": self.is_deduction,
         }
 
     def calculate_net(self, default_tax_percentage: Decimal) -> Decimal:
         """Calculate net income after taxes or deductions.
 
-        For regular taxed income (no custom tax_percentage):
+        For deductions (is_deduction=True):
+            Uses tax_percentage as deduction rate.
+            net = -gross * tax_percentage/100
+            Example: 280€ lunch benefit @ 75% = -210€ (deducted from pay)
+
+        For regular taxed income (is_taxed=True):
             net = gross * (1 - default_tax_percentage/100)
 
-        For items with custom tax_percentage (e.g., lunch benefit):
-            The custom percentage represents a deduction rate.
-            net = -gross * custom_tax_percentage/100
-            Example: 280€ lunch benefit @ 75% = -210€ (deducted from pay)
+        For untaxed income (is_taxed=False):
+            net = gross
         """
+        if self.is_deduction:
+            # Deduction uses its own tax_percentage as deduction rate
+            rate = (
+                self.tax_percentage if self.tax_percentage is not None else Decimal(0)
+            )
+            return -self.gross_amount * rate / 100
+
         if not self.is_taxed:
             return self.gross_amount
 
-        if self.tax_percentage is not None:
-            # Custom tax_percentage means it's a deduction (like lunch benefit)
-            return -self.gross_amount * self.tax_percentage / 100
-        else:
-            # Regular taxed income uses default tax rate
-            return self.gross_amount * (1 - default_tax_percentage / 100)
+        # Regular taxed income uses default tax rate
+        return self.gross_amount * (1 - default_tax_percentage / 100)
 
 
 class ExpenseItem(Base):

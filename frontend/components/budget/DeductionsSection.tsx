@@ -2,54 +2,54 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IncomeItem, IncomeFormData, BudgetSettings } from "@/types";
+import { IncomeItem, DeductionFormData } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatPercentage } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
 
-interface IncomeSectionProps {
-  income: IncomeItem[];
-  settings: BudgetSettings;
+interface DeductionsSectionProps {
+  deductions: IncomeItem[];
   collapsible?: boolean;
   defaultOpen?: boolean;
 }
 
-const incomeFields = [
+const deductionFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
     name: "gross_amount",
-    label: "Gross Amount (€)",
+    label: "Loaded Amount (€)",
     type: "number" as const,
     required: true,
     min: 0,
     step: 0.01,
   },
-  { name: "is_taxed", label: "Is Taxed", type: "checkbox" as const },
+  {
+    name: "tax_percentage",
+    label: "Deduction Rate (%)",
+    type: "number" as const,
+    required: true,
+    min: 0,
+    max: 100,
+    step: 0.1,
+  },
 ];
 
 /**
- * Calculate net income for an item.
- * - If not taxed: net = gross
- * - If taxed: net = gross * (1 - defaultTaxRate)
+ * Calculate net amount for a deduction.
+ * net = -gross * rate/100
  */
-function calculateNetAmount(
-  item: IncomeItem,
-  defaultTaxRate: number
-): number {
-  if (!item.is_taxed) {
-    return item.gross_amount;
-  }
-  return item.gross_amount * (1 - defaultTaxRate / 100);
+function calculateNetAmount(item: IncomeItem): number {
+  const rate = item.tax_percentage ?? 0;
+  return -item.gross_amount * (rate / 100);
 }
 
-export function IncomeSection({
-  income,
-  settings,
+export function DeductionsSection({
+  deductions,
   collapsible = false,
   defaultOpen = false,
-}: IncomeSectionProps) {
+}: DeductionsSectionProps) {
   const [editItem, setEditItem] = useState<IncomeItem | null>(null);
   const [isNew, setIsNew] = useState(false);
   const queryClient = useQueryClient();
@@ -59,22 +59,22 @@ export function IncomeSection({
     mutationFn: createIncome,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budget"] });
-      toast({ title: "Income created", type: "success" });
+      toast({ title: "Deduction created", type: "success" });
     },
     onError: () => {
-      toast({ title: "Failed to create income", type: "error" });
+      toast({ title: "Failed to create deduction", type: "error" });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: IncomeFormData }) =>
+    mutationFn: ({ id, data }: { id: number; data: DeductionFormData }) =>
       updateIncome(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budget"] });
-      toast({ title: "Income updated", type: "success" });
+      toast({ title: "Deduction updated", type: "success" });
     },
     onError: () => {
-      toast({ title: "Failed to update income", type: "error" });
+      toast({ title: "Failed to update deduction", type: "error" });
     },
   });
 
@@ -82,20 +82,20 @@ export function IncomeSection({
     mutationFn: deleteIncome,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["budget"] });
-      toast({ title: "Income deleted", type: "success" });
+      toast({ title: "Deduction deleted", type: "success" });
     },
     onError: () => {
-      toast({ title: "Failed to delete income", type: "error" });
+      toast({ title: "Failed to delete deduction", type: "error" });
     },
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const data: IncomeFormData = {
+    const data: DeductionFormData = {
       name: values.name as string,
       gross_amount: values.gross_amount as number,
-      is_taxed: values.is_taxed as boolean,
-      tax_percentage: undefined,
-      is_deduction: false,
+      is_taxed: true,
+      tax_percentage: values.tax_percentage as number,
+      is_deduction: true,
     };
 
     if (isNew) {
@@ -126,60 +126,60 @@ export function IncomeSection({
     setIsNew(false);
   };
 
-  const totalNet = income.reduce(
-    (sum, item) => sum + calculateNetAmount(item, settings.tax_percentage),
+  const totalDeduction = deductions.reduce(
+    (sum, item) => sum + calculateNetAmount(item),
     0
   );
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-3 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      <div className="grid grid-cols-4 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         <span>Name</span>
-        <span className="text-right">Gross</span>
-        <span className="text-right">Net</span>
+        <span className="text-right">Loaded</span>
+        <span className="text-right">Rate</span>
+        <span className="text-right">Deducted</span>
       </div>
-      {income.map((item) => {
-        const netAmount = calculateNetAmount(item, settings.tax_percentage);
+      {deductions.map((item) => {
+        const netAmount = calculateNetAmount(item);
         return (
           <div
             key={item.id}
             onClick={() => openEdit(item)}
-            className="grid grid-cols-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+            className="grid grid-cols-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
           >
             <span className="text-gray-900 dark:text-gray-100">
               {item.name}
-              {item.is_taxed && (
-                <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
-                  (taxed)
-                </span>
-              )}
             </span>
             <span className="text-right text-gray-700 dark:text-gray-300">
               {formatCurrency(item.gross_amount)}
             </span>
-            <span className="text-right font-medium text-gray-900 dark:text-gray-100">
+            <span className="text-right text-gray-500 dark:text-gray-400">
+              {formatPercentage(item.tax_percentage ?? 0)}
+            </span>
+            <span className="text-right font-medium text-red-600 dark:text-red-400">
               {formatCurrency(netAmount)}
             </span>
           </div>
         );
       })}
-      {income.length === 0 && (
+      {deductions.length === 0 && (
         <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-          No income items yet
+          No deductions yet
         </div>
       )}
-      {income.length > 0 && (
-        <div className="grid grid-cols-3 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+      {deductions.length > 0 && (
+        <div className="grid grid-cols-4 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
           <span className="font-semibold text-gray-900 dark:text-gray-100">
             Total
           </span>
-          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-            {formatCurrency(
-              income.reduce((sum, item) => sum + item.gross_amount, 0)
-            )}
+          <span className="text-right text-gray-700 dark:text-gray-300">
+            —
           </span>
-          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-            {formatCurrency(totalNet)}
+          <span className="text-right text-gray-500 dark:text-gray-400">
+            —
+          </span>
+          <span className="text-right font-semibold text-red-600 dark:text-red-400">
+            {formatCurrency(totalDeduction)}
           </span>
         </div>
       )}
@@ -190,19 +190,19 @@ export function IncomeSection({
     <EditDialog
       open={editItem !== null || isNew}
       onOpenChange={(open) => !open && closeDialog()}
-      title={isNew ? "Add Income" : "Edit Income"}
-      fields={incomeFields}
+      title={isNew ? "Add Deduction" : "Edit Deduction"}
+      fields={deductionFields}
       initialValues={
         editItem
           ? {
               name: editItem.name,
               gross_amount: editItem.gross_amount,
-              is_taxed: editItem.is_taxed,
+              tax_percentage: editItem.tax_percentage ?? 0,
             }
           : {
               name: "",
               gross_amount: 0,
-              is_taxed: true,
+              tax_percentage: 75,
             }
       }
       onSave={handleSave}
@@ -215,9 +215,9 @@ export function IncomeSection({
     return (
       <>
         <CollapsibleSection
-          title="Income"
-          total={formatCurrency(totalNet)}
-          totalClassName="text-green-600 dark:text-green-400"
+          title="Deductions"
+          total={formatCurrency(totalDeduction)}
+          totalClassName="text-red-600 dark:text-red-400"
           defaultOpen={defaultOpen}
           onAdd={openNew}
         >
@@ -232,7 +232,7 @@ export function IncomeSection({
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
         <h2 className="font-semibold text-gray-900 dark:text-gray-100">
-          Income
+          Deductions
         </h2>
         <button
           onClick={openNew}

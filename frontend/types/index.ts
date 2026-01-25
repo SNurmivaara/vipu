@@ -12,6 +12,7 @@ export interface IncomeItem {
   gross_amount: number;
   is_taxed: boolean;
   tax_percentage?: number;
+  is_deduction: boolean;
 }
 
 export interface ExpenseItem {
@@ -45,6 +46,7 @@ export interface BudgetData {
 
 export type AccountFormData = Omit<Account, "id" | "updated_at">;
 export type IncomeFormData = Omit<IncomeItem, "id">;
+export type DeductionFormData = Omit<IncomeItem, "id">;
 export type ExpenseFormData = Omit<ExpenseItem, "id">;
 export type SavingsGoalFormData = Omit<ExpenseItem, "id">;
 export type SettingsFormData = Pick<BudgetSettings, "tax_percentage">;

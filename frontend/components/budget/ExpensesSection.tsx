@@ -6,10 +6,13 @@ import { ExpenseItem, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
 
 interface ExpensesSectionProps {
   expenses: ExpenseItem[];
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }
 
 const expenseFields = [
@@ -24,7 +27,11 @@ const expenseFields = [
   },
 ];
 
-export function ExpensesSection({ expenses }: ExpensesSectionProps) {
+export function ExpensesSection({
+  expenses,
+  collapsible = false,
+  defaultOpen = false,
+}: ExpensesSectionProps) {
   const [editItem, setEditItem] = useState<ExpenseItem | null>(null);
   const [isNew, setIsNew] = useState(false);
   const queryClient = useQueryClient();
@@ -99,6 +106,85 @@ export function ExpensesSection({ expenses }: ExpensesSectionProps) {
     setIsNew(false);
   };
 
+  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  const content = (
+    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <span>Expense</span>
+        <span className="text-right">Monthly</span>
+      </div>
+      {expenses.map((expense) => (
+        <div
+          key={expense.id}
+          onClick={() => openEdit(expense)}
+          className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+        >
+          <span className="text-gray-900 dark:text-gray-100">
+            {expense.name}
+          </span>
+          <span className="text-right text-gray-900 dark:text-gray-100 font-medium">
+            {formatCurrency(expense.amount)}
+          </span>
+        </div>
+      ))}
+      {expenses.length === 0 && (
+        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+          No expenses yet
+        </div>
+      )}
+      {expenses.length > 0 && (
+        <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">
+            Total
+          </span>
+          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
+            {formatCurrency(totalExpenses)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const dialog = (
+    <EditDialog
+      open={editItem !== null || isNew}
+      onOpenChange={(open) => !open && closeDialog()}
+      title={isNew ? "Add Expense" : "Edit Expense"}
+      fields={expenseFields}
+      initialValues={
+        editItem
+          ? {
+              name: editItem.name,
+              amount: editItem.amount,
+            }
+          : {
+              name: "",
+              amount: 0,
+            }
+      }
+      onSave={handleSave}
+      onDelete={handleDelete}
+      isNew={isNew}
+    />
+  );
+
+  if (collapsible) {
+    return (
+      <>
+        <CollapsibleSection
+          title="Monthly Expenses"
+          total={formatCurrency(totalExpenses)}
+          defaultOpen={defaultOpen}
+          onAdd={openNew}
+        >
+          {content}
+        </CollapsibleSection>
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
@@ -112,64 +198,8 @@ export function ExpensesSection({ expenses }: ExpensesSectionProps) {
           + Add
         </button>
       </div>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-        <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          <span>Expense</span>
-          <span className="text-right">Amount</span>
-        </div>
-        {expenses.map((expense) => (
-          <div
-            key={expense.id}
-            onClick={() => openEdit(expense)}
-            className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-          >
-            <span className="text-gray-900 dark:text-gray-100">
-              {expense.name}
-            </span>
-            <span className="text-right text-gray-900 dark:text-gray-100 font-medium">
-              {formatCurrency(expense.amount)}
-            </span>
-          </div>
-        ))}
-        {expenses.length === 0 && (
-          <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-            No expenses yet
-          </div>
-        )}
-        {expenses.length > 0 && (
-          <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-            <span className="font-semibold text-gray-900 dark:text-gray-100">
-              Total
-            </span>
-            <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-              {formatCurrency(
-                expenses.reduce((sum, e) => sum + e.amount, 0)
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <EditDialog
-        open={editItem !== null || isNew}
-        onOpenChange={(open) => !open && closeDialog()}
-        title={isNew ? "Add Expense" : "Edit Expense"}
-        fields={expenseFields}
-        initialValues={
-          editItem
-            ? {
-                name: editItem.name,
-                amount: editItem.amount,
-              }
-            : {
-                name: "",
-                amount: 0,
-              }
-        }
-        onSave={handleSave}
-        onDelete={handleDelete}
-        isNew={isNew}
-      />
+      {content}
+      {dialog}
     </section>
   );
 }

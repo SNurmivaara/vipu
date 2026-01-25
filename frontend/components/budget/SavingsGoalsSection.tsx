@@ -6,17 +6,20 @@ import { ExpenseItem, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
+import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
 
 interface SavingsGoalsSectionProps {
   savingsGoals: ExpenseItem[];
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }
 
 const savingsGoalFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
     name: "amount",
-    label: "Monthly Amount (€)",
+    label: "Target Amount (€)",
     type: "number" as const,
     required: true,
     min: 0,
@@ -26,6 +29,8 @@ const savingsGoalFields = [
 
 export function SavingsGoalsSection({
   savingsGoals,
+  collapsible = false,
+  defaultOpen = false,
 }: SavingsGoalsSectionProps) {
   const [editItem, setEditItem] = useState<ExpenseItem | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -102,6 +107,84 @@ export function SavingsGoalsSection({
     setIsNew(false);
   };
 
+  const totalGoals = savingsGoals.reduce((sum, g) => sum + g.amount, 0);
+
+  const content = (
+    <div className="divide-y divide-gray-100 dark:divide-gray-800">
+      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <span>Goal</span>
+        <span className="text-right">Target</span>
+      </div>
+      {savingsGoals.map((goal) => (
+        <div
+          key={goal.id}
+          onClick={() => openEdit(goal)}
+          className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+        >
+          <span className="text-gray-900 dark:text-gray-100">{goal.name}</span>
+          <span className="text-right text-gray-900 dark:text-gray-100 font-medium">
+            {formatCurrency(goal.amount)}
+          </span>
+        </div>
+      ))}
+      {savingsGoals.length === 0 && (
+        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+          No savings goals yet
+        </div>
+      )}
+      {savingsGoals.length > 0 && (
+        <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+          <span className="font-semibold text-gray-900 dark:text-gray-100">
+            Total
+          </span>
+          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
+            {formatCurrency(totalGoals)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
+  const dialog = (
+    <EditDialog
+      open={editItem !== null || isNew}
+      onOpenChange={(open) => !open && closeDialog()}
+      title={isNew ? "Add Savings Goal" : "Edit Savings Goal"}
+      fields={savingsGoalFields}
+      initialValues={
+        editItem
+          ? {
+              name: editItem.name,
+              amount: editItem.amount,
+            }
+          : {
+              name: "",
+              amount: 0,
+            }
+      }
+      onSave={handleSave}
+      onDelete={handleDelete}
+      isNew={isNew}
+    />
+  );
+
+  if (collapsible) {
+    return (
+      <>
+        <CollapsibleSection
+          title="Savings Goals"
+          total={formatCurrency(totalGoals)}
+          totalClassName="text-blue-600 dark:text-blue-400"
+          defaultOpen={defaultOpen}
+          onAdd={openNew}
+        >
+          {content}
+        </CollapsibleSection>
+        {dialog}
+      </>
+    );
+  }
+
   return (
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
@@ -115,62 +198,8 @@ export function SavingsGoalsSection({
           + Add
         </button>
       </div>
-      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-        <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          <span>Goal</span>
-          <span className="text-right">Amount</span>
-        </div>
-        {savingsGoals.map((goal) => (
-          <div
-            key={goal.id}
-            onClick={() => openEdit(goal)}
-            className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-          >
-            <span className="text-gray-900 dark:text-gray-100">{goal.name}</span>
-            <span className="text-right text-gray-900 dark:text-gray-100 font-medium">
-              {formatCurrency(goal.amount)}
-            </span>
-          </div>
-        ))}
-        {savingsGoals.length === 0 && (
-          <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-            No savings goals yet
-          </div>
-        )}
-        {savingsGoals.length > 0 && (
-          <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-            <span className="font-semibold text-gray-900 dark:text-gray-100">
-              Total
-            </span>
-            <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-              {formatCurrency(
-                savingsGoals.reduce((sum, g) => sum + g.amount, 0)
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-
-      <EditDialog
-        open={editItem !== null || isNew}
-        onOpenChange={(open) => !open && closeDialog()}
-        title={isNew ? "Add Savings Goal" : "Edit Savings Goal"}
-        fields={savingsGoalFields}
-        initialValues={
-          editItem
-            ? {
-                name: editItem.name,
-                amount: editItem.amount,
-              }
-            : {
-                name: "",
-                amount: 0,
-              }
-        }
-        onSave={handleSave}
-        onDelete={handleDelete}
-        isNew={isNew}
-      />
+      {content}
+      {dialog}
     </section>
   );
 }

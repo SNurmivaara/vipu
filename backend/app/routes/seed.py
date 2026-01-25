@@ -43,7 +43,8 @@ def seed_data() -> Response:
             name="Lunch benefit",
             gross_amount=Decimal("200.00"),
             is_taxed=True,
-            tax_percentage=Decimal("75.0"),  # 75% taxable portion
+            tax_percentage=Decimal("75.0"),  # 75% deduction rate
+            is_deduction=True,
         ),
     ]
     for item in income_items:
@@ -154,6 +155,7 @@ def export_data() -> Response:
                 "tax_percentage": (
                     float(i.tax_percentage) if i.tax_percentage is not None else None
                 ),
+                "is_deduction": i.is_deduction,
             }
             for i in income_items
         ],
@@ -222,6 +224,7 @@ def import_data() -> Response | tuple[Response, int]:
                 if i.get("tax_percentage") is not None
                 else None
             ),
+            is_deduction=i.get("is_deduction", False),
         )
         session.add(income)
 

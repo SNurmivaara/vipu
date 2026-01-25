@@ -344,8 +344,8 @@ class TestNetIncomeCalculation:
         assert totals["gross_income"] == 1000.0
         assert totals["net_income"] == 800.0
 
-    def test_taxed_income_custom_rate_deduction(self, client):
-        """Taxed income with custom rate is treated as a deduction."""
+    def test_deduction_income(self, client):
+        """Income marked as deduction is treated as a deduction."""
         client.put("/api/settings", json={"tax_percentage": 20.0})
 
         # Lunch benefit with 75% deduction rate
@@ -357,6 +357,7 @@ class TestNetIncomeCalculation:
                 "gross_amount": 200.00,
                 "is_taxed": True,
                 "tax_percentage": 75.0,
+                "is_deduction": True,
             },
         )
 

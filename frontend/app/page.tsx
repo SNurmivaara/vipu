@@ -5,12 +5,13 @@ import { useBudget } from "@/hooks/useBudget";
 import { useTheme } from "@/hooks/useTheme";
 import {
   IncomeSection,
+  DeductionsSection,
   AccountsSection,
   CreditCardsSection,
   ExpensesSection,
   SavingsGoalsSection,
-  TotalsCard,
   SettingsCard,
+  BudgetSummary,
 } from "@/components/budget";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { seedData, resetBudget, exportBudget, importBudget, ExportData } from "@/lib/api";
@@ -215,24 +216,39 @@ export default function BudgetPage() {
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-6">
-          <IncomeSection income={data.income} settings={data.settings} />
+      <BudgetSummary data={data} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-4">
+          <IncomeSection
+            income={data.income.filter((i) => !i.is_deduction)}
+            settings={data.settings}
+            collapsible
+          />
+          <DeductionsSection
+            deductions={data.income.filter((i) => i.is_deduction)}
+            collapsible
+          />
           <AccountsSection
             accounts={data.accounts.filter((a) => !a.is_credit)}
+            collapsible
+            defaultOpen
           />
           <CreditCardsSection
             creditCards={data.accounts.filter((a) => a.is_credit)}
+            collapsible
           />
         </div>
-        <div className="space-y-6">
+        <div className="space-y-4">
           <ExpensesSection
             expenses={data.expenses.filter((e) => !e.is_savings_goal)}
+            collapsible
+            defaultOpen
           />
           <SavingsGoalsSection
             savingsGoals={data.expenses.filter((e) => e.is_savings_goal)}
+            collapsible
           />
-          <TotalsCard totals={data.totals} />
         </div>
       </div>
 

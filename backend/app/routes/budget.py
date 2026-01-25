@@ -40,9 +40,9 @@ def get_current_budget() -> Response:
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
     # Calculate totals
-    # Gross income excludes deductions (items with custom tax_percentage)
+    # Gross income excludes deductions
     gross_income = sum(
-        (i.gross_amount for i in income_items if i.tax_percentage is None),
+        (i.gross_amount for i in income_items if not i.is_deduction),
         Decimal("0"),
     )
     net_income = calculate_net_income(income_items, settings.tax_percentage)
