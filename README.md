@@ -1,6 +1,7 @@
 # Vipu
 
 [![Backend CI](https://github.com/SNurmivaara/vipu/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/SNurmivaara/vipu/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/frontend-ci.yml)
 [![Docker Build](https://github.com/SNurmivaara/vipu/actions/workflows/docker-build.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/docker-build.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -24,9 +25,9 @@
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Python 3.11+, Flask, SQLAlchemy |
+| Backend | Python 3.11+, APIFlask, SQLAlchemy |
 | Database | PostgreSQL |
-| Frontend | Next.js, TypeScript, Tailwind CSS *(coming soon)* |
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
 | Deployment | Docker Compose |
 
 ## Quick Start
@@ -49,7 +50,8 @@ cp .env.example .env
 # Start all services
 docker compose up
 
-# The API is now available at http://localhost:5000
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:5000
 ```
 
 ### Verify it works
@@ -74,6 +76,52 @@ Full API documentation is available at **[snurmivaara.github.io/vipu](https://sn
 When running locally, interactive docs are also available at `http://localhost:5000/docs`.
 
 ## Development Setup
+
+### Quick Start (Recommended)
+
+The easiest way to develop is using Docker Compose with hot reloading:
+
+```bash
+# Start everything with hot reloading
+./dev.sh
+
+# Or manually:
+docker compose -f docker-compose.dev.yml up --build
+
+# Frontend: http://localhost:3000 (hot reload enabled)
+# Backend API: http://localhost:5000 (hot reload enabled)
+# API Docs: http://localhost:5000/docs
+```
+
+Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`) and backend (`app/`) directories will automatically reload.
+
+```bash
+# Stop development environment
+./dev.sh down
+
+# Rebuild containers (after dependency changes)
+./dev.sh build
+```
+
+### Frontend (without Docker)
+
+```bash
+cd frontend
+
+# Install dependencies
+npm install
+
+# Set up environment
+cp .env.example .env.local
+# Edit .env.local with your backend URL (default: http://localhost:5000)
+
+# Run development server
+npm run dev
+
+# Linting and type checking
+npm run lint
+npm run typecheck
+```
 
 ### Backend (without Docker)
 
@@ -124,6 +172,14 @@ vipu/
 │   ├── tests/               # pytest tests
 │   ├── Dockerfile
 │   └── pyproject.toml
+├── frontend/
+│   ├── app/                 # Next.js app router pages
+│   ├── components/          # React components
+│   │   └── budget/          # Budget-specific components
+│   ├── lib/                 # API client, utilities
+│   ├── types/               # TypeScript interfaces
+│   ├── Dockerfile
+│   └── package.json
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -141,7 +197,7 @@ vipu/
 
 - [x] Backend API (Weekly Budget)
 - [x] CI/CD with GitHub Actions
-- [ ] Frontend (Weekly Budget)
+- [x] Frontend (Weekly Budget)
 - [ ] Net Worth tracking backend
 - [ ] Net Worth frontend with charts
 - [ ] Goals and targets

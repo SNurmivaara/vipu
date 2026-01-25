@@ -52,6 +52,7 @@ class IncomeItem(Base):
     )
     is_taxed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     tax_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    is_deduction: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -63,29 +64,48 @@ class IncomeItem(Base):
             "tax_percentage": (
                 float(self.tax_percentage) if self.tax_percentage is not None else None
             ),
+            "is_deduction": self.is_deduction,
         }
 
     def calculate_net(self, default_tax_percentage: Decimal) -> Decimal:
-        """Calculate net income after taxes."""
+        """Calculate net income after taxes or deductions.
+
+        For deductions (is_deduction=True):
+            Uses tax_percentage as deduction rate.
+            net = -gross * tax_percentage/100
+            Example: 280€ lunch benefit @ 75% = -210€ (deducted from pay)
+
+        For regular taxed income (is_taxed=True):
+            net = gross * (1 - default_tax_percentage/100)
+
+        For untaxed income (is_taxed=False):
+            net = gross
+        """
+        if self.is_deduction:
+            # Deduction uses its own tax_percentage as deduction rate
+            rate = (
+                self.tax_percentage if self.tax_percentage is not None else Decimal(0)
+            )
+            return -self.gross_amount * rate / 100
+
         if not self.is_taxed:
             return self.gross_amount
 
-        tax_rate = (
-            self.tax_percentage
-            if self.tax_percentage is not None
-            else default_tax_percentage
-        )
-        return self.gross_amount * (1 - tax_rate / 100)
+        # Regular taxed income uses default tax rate
+        return self.gross_amount * (1 - default_tax_percentage / 100)
 
 
 class ExpenseItem(Base):
-    """Monthly expense."""
+    """Monthly expense or savings goal."""
 
     __tablename__ = "expense_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    is_savings_goal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -93,6 +113,7 @@ class ExpenseItem(Base):
             "id": self.id,
             "name": self.name,
             "amount": float(self.amount),
+            "is_savings_goal": self.is_savings_goal,
         }
 
 

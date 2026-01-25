@@ -44,6 +44,7 @@ def create_income() -> Response | tuple[Response, int]:
         gross_amount=Decimal(str(data["gross_amount"])),
         is_taxed=data.get("is_taxed", True),
         tax_percentage=tax_pct,
+        is_deduction=data.get("is_deduction", False),
     )
     session.add(item)
     session.commit()
@@ -73,6 +74,8 @@ def update_income(income_id: int) -> Response | tuple[Response, int]:
     if "tax_percentage" in data:
         tax_pct = data["tax_percentage"]
         item.tax_percentage = Decimal(str(tax_pct)) if tax_pct is not None else None
+    if "is_deduction" in data:
+        item.is_deduction = data["is_deduction"]
 
     session.commit()
     return jsonify(item.to_dict())

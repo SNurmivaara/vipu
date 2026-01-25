@@ -257,15 +257,15 @@ class TestBudget:
         # Check totals
         totals = data["totals"]
 
-        # Gross income: 5000 + 500 + 200 = 5700
-        assert totals["gross_income"] == 5700.0
+        # Gross income: 5000 + 500 = 5500 (lunch benefit excluded as deduction)
+        assert totals["gross_income"] == 5500.0
 
         # Net income calculation:
         # Salary: 5000 * 0.75 = 3750
         # Side income: 500 * 0.75 = 375
-        # Lunch benefit: 200 * (1 - 0.75) = 50
-        # Total: 3750 + 375 + 50 = 4175
-        assert totals["net_income"] == 4175.0
+        # Lunch benefit: -200 * 0.75 = -150 (deduction)
+        # Total: 3750 + 375 + (-150) = 3975
+        assert totals["net_income"] == 3975.0
 
         # Current balance: 3500 + 2000 + (-500) = 5000
         assert totals["current_balance"] == 5000.0
@@ -344,11 +344,12 @@ class TestNetIncomeCalculation:
         assert totals["gross_income"] == 1000.0
         assert totals["net_income"] == 800.0
 
-    def test_taxed_income_custom_rate(self, client):
-        """Taxed income with custom rate uses that rate."""
+    def test_deduction_income(self, client):
+        """Income marked as deduction is treated as a deduction."""
         client.put("/api/settings", json={"tax_percentage": 20.0})
 
-        # Lunch benefit with 75% taxable portion
+        # Lunch benefit with 75% deduction rate
+        # In Finland, lunch benefit is deducted from pay at 75% of value
         client.post(
             "/api/income",
             json={
@@ -356,12 +357,14 @@ class TestNetIncomeCalculation:
                 "gross_amount": 200.00,
                 "is_taxed": True,
                 "tax_percentage": 75.0,
+                "is_deduction": True,
             },
         )
 
         response = client.get("/api/budget/current")
         totals = response.json["totals"]
 
-        # Net = 200 * (1 - 0.75) = 50
-        assert totals["gross_income"] == 200.0
-        assert totals["net_income"] == 50.0
+        # Net = -200 * 0.75 = -150 (deduction from pay)
+        # Gross = 0 (deductions are excluded from gross income)
+        assert totals["gross_income"] == 0.0
+        assert totals["net_income"] == -150.0
