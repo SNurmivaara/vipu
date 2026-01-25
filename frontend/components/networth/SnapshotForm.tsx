@@ -18,6 +18,39 @@ export interface SnapshotFormProps {
   existingSnapshot?: NetWorthSnapshot | null;
 }
 
+/**
+ * Normalize a name for matching by removing common suffixes/prefixes
+ * and converting to lowercase. This helps match "Checking" with "Checking Account".
+ */
+function normalizeForMatch(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s*(account|card|cards)\s*/gi, "")
+    .trim();
+}
+
+/**
+ * Find a matching category for a budget account name.
+ * Uses normalized matching to handle variations like "Checking" vs "Checking Account".
+ */
+function findMatchingCategory(
+  accountName: string,
+  categories: NetWorthCategory[]
+): NetWorthCategory | undefined {
+  const normalizedAccountName = normalizeForMatch(accountName);
+
+  // First try exact match (case-insensitive)
+  const exactMatch = categories.find(
+    (c) => c.name.toLowerCase() === accountName.toLowerCase()
+  );
+  if (exactMatch) return exactMatch;
+
+  // Then try normalized match
+  return categories.find(
+    (c) => normalizeForMatch(c.name) === normalizedAccountName
+  );
+}
+
 const MONTHS = [
   { value: 1, label: "January" },
   { value: 2, label: "February" },
@@ -108,9 +141,7 @@ export function SnapshotForm({
       setAmounts((prev) => {
         const newAmounts = { ...prev };
         for (const item of prefillData) {
-          const matchingCategory = categories.find(
-            (c) => c.name.toLowerCase() === item.name.toLowerCase()
-          );
+          const matchingCategory = findMatchingCategory(item.name, categories);
           if (matchingCategory) {
             newAmounts[matchingCategory.id] = item.amount;
           }
@@ -119,7 +150,7 @@ export function SnapshotForm({
       });
 
       const matched = prefillData.filter((item) =>
-        categories.some((c) => c.name.toLowerCase() === item.name.toLowerCase())
+        findMatchingCategory(item.name, categories) !== undefined
       ).length;
 
       toast({

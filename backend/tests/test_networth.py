@@ -469,7 +469,7 @@ class TestSnapshotList:
     def test_list_snapshots_sorted_desc(self, client, seeded_categories):
         """GET /api/networth returns snapshots sorted by date descending."""
         cats = seeded_categories
-        cash_id = cats["Cash"]["id"]
+        cash_id = cats["Checking"]["id"]
 
         client.post(
             "/api/networth",
@@ -511,7 +511,7 @@ class TestSnapshotGet:
 
     def test_get_snapshot_by_year_month(self, client, seeded_categories):
         """GET /api/networth/<year>/<month> returns specific snapshot."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         client.post(
             "/api/networth",
             json={
@@ -569,7 +569,7 @@ class TestSnapshotCreate:
                 "month": 6,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Checking"]["id"], "amount": 5000},
                     {"category_id": cats["Savings"]["id"], "amount": 10000},
                     {"category_id": cats["Student Loan"]["id"], "amount": -5000},
                 ],
@@ -625,7 +625,7 @@ class TestSnapshotCreate:
 
     def test_create_snapshot_amount_exceeds_max(self, client, seeded_categories):
         """POST /api/networth rejects amount > 1 billion."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         response = client.post(
             "/api/networth",
             json={
@@ -654,7 +654,7 @@ class TestSnapshotUpdate:
             json={
                 "month": 1,
                 "year": 2024,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 1000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 1000}],
             },
         )
         snapshot_id = create_response.json["id"]
@@ -663,7 +663,7 @@ class TestSnapshotUpdate:
             f"/api/networth/{snapshot_id}",
             json={
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 2000},
+                    {"category_id": cats["Checking"]["id"], "amount": 2000},
                     {"category_id": cats["Savings"]["id"], "amount": 5000},
                 ]
             },
@@ -724,7 +724,7 @@ class TestSnapshotDelete:
 
     def test_delete_snapshot_cascades_entries(self, client, seeded_categories):
         """DELETE /api/networth/<id> also deletes associated entries."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         create_response = client.post(
             "/api/networth",
             json={
@@ -760,7 +760,7 @@ class TestNetWorthCalculations:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 1000},
+                    {"category_id": cats["Checking"]["id"], "amount": 1000},
                     {"category_id": cats["Savings"]["id"], "amount": 2000},
                     {
                         "category_id": cats["Personal Investments"]["id"],
@@ -782,7 +782,7 @@ class TestNetWorthCalculations:
                 "year": 2024,
                 "entries": [
                     {"category_id": cats["Student Loan"]["id"], "amount": -10000},
-                    {"category_id": cats["Credit Cards"]["id"], "amount": -500},
+                    {"category_id": cats["Credit Card"]["id"], "amount": -500},
                 ],
             },
         )
@@ -798,7 +798,7 @@ class TestNetWorthCalculations:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Checking"]["id"], "amount": 5000},
                     {"category_id": cats["Savings"]["id"], "amount": 10000},
                     {"category_id": cats["Student Loan"]["id"], "amount": -3000},
                 ],
@@ -820,7 +820,7 @@ class TestNetWorthCalculations:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 1000},  # personal
+                    {"category_id": cats["Checking"]["id"], "amount": 1000},  # personal
                     {
                         "category_id": cats["Personal Investments"]["id"],
                         "amount": 5000,
@@ -851,7 +851,7 @@ class TestNetWorthCalculations:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 5000},  # personal
+                    {"category_id": cats["Checking"]["id"], "amount": 5000},  # personal
                     {"category_id": cats["Company Investments"]["id"], "amount": 10000},
                     {"category_id": cats["Company Checkings"]["id"], "amount": 3000},
                 ],
@@ -869,7 +869,7 @@ class TestNetWorthCalculations:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Checking"]["id"], "amount": 5000},
                     {"category_id": cats["Personal Investments"]["id"], "amount": 5000},
                 ],
             },
@@ -893,7 +893,7 @@ class TestNetWorthCalculations:
 
     def test_change_from_previous_first_month(self, client, seeded_categories):
         """First snapshot has 0 change_from_previous."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         response = client.post(
             "/api/networth",
             json={
@@ -907,7 +907,7 @@ class TestNetWorthCalculations:
 
     def test_change_from_previous_subsequent_months(self, client, seeded_categories):
         """Subsequent snapshots show change from previous month."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
 
         # January: 10000 net worth
         client.post(
@@ -933,7 +933,7 @@ class TestNetWorthCalculations:
 
     def test_change_from_previous_year_boundary(self, client, seeded_categories):
         """Change calculation works across year boundary."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
 
         # December 2023: 50000
         client.post(
@@ -1031,7 +1031,7 @@ class TestEdgeCases:
 
     def test_list_sorted_across_years(self, client, seeded_categories):
         """GET /api/networth sorts correctly across year boundaries."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         client.post(
             "/api/networth",
             json={
@@ -1068,7 +1068,7 @@ class TestEdgeCases:
 
     def test_change_from_previous_gap_in_months(self, client, seeded_categories):
         """change_from_previous is 0 when previous month is missing."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
 
         # Only create January and March (skip February)
         client.post(
@@ -1100,7 +1100,7 @@ class TestEdgeCases:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Checking"]["id"], "amount": 5000},
                     {"category_id": cats["Student Loan"]["id"], "amount": -5000},
                 ],
             },
@@ -1117,7 +1117,7 @@ class TestEdgeCases:
                 "month": 1,
                 "year": 2024,
                 "entries": [
-                    {"category_id": cats["Cash"]["id"], "amount": 2000},
+                    {"category_id": cats["Checking"]["id"], "amount": 2000},
                     {"category_id": cats["Student Loan"]["id"], "amount": -10000},
                 ],
             },
@@ -1135,7 +1135,7 @@ class TestEdgeCases:
                 "year": 2024,
                 "entries": [
                     {"category_id": cats["Student Loan"]["id"], "amount": -15000},
-                    {"category_id": cats["Credit Cards"]["id"], "amount": -2000},
+                    {"category_id": cats["Credit Card"]["id"], "amount": -2000},
                 ],
             },
         )
@@ -1146,7 +1146,7 @@ class TestEdgeCases:
 
     def test_decimal_precision(self, client, seeded_categories):
         """Amounts preserve decimal precision."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         response = client.post(
             "/api/networth",
             json={
@@ -1160,7 +1160,7 @@ class TestEdgeCases:
 
     def test_string_amount_conversion(self, client, seeded_categories):
         """String amounts are converted correctly."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         response = client.post(
             "/api/networth",
             json={
@@ -1174,7 +1174,7 @@ class TestEdgeCases:
 
     def test_very_large_amounts(self, client, seeded_categories):
         """Handles very large (but valid) amounts."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         response = client.post(
             "/api/networth",
             json={
@@ -1188,7 +1188,7 @@ class TestEdgeCases:
 
     def test_change_from_previous_negative(self, client, seeded_categories):
         """change_from_previous can be negative (wealth decreased)."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
         client.post(
             "/api/networth",
             json={
@@ -1210,7 +1210,7 @@ class TestEdgeCases:
 
     def test_update_recalculates_next_month(self, client, seeded_categories):
         """Updating a snapshot recalculates next month's change_from_previous."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
 
         # Create January: 10000
         jan_response = client.post(
@@ -1246,7 +1246,7 @@ class TestEdgeCases:
 
     def test_update_recalculates_across_year_boundary(self, client, seeded_categories):
         """Updating December recalculates January's change_from_previous."""
-        cash_id = seeded_categories["Cash"]["id"]
+        cash_id = seeded_categories["Checking"]["id"]
 
         # Create December 2023: 50000
         dec_response = client.post(
@@ -1340,7 +1340,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
 
@@ -1363,7 +1363,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1371,7 +1371,7 @@ class TestForecast:
             json={
                 "month": 2,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 52000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 52000}],
             },
         )
 
@@ -1398,7 +1398,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1407,7 +1407,7 @@ class TestForecast:
                 "month": 2,
                 "year": 2025,
                 # +1000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 51000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 51000}],
             },
         )
         client.post(
@@ -1416,7 +1416,7 @@ class TestForecast:
                 "month": 3,
                 "year": 2025,
                 # +2000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 53000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 53000}],
             },
         )
         client.post(
@@ -1425,7 +1425,7 @@ class TestForecast:
                 "month": 4,
                 "year": 2025,
                 # +3000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 56000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 56000}],
             },
         )
 
@@ -1444,7 +1444,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1453,7 +1453,7 @@ class TestForecast:
                 "month": 2,
                 "year": 2025,
                 # +1000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 51000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 51000}],
             },
         )
         client.post(
@@ -1462,7 +1462,7 @@ class TestForecast:
                 "month": 3,
                 "year": 2025,
                 # +3000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 54000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 54000}],
             },
         )
 
@@ -1487,7 +1487,9 @@ class TestForecast:
                 json={
                     "month": month,
                     "year": year,
-                    "entries": [{"category_id": cats["Cash"]["id"], "amount": amount}],
+                    "entries": [
+                        {"category_id": cats["Checking"]["id"], "amount": amount}
+                    ],
                 },
             )
 
@@ -1507,7 +1509,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1515,7 +1517,7 @@ class TestForecast:
             json={
                 "month": 2,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 52000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 52000}],
             },
         )
 
@@ -1551,7 +1553,7 @@ class TestForecast:
             json={
                 "month": 11,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1559,7 +1561,7 @@ class TestForecast:
             json={
                 "month": 12,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 51000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 51000}],
             },
         )
 
@@ -1581,7 +1583,7 @@ class TestForecast:
             json={
                 "month": 1,
                 "year": 2025,
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 50000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 50000}],
             },
         )
         client.post(
@@ -1590,7 +1592,7 @@ class TestForecast:
                 "month": 2,
                 "year": 2025,
                 # -2000
-                "entries": [{"category_id": cats["Cash"]["id"], "amount": 48000}],
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 48000}],
             },
         )
 

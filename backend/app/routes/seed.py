@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -398,8 +399,6 @@ def import_data() -> Response | tuple[Response, int]:
             category_id = None
             if g.get("category_name"):
                 category_id = category_name_to_id.get(g["category_name"])
-
-            from datetime import datetime
 
             target_date = None
             if g.get("target_date"):

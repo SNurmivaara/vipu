@@ -196,6 +196,7 @@ def calculate_goal_forecast(
     forecast_date: str | None = None
 
     if current_monthly_change > 0 and remaining > 0:
+        # Round up to account for partial months (e.g., 2.3 months -> 3 months)
         months_until_target = int(remaining / current_monthly_change) + 1
         # Calculate the forecast date
         if snapshots:
@@ -229,6 +230,7 @@ def calculate_goal_forecast(
             )
 
             if months_remaining > 0 and remaining > 0:
+                # Safe to divide: months_remaining > 0 is checked above
                 required_monthly_change = remaining / months_remaining
                 on_track = current_monthly_change >= required_monthly_change
             elif remaining <= 0:

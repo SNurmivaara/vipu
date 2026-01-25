@@ -97,7 +97,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     setForecastPeriod(period);
   }, []);
 
-  const { data: forecast, isLoading: forecastLoading } = useQuery({
+  const { data: forecast, isLoading: forecastLoading, isError: forecastError } = useQuery({
     queryKey: ["forecast", forecastPeriod],
     queryFn: () => fetchForecast({ period: forecastPeriod, months_ahead: 12 }),
     enabled: showForecast && snapshots.length > 0,
@@ -270,28 +270,42 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
         </div>
       </div>
 
-      {showForecast && forecast && (
+      {showForecast && (
         <div className="mb-3 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="inline-flex items-center gap-1">
-            <span className="w-3 h-0.5 bg-amber-500" style={{ borderStyle: "dashed" }}></span>
-            Current pace: {formatCurrency(forecast.monthly_change_rate)}/mo
-          </span>
           {forecastLoading && (
-            <span className="text-amber-500">Loading...</span>
+            <span className="text-amber-500">Loading forecast...</span>
           )}
-          {/* Show required pace for net worth goals */}
-          {netWorthGoalLines.filter(g => !g.achieved && g.requiredMonthly && g.requiredMonthly > 0).map((goal, idx) => (
-            <span
-              key={idx}
-              className={`inline-flex items-center gap-1 ${
-                forecast.monthly_change_rate >= goal.requiredMonthly!
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-amber-600 dark:text-amber-400"
-              }`}
-            >
-              {goal.name}: {formatCurrency(goal.requiredMonthly!)}/mo needed
-            </span>
-          ))}
+          {forecastError && (
+            <span className="text-red-500 dark:text-red-400">Failed to load forecast</span>
+          )}
+          {forecast && (
+            <>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-3 h-0.5 bg-amber-500" style={{ borderStyle: "dashed" }}></span>
+                Current pace: {formatCurrency(forecast.monthly_change_rate)}/mo
+              </span>
+              {/* Show required pace only for the most behind-schedule goal */}
+              {(() => {
+                const behindGoals = netWorthGoalLines
+                  .filter(g => !g.achieved && g.requiredMonthly && g.requiredMonthly > 0)
+                  .sort((a, b) => (b.requiredMonthly ?? 0) - (a.requiredMonthly ?? 0));
+                const mostUrgent = behindGoals[0];
+                if (!mostUrgent) return null;
+                const isOnTrack = forecast.monthly_change_rate >= mostUrgent.requiredMonthly!;
+                return (
+                  <span
+                    className={`inline-flex items-center gap-1 ${
+                      isOnTrack
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : "text-amber-600 dark:text-amber-400"
+                    }`}
+                  >
+                    {mostUrgent.name}: {formatCurrency(mostUrgent.requiredMonthly!)}/mo needed
+                  </span>
+                );
+              })()}
+            </>
+          )}
         </div>
       )}
 

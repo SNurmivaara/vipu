@@ -6,6 +6,7 @@ from flask import Response, jsonify, request
 from sqlalchemy.orm import Session
 
 from app import get_session
+from app.forecasting import generate_net_worth_forecast
 from app.models import NetWorthCategory, NetWorthEntry, NetWorthGroup, NetWorthSnapshot
 
 bp = APIBlueprint("networth", __name__, tag="Net Worth")
@@ -1009,8 +1010,6 @@ def get_forecast() -> Response | tuple[Response, int]:
 
     Returns projected net worth values and the monthly change rate used.
     """
-    from app.forecasting import generate_net_worth_forecast
-
     session = get_session()
 
     # Parse and validate query parameters
