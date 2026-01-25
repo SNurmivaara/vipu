@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -190,7 +191,10 @@ class NetWorthSnapshot(Base):
     """Monthly net worth snapshot for tracking wealth over time."""
 
     __tablename__ = "networth_snapshots"
-    __table_args__ = (UniqueConstraint("year", "month", name="uq_networth_year_month"),)
+    __table_args__ = (
+        UniqueConstraint("year", "month", name="uq_networth_year_month"),
+        Index("ix_networth_year_month", "year", "month"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     month: Mapped[int] = mapped_column(Integer, nullable=False)

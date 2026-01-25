@@ -80,7 +80,10 @@ def create_category() -> Response | tuple[Response, int]:
 
     # Get optional fields
     is_personal = bool(data.get("is_personal", True))
-    display_order = int(data.get("display_order", 0))
+    try:
+        display_order = int(data.get("display_order", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "display_order must be an integer"}), 400
 
     category = NetWorthCategory(
         name=name,
@@ -144,7 +147,10 @@ def update_category(category_id: int) -> Response | tuple[Response, int]:
         category.is_personal = bool(data["is_personal"])
 
     if "display_order" in data:
-        category.display_order = int(data["display_order"])
+        try:
+            category.display_order = int(data["display_order"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "display_order must be an integer"}), 400
 
     session.commit()
     return jsonify(category.to_dict())
@@ -154,12 +160,19 @@ def update_category(category_id: int) -> Response | tuple[Response, int]:
 def delete_category(category_id: int) -> Response | tuple[Response, int]:
     """Delete a category. Fails if category is used in any snapshot entries."""
     session = get_session()
-    category = session.query(NetWorthCategory).filter_by(id=category_id).first()
+
+    # Lock the category row to prevent race conditions
+    category = (
+        session.query(NetWorthCategory)
+        .filter_by(id=category_id)
+        .with_for_update()
+        .first()
+    )
 
     if not category:
         return jsonify({"error": "Category not found"}), 404
 
-    # Check if category is used in any entries
+    # Check if category is used in any entries (also locked by FK relationship)
     entry_count = (
         session.query(NetWorthEntry).filter_by(category_id=category_id).count()
     )
@@ -245,6 +258,30 @@ def _get_previous_net_worth(session: Session, year: int, month: int) -> Decimal 
         .first()
     )
     return previous.net_worth if previous else None
+
+
+def _recalculate_next_month(session: Session, year: int, month: int) -> None:
+    """Recalculate the next month's change_from_previous if it exists."""
+    if month == 12:
+        next_year = year + 1
+        next_month = 1
+    else:
+        next_year = year
+        next_month = month + 1
+
+    next_snapshot = (
+        session.query(NetWorthSnapshot)
+        .filter_by(year=next_year, month=next_month)
+        .first()
+    )
+
+    if next_snapshot:
+        # Get the current month's net worth (which was just updated)
+        current = (
+            session.query(NetWorthSnapshot).filter_by(year=year, month=month).first()
+        )
+        previous_net_worth = current.net_worth if current else None
+        next_snapshot.calculate_totals(previous_net_worth)
 
 
 def _validate_snapshot_data(data: dict) -> tuple[bool, str | None]:
@@ -479,6 +516,9 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
     # Recalculate totals
     previous_net_worth = _get_previous_net_worth(session, snapshot.year, snapshot.month)
     snapshot.calculate_totals(previous_net_worth)
+
+    # Recalculate next month's change_from_previous if it exists
+    _recalculate_next_month(session, snapshot.year, snapshot.month)
 
     session.commit()
     return jsonify(snapshot.to_dict())

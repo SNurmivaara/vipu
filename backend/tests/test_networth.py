@@ -1026,3 +1026,108 @@ class TestEdgeCases:
             },
         )
         assert response.json["change_from_previous"] == -5000.0
+
+    def test_update_recalculates_next_month(self, client, seeded_categories):
+        """Updating a snapshot recalculates next month's change_from_previous."""
+        cash_id = seeded_categories["Cash"]["id"]
+
+        # Create January: 10000
+        jan_response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 10000}],
+            },
+        )
+        jan_id = jan_response.json["id"]
+
+        # Create February: 15000 (change = +5000)
+        feb_response = client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 15000}],
+            },
+        )
+        assert feb_response.json["change_from_previous"] == 5000.0
+
+        # Update January to 12000
+        client.put(
+            f"/api/networth/{jan_id}",
+            json={"entries": [{"category_id": cash_id, "amount": 12000}]},
+        )
+
+        # February's change should now be 15000 - 12000 = 3000
+        feb_check = client.get("/api/networth/2024/2")
+        assert feb_check.json["change_from_previous"] == 3000.0
+
+    def test_update_recalculates_across_year_boundary(self, client, seeded_categories):
+        """Updating December recalculates January's change_from_previous."""
+        cash_id = seeded_categories["Cash"]["id"]
+
+        # Create December 2023: 50000
+        dec_response = client.post(
+            "/api/networth",
+            json={
+                "month": 12,
+                "year": 2023,
+                "entries": [{"category_id": cash_id, "amount": 50000}],
+            },
+        )
+        dec_id = dec_response.json["id"]
+
+        # Create January 2024: 55000 (change = +5000)
+        jan_response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 55000}],
+            },
+        )
+        assert jan_response.json["change_from_previous"] == 5000.0
+
+        # Update December to 52000
+        client.put(
+            f"/api/networth/{dec_id}",
+            json={"entries": [{"category_id": cash_id, "amount": 52000}]},
+        )
+
+        # January's change should now be 55000 - 52000 = 3000
+        jan_check = client.get("/api/networth/2024/1")
+        assert jan_check.json["change_from_previous"] == 3000.0
+
+
+class TestDisplayOrderValidation:
+    """Tests for display_order validation."""
+
+    def test_create_category_invalid_display_order(self, client):
+        """POST /api/networth/categories rejects non-integer display_order."""
+        response = client.post(
+            "/api/networth/categories",
+            json={
+                "name": "Test",
+                "category_type": "asset",
+                "category_group": "cash",
+                "display_order": "not_an_int",
+            },
+        )
+        assert response.status_code == 400
+        assert "display_order" in response.json["error"].lower()
+
+    def test_update_category_invalid_display_order(self, client):
+        """PUT /api/networth/categories/<id> rejects non-integer display_order."""
+        create_response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
+        )
+        category_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/networth/categories/{category_id}",
+            json={"display_order": "invalid"},
+        )
+        assert response.status_code == 400
+        assert "display_order" in response.json["error"].lower()
