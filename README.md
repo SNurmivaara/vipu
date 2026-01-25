@@ -1,8 +1,6 @@
 # Vipu
 
-[![Backend CI](https://github.com/SNurmivaara/vipu/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/SNurmivaara/vipu/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/frontend-ci.yml)
-[![Docker Build](https://github.com/SNurmivaara/vipu/actions/workflows/docker-build.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/docker-build.yml)
+[![CI](https://github.com/SNurmivaara/vipu/actions/workflows/ci.yml/badge.svg)](https://github.com/SNurmivaara/vipu/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
