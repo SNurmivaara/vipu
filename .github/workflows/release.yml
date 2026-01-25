@@ -1,9 +1,8 @@
 name: Release images to GHCR
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [ published ]
 
 permissions:
   contents: read
@@ -37,8 +36,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-backend:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/vipu-backend:latest
+            ghcr.io/${{ github.repository }}/backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/backend:latest
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v4
@@ -48,5 +47,5 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-frontend:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/vipu-frontend:latest
+            ghcr.io/${{ github.repository }}/frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}/frontend:latest
