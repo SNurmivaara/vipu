@@ -18,10 +18,11 @@
 
 ### Monthly Net Worth
 - Track assets and liabilities over time
-- User-defined categories (cash, investments, crypto, property, loans, credit)
+- User-defined groups and categories (cash, investments, crypto, property, loans, credit)
 - Personal vs company wealth separation
 - Automatic calculation of totals, percentages, and month-over-month changes
-- Frontend with charts *(Coming Soon)*
+- Area chart for net worth trend over time
+- Pie chart for asset allocation by group
 
 ## Tech Stack
 
@@ -177,7 +178,9 @@ vipu/
 ├── frontend/
 │   ├── app/                 # Next.js app router pages
 │   ├── components/          # React components
-│   │   └── budget/          # Budget-specific components
+│   │   ├── budget/          # Budget-specific components
+│   │   └── networth/        # Net worth components (charts, forms)
+│   ├── hooks/               # React Query hooks
 │   ├── lib/                 # API client, utilities
 │   ├── types/               # TypeScript interfaces
 │   ├── Dockerfile
@@ -201,8 +204,9 @@ vipu/
 - [x] CI/CD with GitHub Actions
 - [x] Frontend (Weekly Budget)
 - [x] Net Worth tracking backend
-- [ ] Net Worth frontend with charts
+- [x] Net Worth frontend with charts
 - [ ] Goals and targets
+- [ ] Data import/export
 
 ## License
 

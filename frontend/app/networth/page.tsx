@@ -4,6 +4,7 @@ import { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNetWorthSnapshots, useNetWorthCategories } from "@/hooks/useNetWorth";
+import { useGoalsProgress } from "@/hooks/useGoals";
 import { useTheme } from "@/hooks/useTheme";
 import {
   SummaryCards,
@@ -13,6 +14,7 @@ import {
   SnapshotList,
   CategoryManager,
 } from "@/components/networth";
+import { GoalsList, GoalForm } from "@/components/goals";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import { seedCategories, seedNetWorth, resetNetWorth } from "@/lib/api";
@@ -20,11 +22,13 @@ import { seedCategories, seedNetWorth, resetNetWorth } from "@/lib/api";
 export default function NetWorthPage() {
   const { data: snapshots, isLoading: snapshotsLoading, error: snapshotsError } = useNetWorthSnapshots();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError } = useNetWorthCategories();
+  const { data: goalsProgress = [] } = useGoalsProgress();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [formOpen, setFormOpen] = useState(false);
+  const [goalFormOpen, setGoalFormOpen] = useState(false);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
 
@@ -214,10 +218,29 @@ export default function NetWorthPage() {
       {/* Charts Row */}
       {hasSnapshots && (
         <div className="grid gap-4 md:grid-cols-2">
-          <NetWorthChart snapshots={snapshotList} />
+          <NetWorthChart snapshots={snapshotList} netWorthGoals={goalsProgress} />
           <AllocationChart snapshot={latestSnapshot} />
         </div>
       )}
+
+      {/* Goals Section */}
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
+            Goals
+          </h3>
+          <button
+            onClick={() => setGoalFormOpen(true)}
+            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            + New Goal
+          </button>
+        </div>
+        <GoalsList goals={goalsProgress} />
+      </div>
+
+      {/* Goal Form */}
+      <GoalForm open={goalFormOpen} onOpenChange={setGoalFormOpen} />
 
       {/* Snapshot List */}
       {hasCategories && (

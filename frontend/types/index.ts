@@ -124,3 +124,39 @@ export interface GroupFormData {
   color: string;
   display_order: number;
 }
+
+// Goal types
+export type GoalType = "net_worth" | "savings_rate" | "monthly_savings";
+
+export interface Goal {
+  id: number;
+  name: string;
+  goal_type: GoalType;
+  target_value: number;
+  target_date: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface GoalFormData {
+  name: string;
+  goal_type: GoalType;
+  target_value: number;
+  target_date: string | null;
+  is_active: boolean;
+}
+
+export interface GoalProgressDetails {
+  latest_month?: string | null;
+  net_income?: number;
+  savings_amount?: number;
+}
+
+export interface GoalProgress {
+  goal: Goal;
+  current_value: number;
+  target_value: number;
+  progress_percentage: number;
+  is_achieved: boolean;
+  details: GoalProgressDetails;
+}

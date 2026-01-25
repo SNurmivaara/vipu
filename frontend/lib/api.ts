@@ -16,6 +16,9 @@ import {
   UpdateSnapshotInput,
   GroupFormData,
   CategoryFormData,
+  Goal,
+  GoalFormData,
+  GoalProgress,
 } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -230,4 +233,32 @@ export const updateGroup = async (id: number, group: Partial<GroupFormData>): Pr
 
 export const deleteGroup = async (id: number): Promise<void> => {
   await api.delete(`/networth/groups/${id}`);
+};
+
+// Goals
+export const fetchGoals = async (): Promise<Goal[]> => {
+  const { data } = await api.get<Goal[]>("/goals");
+  return data;
+};
+
+export const fetchGoalsProgress = async (): Promise<GoalProgress[]> => {
+  const { data } = await api.get<GoalProgress[]>("/goals/progress");
+  return data;
+};
+
+export const createGoal = async (goal: GoalFormData): Promise<Goal> => {
+  const { data } = await api.post<Goal>("/goals", goal);
+  return data;
+};
+
+export const updateGoal = async (
+  id: number,
+  goal: Partial<GoalFormData>
+): Promise<Goal> => {
+  const { data } = await api.put<Goal>(`/goals/${id}`, goal);
+  return data;
+};
+
+export const deleteGoal = async (id: number): Promise<void> => {
+  await api.delete(`/goals/${id}`);
 };

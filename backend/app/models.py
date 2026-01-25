@@ -392,3 +392,35 @@ class NetWorthEntry(Base):
             "category": self.category.to_dict() if self.category else None,
             "amount": float(self.amount) if self.amount is not None else 0.0,
         }
+
+
+class Goal(Base):
+    """Financial goal for tracking progress."""
+
+    __tablename__ = "goals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    goal_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "net_worth", "savings_rate", "monthly_savings"
+    target_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    target_date: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "goal_type": self.goal_type,
+            "target_value": float(self.target_value),
+            "target_date": self.target_date.isoformat() if self.target_date else None,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat(),
+        }
