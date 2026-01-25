@@ -4,13 +4,13 @@ from decimal import Decimal
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Index,
+    ForeignKey,
     Integer,
     Numeric,
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utc_now() -> datetime:
@@ -147,14 +147,50 @@ class BudgetSettings(Base):
         }
 
 
+class NetWorthCategory(Base):
+    """User-defined net worth category (asset or liability type)."""
+
+    __tablename__ = "networth_categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    category_type: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "asset" or "liability"
+    category_group: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # "cash", "investment", "crypto", "property", "loan", "credit"
+    is_personal: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )  # True = personal, False = company
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    # Relationships
+    entries: Mapped[list["NetWorthEntry"]] = relationship(
+        "NetWorthEntry", back_populates="category"
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "category_type": self.category_type,
+            "category_group": self.category_group,
+            "is_personal": self.is_personal,
+            "display_order": self.display_order,
+            "created_at": self.created_at.isoformat(),
+        }
+
+
 class NetWorthSnapshot(Base):
     """Monthly net worth snapshot for tracking wealth over time."""
 
     __tablename__ = "networth_snapshots"
-    __table_args__ = (
-        UniqueConstraint("year", "month", name="uq_networth_year_month"),
-        Index("ix_networth_year_month", "year", "month"),
-    )
+    __table_args__ = (UniqueConstraint("year", "month", name="uq_networth_year_month"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -163,38 +199,7 @@ class NetWorthSnapshot(Base):
         DateTime(timezone=True), nullable=False, default=utc_now
     )
 
-    # Assets (stored as positive values)
-    cash: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
-    savings: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
-    rent_account: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    crypto: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
-    house_worth: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    personal_investments: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    personal_bonds: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    company_investments: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    company_checkings: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-
-    # Liabilities (stored as negative values)
-    student_loan: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    credit_cards: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-
-    # Calculated fields (stored for historical record)
+    # Calculated totals (stored for historical record)
     total_assets: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=0
     )
@@ -213,91 +218,46 @@ class NetWorthSnapshot(Base):
     company_wealth: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=0
     )
-    total_investments: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2), nullable=False, default=0
-    )
-    stocks_pct: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=0
-    )
-    crypto_pct: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=0
-    )
-    cash_pct: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0)
 
-    def calculate_derived_fields(
-        self, previous_net_worth: Decimal | None = None
-    ) -> None:
-        """Calculate all derived fields from the input values.
+    # Relationships
+    entries: Mapped[list["NetWorthEntry"]] = relationship(
+        "NetWorthEntry",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        order_by="NetWorthEntry.id",
+    )
 
-        SQLAlchemy column defaults don't apply pre-flush, so we handle None values.
+    def calculate_totals(self, previous_net_worth: Decimal | None = None) -> None:
+        """Calculate all totals from entries.
+
+        Must be called after entries are attached to the snapshot.
         """
         zero = Decimal(0)
-        cash = self.cash if self.cash is not None else zero
-        savings = self.savings if self.savings is not None else zero
-        rent_account = self.rent_account if self.rent_account is not None else zero
-        crypto = self.crypto if self.crypto is not None else zero
-        house_worth = self.house_worth if self.house_worth is not None else zero
-        personal_investments = (
-            self.personal_investments if self.personal_investments is not None else zero
-        )
-        personal_bonds = (
-            self.personal_bonds if self.personal_bonds is not None else zero
-        )
-        company_investments = (
-            self.company_investments if self.company_investments is not None else zero
-        )
-        company_checkings = (
-            self.company_checkings if self.company_checkings is not None else zero
-        )
-        student_loan = self.student_loan if self.student_loan is not None else zero
-        credit_cards = self.credit_cards if self.credit_cards is not None else zero
 
-        # Total assets = sum of all asset fields
-        self.total_assets = (
-            cash
-            + savings
-            + rent_account
-            + crypto
-            + house_worth
-            + personal_investments
-            + personal_bonds
-            + company_investments
-            + company_checkings
-        )
+        # Calculate totals from entries
+        self.total_assets = zero
+        self.total_liabilities = zero
+        self.personal_wealth = zero
+        self.company_wealth = zero
 
-        # Total liabilities (student_loan and credit_cards are stored as negative)
-        self.total_liabilities = student_loan + credit_cards
+        for entry in self.entries:
+            amount = entry.amount if entry.amount is not None else zero
+            category = entry.category
 
-        # Net worth
+            if category.category_type == "asset":
+                self.total_assets += amount
+                if category.is_personal:
+                    self.personal_wealth += amount
+                else:
+                    self.company_wealth += amount
+            else:  # liability
+                self.total_liabilities += amount
+                if category.is_personal:
+                    self.personal_wealth += amount
+                # Note: liabilities don't count toward company_wealth
+
+        # Net worth = assets + liabilities (liabilities are negative)
         self.net_worth = self.total_assets + self.total_liabilities
-
-        # Personal wealth (personal assets + liabilities)
-        self.personal_wealth = (
-            cash
-            + savings
-            + rent_account
-            + crypto
-            + personal_investments
-            + personal_bonds
-        ) + self.total_liabilities
-
-        # Company wealth
-        self.company_wealth = company_investments + company_checkings
-
-        # Total investments
-        self.total_investments = personal_investments + company_investments
-
-        # Percentage calculations (avoid division by zero)
-        if self.total_assets > 0:
-            self.stocks_pct = (self.total_investments / self.total_assets) * 100
-            self.crypto_pct = (crypto / self.total_assets) * 100
-            self.cash_pct = (
-                (cash + savings + company_checkings) / self.total_assets
-            ) * 100
-        else:
-            self.stocks_pct = zero
-            self.crypto_pct = zero
-            self.cash_pct = zero
 
         # Change from previous month
         if previous_net_worth is not None:
@@ -305,39 +265,84 @@ class NetWorthSnapshot(Base):
         else:
             self.change_from_previous = zero
 
-    def to_dict(self) -> dict:
+    def to_dict(self, include_entries: bool = True) -> dict:
         """Convert to dictionary."""
 
         def to_float(val: Decimal | None) -> float:
             return float(val) if val is not None else 0.0
 
-        return {
+        result: dict = {
             "id": self.id,
             "month": self.month,
             "year": self.year,
             "timestamp": self.timestamp.isoformat(),
-            # Assets
-            "cash": to_float(self.cash),
-            "savings": to_float(self.savings),
-            "rent_account": to_float(self.rent_account),
-            "crypto": to_float(self.crypto),
-            "house_worth": to_float(self.house_worth),
-            "personal_investments": to_float(self.personal_investments),
-            "personal_bonds": to_float(self.personal_bonds),
-            "company_investments": to_float(self.company_investments),
-            "company_checkings": to_float(self.company_checkings),
-            # Liabilities
-            "student_loan": to_float(self.student_loan),
-            "credit_cards": to_float(self.credit_cards),
-            # Calculated fields
             "total_assets": to_float(self.total_assets),
             "total_liabilities": to_float(self.total_liabilities),
             "net_worth": to_float(self.net_worth),
             "change_from_previous": to_float(self.change_from_previous),
             "personal_wealth": to_float(self.personal_wealth),
             "company_wealth": to_float(self.company_wealth),
-            "total_investments": to_float(self.total_investments),
-            "stocks_pct": to_float(self.stocks_pct),
-            "crypto_pct": to_float(self.crypto_pct),
-            "cash_pct": to_float(self.cash_pct),
+        }
+
+        if include_entries:
+            result["entries"] = [e.to_dict() for e in self.entries]
+
+            # Calculate group totals and percentages
+            zero = Decimal(0)
+            group_totals: dict[str, Decimal] = {}
+            for entry in self.entries:
+                if entry.category.category_type == "asset":
+                    group = entry.category.category_group
+                    amount = entry.amount if entry.amount is not None else zero
+                    group_totals[group] = group_totals.get(group, zero) + amount
+
+            result["by_group"] = {k: float(v) for k, v in group_totals.items()}
+
+            # Percentages (avoid division by zero)
+            total_assets = self.total_assets if self.total_assets else zero
+            if total_assets > 0:
+                result["percentages"] = {
+                    f"{k}_pct": round(float(v / total_assets * 100), 2)
+                    for k, v in group_totals.items()
+                }
+            else:
+                result["percentages"] = {}
+
+        return result
+
+
+class NetWorthEntry(Base):
+    """Individual entry in a net worth snapshot."""
+
+    __tablename__ = "networth_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id", "category_id", name="uq_entry_snapshot_category"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("networth_snapshots.id", ondelete="CASCADE"), nullable=False
+    )
+    category_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("networth_categories.id"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+
+    # Relationships
+    snapshot: Mapped["NetWorthSnapshot"] = relationship(
+        "NetWorthSnapshot", back_populates="entries"
+    )
+    category: Mapped["NetWorthCategory"] = relationship(
+        "NetWorthCategory", back_populates="entries"
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "category_id": self.category_id,
+            "category": self.category.to_dict() if self.category else None,
+            "amount": float(self.amount) if self.amount is not None else 0.0,
         }

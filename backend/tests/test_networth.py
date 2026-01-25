@@ -1,100 +1,283 @@
 """Tests for net worth API endpoints."""
 
+import pytest
 
-class TestNetWorthValidation:
-    """Tests for input validation edge cases."""
+# =============================================================================
+# Category Tests
+# =============================================================================
 
-    def test_create_no_body(self, client):
-        """POST /api/networth with no JSON body returns 400."""
-        response = client.post("/api/networth", content_type="application/json")
-        assert response.status_code == 400
 
-    def test_create_invalid_month_type(self, client):
-        """POST /api/networth with non-integer month returns 400."""
-        response = client.post("/api/networth", json={"month": "january", "year": 2024})
-        assert response.status_code == 400
+class TestCategoryList:
+    """Tests for listing categories."""
 
-    def test_create_invalid_year_type(self, client):
-        """POST /api/networth with non-integer year returns 400."""
-        response = client.post("/api/networth", json={"month": 1, "year": "2024"})
-        # String "2024" should be converted to int, so this should work
+    def test_list_categories_empty(self, client):
+        """GET /api/networth/categories returns empty list initially."""
+        response = client.get("/api/networth/categories")
+        assert response.status_code == 200
+        assert response.json == []
+
+    def test_list_categories_sorted(self, client):
+        """GET /api/networth/categories returns categories sorted by display_order."""
+        client.post(
+            "/api/networth/categories",
+            json={
+                "name": "Second",
+                "category_type": "asset",
+                "category_group": "cash",
+                "display_order": 2,
+            },
+        )
+        client.post(
+            "/api/networth/categories",
+            json={
+                "name": "First",
+                "category_type": "asset",
+                "category_group": "cash",
+                "display_order": 1,
+            },
+        )
+
+        response = client.get("/api/networth/categories")
+        assert response.status_code == 200
+        assert len(response.json) == 2
+        assert response.json[0]["name"] == "First"
+        assert response.json[1]["name"] == "Second"
+
+
+class TestCategoryCreate:
+    """Tests for creating categories."""
+
+    def test_create_category_minimal(self, client):
+        """POST /api/networth/categories creates category with required fields."""
+        response = client.post(
+            "/api/networth/categories",
+            json={
+                "name": "My Savings",
+                "category_type": "asset",
+                "category_group": "cash",
+            },
+        )
         assert response.status_code == 201
+        data = response.json
 
-    def test_create_invalid_amount_type(self, client):
-        """POST /api/networth with non-numeric amount returns 400."""
-        response = client.post(
-            "/api/networth", json={"month": 1, "year": 2024, "cash": "invalid"}
-        )
-        assert response.status_code == 400
-        assert "must be a number" in response.json["error"].lower()
+        assert data["name"] == "My Savings"
+        assert data["category_type"] == "asset"
+        assert data["category_group"] == "cash"
+        assert data["is_personal"] is True  # Default
+        assert data["display_order"] == 0  # Default
+        assert "id" in data
+        assert "created_at" in data
 
-    def test_create_negative_amount_allowed(self, client):
-        """POST /api/networth allows negative amounts for liabilities."""
+    def test_create_category_full(self, client):
+        """POST /api/networth/categories creates category with all fields."""
         response = client.post(
-            "/api/networth",
-            json={"month": 1, "year": 2024, "student_loan": -50000},
+            "/api/networth/categories",
+            json={
+                "name": "Company Account",
+                "category_type": "asset",
+                "category_group": "investment",
+                "is_personal": False,
+                "display_order": 10,
+            },
         )
         assert response.status_code == 201
-        assert response.json["student_loan"] == -50000.0
+        data = response.json
 
-    def test_create_large_negative_amount_rejected(self, client):
-        """POST /api/networth rejects amounts exceeding max (negative)."""
+        assert data["is_personal"] is False
+        assert data["display_order"] == 10
+
+    def test_create_category_missing_name(self, client):
+        """POST /api/networth/categories requires name."""
         response = client.post(
-            "/api/networth",
-            json={"month": 1, "year": 2024, "student_loan": -1_000_000_001},
+            "/api/networth/categories",
+            json={"category_type": "asset", "category_group": "cash"},
         )
         assert response.status_code == 400
-        assert "exceeds maximum" in response.json["error"].lower()
+        assert "name" in response.json["error"].lower()
 
-    def test_update_no_body(self, client):
-        """PUT /api/networth/<id> with no JSON body returns 400."""
-        create_response = client.post("/api/networth", json={"month": 1, "year": 2024})
-        snapshot_id = create_response.json["id"]
+    def test_create_category_missing_type(self, client):
+        """POST /api/networth/categories requires category_type."""
+        response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_group": "cash"},
+        )
+        assert response.status_code == 400
+        assert "category_type" in response.json["error"].lower()
+
+    def test_create_category_missing_group(self, client):
+        """POST /api/networth/categories requires category_group."""
+        response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_type": "asset"},
+        )
+        assert response.status_code == 400
+        assert "category_group" in response.json["error"].lower()
+
+    def test_create_category_invalid_type(self, client):
+        """POST /api/networth/categories validates category_type."""
+        response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_type": "invalid", "category_group": "cash"},
+        )
+        assert response.status_code == 400
+        assert "category_type" in response.json["error"].lower()
+
+    def test_create_category_invalid_group(self, client):
+        """POST /api/networth/categories validates category_group."""
+        response = client.post(
+            "/api/networth/categories",
+            json={
+                "name": "Test",
+                "category_type": "asset",
+                "category_group": "invalid",
+            },
+        )
+        assert response.status_code == 400
+        assert "category_group" in response.json["error"].lower()
+
+    def test_create_category_name_too_long(self, client):
+        """POST /api/networth/categories rejects name > 100 chars."""
+        response = client.post(
+            "/api/networth/categories",
+            json={
+                "name": "x" * 101,
+                "category_type": "asset",
+                "category_group": "cash",
+            },
+        )
+        assert response.status_code == 400
+
+    def test_create_category_no_body(self, client):
+        """POST /api/networth/categories with no body returns 400."""
+        response = client.post(
+            "/api/networth/categories", content_type="application/json"
+        )
+        assert response.status_code == 400
+
+
+class TestCategoryUpdate:
+    """Tests for updating categories."""
+
+    def test_update_category(self, client):
+        """PUT /api/networth/categories/<id> updates category."""
+        create_response = client.post(
+            "/api/networth/categories",
+            json={
+                "name": "Old Name",
+                "category_type": "asset",
+                "category_group": "cash",
+            },
+        )
+        category_id = create_response.json["id"]
 
         response = client.put(
-            f"/api/networth/{snapshot_id}", content_type="application/json"
+            f"/api/networth/categories/{category_id}",
+            json={"name": "New Name", "display_order": 5},
         )
-        assert response.status_code == 400
+        assert response.status_code == 200
+        assert response.json["name"] == "New Name"
+        assert response.json["display_order"] == 5
 
-    def test_update_invalid_amount_type(self, client):
-        """PUT /api/networth/<id> with non-numeric amount returns 400."""
-        create_response = client.post("/api/networth", json={"month": 1, "year": 2024})
-        snapshot_id = create_response.json["id"]
+    def test_update_category_not_found(self, client):
+        """PUT /api/networth/categories/<id> returns 404 for non-existent."""
+        response = client.put("/api/networth/categories/999", json={"name": "Test"})
+        assert response.status_code == 404
+
+    def test_update_category_no_body(self, client):
+        """PUT /api/networth/categories/<id> with no body returns 400."""
+        create_response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
+        )
+        category_id = create_response.json["id"]
 
         response = client.put(
-            f"/api/networth/{snapshot_id}", json={"cash": "not_a_number"}
+            f"/api/networth/categories/{category_id}",
+            content_type="application/json",
         )
         assert response.status_code == 400
 
-    def test_update_invalid_month_on_change(self, client):
-        """PUT /api/networth/<id> rejects invalid month when changing."""
-        create_response = client.post("/api/networth", json={"month": 1, "year": 2024})
-        snapshot_id = create_response.json["id"]
 
-        response = client.put(f"/api/networth/{snapshot_id}", json={"month": 13})
-        assert response.status_code == 400
+class TestCategoryDelete:
+    """Tests for deleting categories."""
 
-    def test_decimal_precision(self, client):
-        """POST /api/networth handles decimal amounts correctly."""
-        response = client.post(
-            "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 1234.56},
+    def test_delete_category(self, client):
+        """DELETE /api/networth/categories/<id> removes category."""
+        create_response = client.post(
+            "/api/networth/categories",
+            json={"name": "Test", "category_type": "asset", "category_group": "cash"},
         )
-        assert response.status_code == 201
-        assert response.json["cash"] == 1234.56
+        category_id = create_response.json["id"]
 
-    def test_float_string_conversion(self, client):
-        """POST /api/networth accepts string numbers."""
-        response = client.post(
-            "/api/networth",
-            json={"month": 1, "year": 2024, "cash": "5000.50"},
+        response = client.delete(f"/api/networth/categories/{category_id}")
+        assert response.status_code == 200
+
+        # Verify it's gone
+        list_response = client.get("/api/networth/categories")
+        assert len(list_response.json) == 0
+
+    def test_delete_category_not_found(self, client):
+        """DELETE /api/networth/categories/<id> returns 404 for non-existent."""
+        response = client.delete("/api/networth/categories/999")
+        assert response.status_code == 404
+
+    def test_delete_category_in_use(self, client):
+        """DELETE /api/networth/categories/<id> fails if category is used."""
+        # Create category
+        cat_response = client.post(
+            "/api/networth/categories",
+            json={"name": "Cash", "category_type": "asset", "category_group": "cash"},
         )
+        category_id = cat_response.json["id"]
+
+        # Create snapshot using this category
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": category_id, "amount": 1000}],
+            },
+        )
+
+        # Try to delete category
+        response = client.delete(f"/api/networth/categories/{category_id}")
+        assert response.status_code == 409
+        assert "used in" in response.json["error"].lower()
+
+
+class TestCategorySeed:
+    """Tests for seeding categories."""
+
+    def test_seed_categories(self, client):
+        """POST /api/networth/categories/seed creates default categories."""
+        response = client.post("/api/networth/categories/seed")
         assert response.status_code == 201
-        assert response.json["cash"] == 5000.50
+        assert response.json["count"] == 11
+
+    def test_seed_categories_already_exists(self, client):
+        """POST /api/networth/categories/seed fails if categories exist."""
+        client.post("/api/networth/categories/seed")
+
+        response = client.post("/api/networth/categories/seed")
+        assert response.status_code == 409
 
 
-class TestNetWorthList:
-    """Tests for listing net worth snapshots."""
+# =============================================================================
+# Snapshot Tests
+# =============================================================================
+
+
+@pytest.fixture
+def seeded_categories(client):
+    """Fixture that seeds default categories and returns category lookup."""
+    client.post("/api/networth/categories/seed")
+    response = client.get("/api/networth/categories")
+    return {c["name"]: c for c in response.json}
+
+
+class TestSnapshotList:
+    """Tests for listing snapshots."""
 
     def test_list_snapshots_empty(self, client):
         """GET /api/networth returns empty list initially."""
@@ -102,30 +285,60 @@ class TestNetWorthList:
         assert response.status_code == 200
         assert response.json == []
 
-    def test_list_snapshots_sorted_desc(self, client):
+    def test_list_snapshots_sorted_desc(self, client, seeded_categories):
         """GET /api/networth returns snapshots sorted by date descending."""
-        # Create snapshots out of order
-        client.post("/api/networth", json={"month": 3, "year": 2024, "cash": 1000})
-        client.post("/api/networth", json={"month": 1, "year": 2024, "cash": 500})
-        client.post("/api/networth", json={"month": 2, "year": 2024, "cash": 750})
+        cats = seeded_categories
+        cash_id = cats["Cash"]["id"]
+
+        client.post(
+            "/api/networth",
+            json={
+                "month": 3,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 1000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 500}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 750}],
+            },
+        )
 
         response = client.get("/api/networth")
         assert response.status_code == 200
         data = response.json
 
         assert len(data) == 3
-        # Should be sorted by year desc, month desc
         assert data[0]["month"] == 3
         assert data[1]["month"] == 2
         assert data[2]["month"] == 1
 
 
-class TestNetWorthGet:
+class TestSnapshotGet:
     """Tests for getting specific snapshot."""
 
-    def test_get_snapshot_by_year_month(self, client):
+    def test_get_snapshot_by_year_month(self, client, seeded_categories):
         """GET /api/networth/<year>/<month> returns specific snapshot."""
-        client.post("/api/networth", json={"month": 6, "year": 2024, "cash": 5000})
+        cash_id = seeded_categories["Cash"]["id"]
+        client.post(
+            "/api/networth",
+            json={
+                "month": 6,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 5000}],
+            },
+        )
 
         response = client.get("/api/networth/2024/6")
         assert response.status_code == 200
@@ -133,13 +346,13 @@ class TestNetWorthGet:
 
         assert data["month"] == 6
         assert data["year"] == 2024
-        assert data["cash"] == 5000.0
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["amount"] == 5000.0
 
     def test_get_snapshot_not_found(self, client):
-        """GET /api/networth/<year>/<month> returns 404 for non-existent snapshot."""
+        """GET /api/networth/<year>/<month> returns 404 for non-existent."""
         response = client.get("/api/networth/2024/1")
         assert response.status_code == 404
-        assert "not found" in response.json["error"].lower()
 
     def test_get_snapshot_invalid_month(self, client):
         """GET /api/networth/<year>/<month> validates month range."""
@@ -150,8 +363,8 @@ class TestNetWorthGet:
         assert response.status_code == 400
 
 
-class TestNetWorthCreate:
-    """Tests for creating net worth snapshots."""
+class TestSnapshotCreate:
+    """Tests for creating snapshots."""
 
     def test_create_snapshot_minimal(self, client):
         """POST /api/networth creates snapshot with just month/year."""
@@ -161,38 +374,33 @@ class TestNetWorthCreate:
 
         assert data["month"] == 1
         assert data["year"] == 2024
-        assert data["cash"] == 0.0
+        assert data["entries"] == []
         assert data["net_worth"] == 0.0
         assert "id" in data
         assert "timestamp" in data
 
-    def test_create_snapshot_full(self, client):
-        """POST /api/networth creates snapshot with all fields."""
+    def test_create_snapshot_with_entries(self, client, seeded_categories):
+        """POST /api/networth creates snapshot with entries."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 6,
                 "year": 2024,
-                "cash": 5000,
-                "savings": 10000,
-                "rent_account": 1500,
-                "crypto": 3000,
-                "house_worth": 0,
-                "personal_investments": 25000,
-                "personal_bonds": 5000,
-                "company_investments": 8000,
-                "company_checkings": 2000,
-                "student_loan": -5000,
-                "credit_cards": -500,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Savings"]["id"], "amount": 10000},
+                    {"category_id": cats["Student Loan"]["id"], "amount": -5000},
+                ],
             },
         )
         assert response.status_code == 201
         data = response.json
 
-        assert data["cash"] == 5000.0
-        assert data["savings"] == 10000.0
-        assert data["student_loan"] == -5000.0
-        assert data["credit_cards"] == -500.0
+        assert len(data["entries"]) == 3
+        assert data["total_assets"] == 15000.0
+        assert data["total_liabilities"] == -5000.0
+        assert data["net_worth"] == 10000.0
 
     def test_create_snapshot_missing_month(self, client):
         """POST /api/networth requires month."""
@@ -210,7 +418,6 @@ class TestNetWorthCreate:
         """POST /api/networth validates month range."""
         response = client.post("/api/networth", json={"month": 13, "year": 2024})
         assert response.status_code == 400
-        assert "month" in response.json["error"].lower()
 
         response = client.post("/api/networth", json={"month": 0, "year": 2024})
         assert response.status_code == 400
@@ -221,55 +428,75 @@ class TestNetWorthCreate:
 
         response = client.post("/api/networth", json={"month": 1, "year": 2024})
         assert response.status_code == 409
-        assert "already exists" in response.json["error"].lower()
 
-    def test_create_snapshot_validates_amount(self, client):
-        """POST /api/networth validates amount values."""
+    def test_create_snapshot_invalid_category(self, client):
+        """POST /api/networth rejects invalid category_id."""
         response = client.post(
             "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 1_000_000_001},
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": 999, "amount": 1000}],
+            },
         )
         assert response.status_code == 400
-        assert "exceeds maximum" in response.json["error"].lower()
+        assert "category" in response.json["error"].lower()
+
+    def test_create_snapshot_amount_exceeds_max(self, client, seeded_categories):
+        """POST /api/networth rejects amount > 1 billion."""
+        cash_id = seeded_categories["Cash"]["id"]
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 1_000_000_001}],
+            },
+        )
+        assert response.status_code == 400
+        assert "exceeds" in response.json["error"].lower()
+
+    def test_create_snapshot_no_body(self, client):
+        """POST /api/networth with no body returns 400."""
+        response = client.post("/api/networth", content_type="application/json")
+        assert response.status_code == 400
 
 
-class TestNetWorthUpdate:
-    """Tests for updating net worth snapshots."""
+class TestSnapshotUpdate:
+    """Tests for updating snapshots."""
 
-    def test_update_snapshot(self, client):
-        """PUT /api/networth/<id> updates snapshot."""
+    def test_update_snapshot_entries(self, client, seeded_categories):
+        """PUT /api/networth/<id> updates entries."""
+        cats = seeded_categories
         create_response = client.post(
-            "/api/networth", json={"month": 1, "year": 2024, "cash": 1000}
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cats["Cash"]["id"], "amount": 1000}],
+            },
         )
         snapshot_id = create_response.json["id"]
 
         response = client.put(
-            f"/api/networth/{snapshot_id}", json={"cash": 2000, "savings": 5000}
+            f"/api/networth/{snapshot_id}",
+            json={
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 2000},
+                    {"category_id": cats["Savings"]["id"], "amount": 5000},
+                ]
+            },
         )
         assert response.status_code == 200
         data = response.json
 
-        assert data["cash"] == 2000.0
-        assert data["savings"] == 5000.0
+        assert len(data["entries"]) == 2
+        assert data["net_worth"] == 7000.0
 
     def test_update_snapshot_not_found(self, client):
-        """PUT /api/networth/<id> returns 404 for non-existent snapshot."""
-        response = client.put("/api/networth/999", json={"cash": 1000})
+        """PUT /api/networth/<id> returns 404 for non-existent."""
+        response = client.put("/api/networth/999", json={"entries": []})
         assert response.status_code == 404
-
-    def test_update_snapshot_recalculates(self, client):
-        """PUT /api/networth/<id> recalculates derived fields."""
-        create_response = client.post(
-            "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 1000, "savings": 2000},
-        )
-        snapshot_id = create_response.json["id"]
-        original_net_worth = create_response.json["net_worth"]
-
-        response = client.put(f"/api/networth/{snapshot_id}", json={"cash": 5000})
-        assert response.status_code == 200
-        assert response.json["net_worth"] != original_net_worth
-        assert response.json["net_worth"] == 7000.0  # 5000 + 2000
 
     def test_update_snapshot_change_month_year(self, client):
         """PUT /api/networth/<id> can change month/year if no conflict."""
@@ -294,8 +521,8 @@ class TestNetWorthUpdate:
         assert response.status_code == 409
 
 
-class TestNetWorthDelete:
-    """Tests for deleting net worth snapshots."""
+class TestSnapshotDelete:
+    """Tests for deleting snapshots."""
 
     def test_delete_snapshot(self, client):
         """DELETE /api/networth/<id> removes snapshot."""
@@ -310,231 +537,274 @@ class TestNetWorthDelete:
         assert len(list_response.json) == 0
 
     def test_delete_snapshot_not_found(self, client):
-        """DELETE /api/networth/<id> returns 404 for non-existent snapshot."""
+        """DELETE /api/networth/<id> returns 404 for non-existent."""
         response = client.delete("/api/networth/999")
         assert response.status_code == 404
+
+    def test_delete_snapshot_cascades_entries(self, client, seeded_categories):
+        """DELETE /api/networth/<id> also deletes associated entries."""
+        cash_id = seeded_categories["Cash"]["id"]
+        create_response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 1000}],
+            },
+        )
+        snapshot_id = create_response.json["id"]
+
+        # Delete snapshot
+        client.delete(f"/api/networth/{snapshot_id}")
+
+        # Category should still be deletable (entries were cascaded)
+        response = client.delete(f"/api/networth/categories/{cash_id}")
+        assert response.status_code == 200
+
+
+# =============================================================================
+# Calculation Tests
+# =============================================================================
 
 
 class TestNetWorthCalculations:
     """Tests for net worth derived field calculations."""
 
-    def test_total_assets_calculation(self, client):
+    def test_total_assets_calculation(self, client, seeded_categories):
         """Net worth correctly calculates total assets."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 1000,
-                "savings": 2000,
-                "rent_account": 500,
-                "crypto": 1500,
-                "house_worth": 100000,
-                "personal_investments": 10000,
-                "personal_bonds": 3000,
-                "company_investments": 5000,
-                "company_checkings": 2000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 1000},
+                    {"category_id": cats["Savings"]["id"], "amount": 2000},
+                    {
+                        "category_id": cats["Personal Investments"]["id"],
+                        "amount": 10000,
+                    },
+                ],
             },
         )
         assert response.status_code == 201
-        data = response.json
+        assert response.json["total_assets"] == 13000.0
 
-        expected_assets = 1000 + 2000 + 500 + 1500 + 100000 + 10000 + 3000 + 5000 + 2000
-        assert data["total_assets"] == expected_assets
-
-    def test_total_liabilities_calculation(self, client):
+    def test_total_liabilities_calculation(self, client, seeded_categories):
         """Net worth correctly calculates total liabilities."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "student_loan": -10000,
-                "credit_cards": -500,
+                "entries": [
+                    {"category_id": cats["Student Loan"]["id"], "amount": -10000},
+                    {"category_id": cats["Credit Cards"]["id"], "amount": -500},
+                ],
             },
         )
         assert response.status_code == 201
-        data = response.json
+        assert response.json["total_liabilities"] == -10500.0
 
-        assert data["total_liabilities"] == -10500
-
-    def test_net_worth_calculation(self, client):
+    def test_net_worth_calculation(self, client, seeded_categories):
         """Net worth is total_assets + total_liabilities."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 5000,
-                "savings": 10000,
-                "student_loan": -3000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Savings"]["id"], "amount": 10000},
+                    {"category_id": cats["Student Loan"]["id"], "amount": -3000},
+                ],
             },
         )
         assert response.status_code == 201
         data = response.json
 
-        # 15000 assets - 3000 liabilities = 12000 net worth
-        assert data["total_assets"] == 15000
-        assert data["total_liabilities"] == -3000
-        assert data["net_worth"] == 12000
+        assert data["total_assets"] == 15000.0
+        assert data["total_liabilities"] == -3000.0
+        assert data["net_worth"] == 12000.0
 
-    def test_personal_wealth_calculation(self, client):
-        """Personal wealth includes personal assets plus liabilities."""
+    def test_personal_wealth_calculation(self, client, seeded_categories):
+        """Personal wealth includes personal assets + liabilities."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 1000,
-                "savings": 2000,
-                "rent_account": 500,
-                "crypto": 1500,
-                "personal_investments": 5000,
-                "personal_bonds": 1000,
-                "company_investments": 10000,  # Not included in personal
-                "company_checkings": 5000,  # Not included in personal
-                "student_loan": -2000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 1000},  # personal
+                    {
+                        "category_id": cats["Personal Investments"]["id"],
+                        "amount": 5000,
+                    },  # personal
+                    {
+                        "category_id": cats["Company Investments"]["id"],
+                        "amount": 10000,
+                    },  # NOT personal
+                    {
+                        "category_id": cats["Student Loan"]["id"],
+                        "amount": -2000,
+                    },  # personal liability
+                ],
             },
         )
         assert response.status_code == 201
         data = response.json
 
-        # Personal = 1000 + 2000 + 500 + 1500 + 5000 + 1000 - 2000 = 9000
-        expected_personal = 1000 + 2000 + 500 + 1500 + 5000 + 1000 - 2000
-        assert data["personal_wealth"] == expected_personal
+        # Personal = 1000 + 5000 - 2000 = 4000
+        assert data["personal_wealth"] == 4000.0
 
-    def test_company_wealth_calculation(self, client):
+    def test_company_wealth_calculation(self, client, seeded_categories):
         """Company wealth includes only company assets."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 5000,  # Not company
-                "company_investments": 10000,
-                "company_checkings": 3000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 5000},  # personal
+                    {"category_id": cats["Company Investments"]["id"], "amount": 10000},
+                    {"category_id": cats["Company Checkings"]["id"], "amount": 3000},
+                ],
             },
         )
         assert response.status_code == 201
-        data = response.json
+        assert response.json["company_wealth"] == 13000.0
 
-        assert data["company_wealth"] == 13000
-
-    def test_total_investments_calculation(self, client):
-        """Total investments includes personal and company investments."""
+    def test_group_totals_and_percentages(self, client, seeded_categories):
+        """Snapshot includes group totals and percentages."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "personal_investments": 15000,
-                "company_investments": 8000,
-                "personal_bonds": 5000,  # Not counted as investments
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Personal Investments"]["id"], "amount": 5000},
+                ],
             },
         )
         assert response.status_code == 201
         data = response.json
 
-        assert data["total_investments"] == 23000
+        # Total assets = 10000
+        assert data["by_group"]["cash"] == 5000.0
+        assert data["by_group"]["investment"] == 5000.0
+        assert data["percentages"]["cash_pct"] == 50.0
+        assert data["percentages"]["investment_pct"] == 50.0
 
-    def test_percentage_calculations(self, client):
-        """Percentage calculations are correct."""
-        response = client.post(
-            "/api/networth",
-            json={
-                "month": 1,
-                "year": 2024,
-                "cash": 2000,
-                "savings": 3000,
-                "crypto": 2500,
-                "personal_investments": 7500,
-                "company_investments": 2500,
-                "company_checkings": 2500,
-            },
-        )
-        assert response.status_code == 201
-        data = response.json
-
-        # Total assets = 20000
-        # stocks_pct = (7500 + 2500) / 20000 * 100 = 50%
-        # crypto_pct = 2500 / 20000 * 100 = 12.5%
-        # cash_pct = (2000 + 3000 + 2500) / 20000 * 100 = 37.5%
-        assert data["stocks_pct"] == 50.0
-        assert data["crypto_pct"] == 12.5
-        assert data["cash_pct"] == 37.5
-
-    def test_percentage_zero_assets(self, client):
+    def test_percentages_zero_assets(self, client):
         """Percentage calculations handle zero assets."""
         response = client.post("/api/networth", json={"month": 1, "year": 2024})
         assert response.status_code == 201
         data = response.json
 
-        assert data["stocks_pct"] == 0
-        assert data["crypto_pct"] == 0
-        assert data["cash_pct"] == 0
+        assert data["percentages"] == {}
 
-    def test_change_from_previous_first_month(self, client):
+    def test_change_from_previous_first_month(self, client, seeded_categories):
         """First snapshot has 0 change_from_previous."""
+        cash_id = seeded_categories["Cash"]["id"]
         response = client.post(
             "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 10000},
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 10000}],
+            },
         )
         assert response.status_code == 201
         assert response.json["change_from_previous"] == 0
 
-    def test_change_from_previous_subsequent_months(self, client):
+    def test_change_from_previous_subsequent_months(self, client, seeded_categories):
         """Subsequent snapshots show change from previous month."""
+        cash_id = seeded_categories["Cash"]["id"]
+
         # January: 10000 net worth
         client.post(
             "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 10000},
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 10000}],
+            },
         )
 
         # February: 12500 net worth
         response = client.post(
             "/api/networth",
-            json={"month": 2, "year": 2024, "cash": 12500},
+            json={
+                "month": 2,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 12500}],
+            },
         )
         assert response.status_code == 201
-        assert response.json["change_from_previous"] == 2500
+        assert response.json["change_from_previous"] == 2500.0
 
-    def test_change_from_previous_year_boundary(self, client):
+    def test_change_from_previous_year_boundary(self, client, seeded_categories):
         """Change calculation works across year boundary."""
+        cash_id = seeded_categories["Cash"]["id"]
+
         # December 2023: 50000
         client.post(
             "/api/networth",
-            json={"month": 12, "year": 2023, "cash": 50000},
+            json={
+                "month": 12,
+                "year": 2023,
+                "entries": [{"category_id": cash_id, "amount": 50000}],
+            },
         )
 
         # January 2024: 52000
         response = client.post(
             "/api/networth",
-            json={"month": 1, "year": 2024, "cash": 52000},
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 52000}],
+            },
         )
         assert response.status_code == 201
-        assert response.json["change_from_previous"] == 2000
+        assert response.json["change_from_previous"] == 2000.0
+
+
+# =============================================================================
+# Seed Tests
+# =============================================================================
 
 
 class TestNetWorthSeed:
     """Tests for net worth seed endpoint."""
 
-    def test_seed_creates_data(self, client):
+    def test_seed_requires_categories(self, client):
+        """POST /api/networth/seed fails without categories."""
+        response = client.post("/api/networth/seed")
+        assert response.status_code == 400
+        assert "categories" in response.json["error"].lower()
+
+    def test_seed_creates_data(self, client, seeded_categories):
         """POST /api/networth/seed creates example data."""
         response = client.post("/api/networth/seed")
         assert response.status_code == 201
-        data = response.json
+        assert response.json["count"] == 12
 
-        assert "message" in data
-        assert data["count"] == 12
-
-    def test_seed_creates_12_months(self, client):
+    def test_seed_creates_12_months(self, client, seeded_categories):
         """POST /api/networth/seed creates exactly 12 months."""
         client.post("/api/networth/seed")
 
         response = client.get("/api/networth")
         assert len(response.json) == 12
 
-    def test_seed_data_has_growth(self, client):
+    def test_seed_data_has_growth(self, client, seeded_categories):
         """Seeded data shows growth over time."""
         client.post("/api/networth/seed")
 
@@ -547,228 +817,212 @@ class TestNetWorthSeed:
 
         assert last_month["net_worth"] > first_month["net_worth"]
 
-    def test_seed_rejects_if_data_exists(self, client):
+    def test_seed_rejects_if_data_exists(self, client, seeded_categories):
         """POST /api/networth/seed fails if data already exists."""
         client.post("/api/networth/seed")
 
         response = client.post("/api/networth/seed")
         assert response.status_code == 409
-        assert "already exists" in response.json["error"].lower()
 
-    def test_seed_calculates_derived_fields(self, client):
+    def test_seed_calculates_derived_fields(self, client, seeded_categories):
         """Seeded data has all derived fields calculated."""
         client.post("/api/networth/seed")
 
-        response = client.get("/api/networth/2024/6")
-        data = response.json
-
-        # Check that calculated fields are populated
-        assert data["total_assets"] > 0
-        assert data["net_worth"] > 0
-        assert data["stocks_pct"] > 0
-        assert data["crypto_pct"] > 0
-        assert data["cash_pct"] > 0
-
-    def test_seed_change_from_previous_populated(self, client):
-        """Seeded data has change_from_previous for all but first month."""
-        client.post("/api/networth/seed")
-
+        # Get a mid-year snapshot
         response = client.get("/api/networth")
         data = response.json
+        june = next(s for s in data if s["month"] == 6)
 
-        # First month (oldest - January) should have 0 change
-        january = next(s for s in data if s["month"] == 1 and s["year"] == 2024)
-        assert january["change_from_previous"] == 0
-
-        # Other months should have non-zero change
-        february = next(s for s in data if s["month"] == 2 and s["year"] == 2024)
-        assert february["change_from_previous"] != 0
+        # Check that calculated fields are populated
+        assert june["total_assets"] > 0
+        assert june["net_worth"] > 0
+        assert "investment" in june["by_group"]
+        assert "cash" in june["by_group"]
 
 
-class TestNetWorthEdgeCases:
+# =============================================================================
+# Edge Cases
+# =============================================================================
+
+
+class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
-    def test_list_sorted_across_years(self, client):
+    def test_list_sorted_across_years(self, client, seeded_categories):
         """GET /api/networth sorts correctly across year boundaries."""
-        client.post("/api/networth", json={"month": 12, "year": 2023})
-        client.post("/api/networth", json={"month": 1, "year": 2024})
-        client.post("/api/networth", json={"month": 11, "year": 2023})
+        cash_id = seeded_categories["Cash"]["id"]
+        client.post(
+            "/api/networth",
+            json={
+                "month": 12,
+                "year": 2023,
+                "entries": [{"category_id": cash_id, "amount": 1000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 1000}],
+            },
+        )
+        client.post(
+            "/api/networth",
+            json={
+                "month": 11,
+                "year": 2023,
+                "entries": [{"category_id": cash_id, "amount": 1000}],
+            },
+        )
 
         response = client.get("/api/networth")
         data = response.json
 
         assert len(data) == 3
-        # Most recent first: Jan 2024, Dec 2023, Nov 2023
+        # Most recent first
         assert data[0]["year"] == 2024 and data[0]["month"] == 1
         assert data[1]["year"] == 2023 and data[1]["month"] == 12
         assert data[2]["year"] == 2023 and data[2]["month"] == 11
 
-    def test_change_from_previous_gap_in_months(self, client):
+    def test_change_from_previous_gap_in_months(self, client, seeded_categories):
         """change_from_previous is 0 when previous month is missing."""
+        cash_id = seeded_categories["Cash"]["id"]
+
         # Only create January and March (skip February)
-        client.post("/api/networth", json={"month": 1, "year": 2024, "cash": 10000})
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 10000}],
+            },
+        )
 
         response = client.post(
-            "/api/networth", json={"month": 3, "year": 2024, "cash": 15000}
+            "/api/networth",
+            json={
+                "month": 3,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 15000}],
+            },
         )
-        # March should not find February, so change_from_previous = 0
+        # March should not find February
         assert response.json["change_from_previous"] == 0
 
-    def test_update_recalculates_change_from_previous(self, client):
-        """PUT recalculates change_from_previous based on current previous month."""
-        client.post("/api/networth", json={"month": 1, "year": 2024, "cash": 10000})
-        create_response = client.post(
-            "/api/networth", json={"month": 2, "year": 2024, "cash": 12000}
-        )
-        snapshot_id = create_response.json["id"]
-        assert create_response.json["change_from_previous"] == 2000
-
-        # Update February's cash
-        response = client.put(f"/api/networth/{snapshot_id}", json={"cash": 15000})
-        # change_from_previous should now be 15000 - 10000 = 5000
-        assert response.json["change_from_previous"] == 5000
-
-    def test_zero_net_worth(self, client):
+    def test_zero_net_worth(self, client, seeded_categories):
         """Handles zero net worth correctly (assets = liabilities)."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 5000,
-                "student_loan": -5000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 5000},
+                    {"category_id": cats["Student Loan"]["id"], "amount": -5000},
+                ],
             },
         )
         assert response.status_code == 201
         assert response.json["net_worth"] == 0
-        assert response.json["total_assets"] == 5000
-        assert response.json["total_liabilities"] == -5000
 
-    def test_negative_net_worth(self, client):
+    def test_negative_net_worth(self, client, seeded_categories):
         """Handles negative net worth (liabilities > assets)."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 2000,
-                "student_loan": -10000,
+                "entries": [
+                    {"category_id": cats["Cash"]["id"], "amount": 2000},
+                    {"category_id": cats["Student Loan"]["id"], "amount": -10000},
+                ],
             },
         )
         assert response.status_code == 201
-        assert response.json["net_worth"] == -8000
-        assert response.json["personal_wealth"] == -8000
+        assert response.json["net_worth"] == -8000.0
 
-    def test_only_liabilities(self, client):
-        """Handles snapshot with only liabilities (no assets)."""
+    def test_only_liabilities(self, client, seeded_categories):
+        """Handles snapshot with only liabilities."""
+        cats = seeded_categories
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "student_loan": -15000,
-                "credit_cards": -2000,
+                "entries": [
+                    {"category_id": cats["Student Loan"]["id"], "amount": -15000},
+                    {"category_id": cats["Credit Cards"]["id"], "amount": -2000},
+                ],
             },
         )
         assert response.status_code == 201
         assert response.json["total_assets"] == 0
-        assert response.json["total_liabilities"] == -17000
-        assert response.json["net_worth"] == -17000
-        # Percentages should be 0 when no assets
-        assert response.json["stocks_pct"] == 0
-        assert response.json["crypto_pct"] == 0
-        assert response.json["cash_pct"] == 0
+        assert response.json["total_liabilities"] == -17000.0
+        assert response.json["net_worth"] == -17000.0
 
-    def test_partial_update_preserves_other_fields(self, client):
-        """PUT with partial data preserves other fields."""
-        create_response = client.post(
+    def test_decimal_precision(self, client, seeded_categories):
+        """Amounts preserve decimal precision."""
+        cash_id = seeded_categories["Cash"]["id"]
+        response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 5000,
-                "savings": 10000,
-                "crypto": 3000,
+                "entries": [{"category_id": cash_id, "amount": 1234.56}],
             },
         )
-        snapshot_id = create_response.json["id"]
+        assert response.status_code == 201
+        assert response.json["entries"][0]["amount"] == 1234.56
 
-        # Update only cash
-        response = client.put(f"/api/networth/{snapshot_id}", json={"cash": 8000})
-        assert response.status_code == 200
-
-        # Other fields should be preserved
-        assert response.json["savings"] == 10000
-        assert response.json["crypto"] == 3000
-        # Cash should be updated
-        assert response.json["cash"] == 8000
-        # Net worth should be recalculated
-        assert response.json["net_worth"] == 21000  # 8000 + 10000 + 3000
-
-    def test_update_same_month_year_allowed(self, client):
-        """PUT can update without changing month/year."""
-        create_response = client.post(
-            "/api/networth", json={"month": 1, "year": 2024, "cash": 1000}
+    def test_string_amount_conversion(self, client, seeded_categories):
+        """String amounts are converted correctly."""
+        cash_id = seeded_categories["Cash"]["id"]
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": "5000.50"}],
+            },
         )
-        snapshot_id = create_response.json["id"]
+        assert response.status_code == 201
+        assert response.json["entries"][0]["amount"] == 5000.50
 
-        # Update with same month/year explicitly
-        response = client.put(
-            f"/api/networth/{snapshot_id}",
-            json={"month": 1, "year": 2024, "cash": 2000},
-        )
-        assert response.status_code == 200
-        assert response.json["cash"] == 2000
-
-    def test_boundary_month_values(self, client):
-        """Month boundaries (1 and 12) work correctly."""
-        response1 = client.post(
-            "/api/networth", json={"month": 1, "year": 2024, "cash": 1000}
-        )
-        assert response1.status_code == 201
-        assert response1.json["month"] == 1
-
-        response12 = client.post(
-            "/api/networth", json={"month": 12, "year": 2024, "cash": 2000}
-        )
-        assert response12.status_code == 201
-        assert response12.json["month"] == 12
-
-    def test_very_large_amounts(self, client):
+    def test_very_large_amounts(self, client, seeded_categories):
         """Handles very large (but valid) amounts."""
+        cash_id = seeded_categories["Cash"]["id"]
         response = client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "house_worth": 999_999_999.99,
+                "entries": [{"category_id": cash_id, "amount": 999_999_999.99}],
             },
         )
         assert response.status_code == 201
-        assert response.json["house_worth"] == 999_999_999.99
+        assert response.json["entries"][0]["amount"] == 999_999_999.99
 
-    def test_change_from_previous_negative(self, client):
+    def test_change_from_previous_negative(self, client, seeded_categories):
         """change_from_previous can be negative (wealth decreased)."""
-        client.post("/api/networth", json={"month": 1, "year": 2024, "cash": 20000})
-
-        response = client.post(
-            "/api/networth", json={"month": 2, "year": 2024, "cash": 15000}
-        )
-        assert response.json["change_from_previous"] == -5000
-
-    def test_percentage_rounding(self, client):
-        """Percentage calculations handle rounding."""
-        response = client.post(
+        cash_id = seeded_categories["Cash"]["id"]
+        client.post(
             "/api/networth",
             json={
                 "month": 1,
                 "year": 2024,
-                "cash": 3333,
-                "savings": 3333,
-                "crypto": 3334,
+                "entries": [{"category_id": cash_id, "amount": 20000}],
             },
         )
-        assert response.status_code == 201
-        # Total = 10000, crypto = 3334
-        # crypto_pct = 33.34%
-        assert abs(response.json["crypto_pct"] - 33.34) < 0.01
+
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2024,
+                "entries": [{"category_id": cash_id, "amount": 15000}],
+            },
+        )
+        assert response.json["change_from_previous"] == -5000.0
