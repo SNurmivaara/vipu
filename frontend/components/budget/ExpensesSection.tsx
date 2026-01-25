@@ -175,6 +175,7 @@ export function ExpensesSection({
         <CollapsibleSection
           title="Monthly Expenses"
           total={formatCurrency(totalExpenses)}
+          totalClassName="text-gray-900 dark:text-gray-100"
           defaultOpen={defaultOpen}
           onAdd={openNew}
         >
