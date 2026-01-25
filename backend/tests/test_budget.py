@@ -263,9 +263,9 @@ class TestBudget:
         # Net income calculation:
         # Salary: 5000 * 0.75 = 3750
         # Side income: 500 * 0.75 = 375
-        # Lunch benefit: 200 * (1 - 0.75) = 50
-        # Total: 3750 + 375 + 50 = 4175
-        assert totals["net_income"] == 4175.0
+        # Lunch benefit: -200 * 0.75 = -150 (deduction)
+        # Total: 3750 + 375 + (-150) = 3975
+        assert totals["net_income"] == 3975.0
 
         # Current balance: 3500 + 2000 + (-500) = 5000
         assert totals["current_balance"] == 5000.0
@@ -344,11 +344,12 @@ class TestNetIncomeCalculation:
         assert totals["gross_income"] == 1000.0
         assert totals["net_income"] == 800.0
 
-    def test_taxed_income_custom_rate(self, client):
-        """Taxed income with custom rate uses that rate."""
+    def test_taxed_income_custom_rate_deduction(self, client):
+        """Taxed income with custom rate is treated as a deduction."""
         client.put("/api/settings", json={"tax_percentage": 20.0})
 
-        # Lunch benefit with 75% taxable portion
+        # Lunch benefit with 75% deduction rate
+        # In Finland, lunch benefit is deducted from pay at 75% of value
         client.post(
             "/api/income",
             json={
@@ -362,6 +363,6 @@ class TestNetIncomeCalculation:
         response = client.get("/api/budget/current")
         totals = response.json["totals"]
 
-        # Net = 200 * (1 - 0.75) = 50
+        # Net = -200 * 0.75 = -150 (deduction from pay)
         assert totals["gross_income"] == 200.0
-        assert totals["net_income"] == 50.0
+        assert totals["net_income"] == -150.0

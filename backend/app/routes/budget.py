@@ -40,7 +40,11 @@ def get_current_budget() -> Response:
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
     # Calculate totals
-    gross_income = sum((i.gross_amount for i in income_items), Decimal("0"))
+    # Gross income excludes deductions (items with custom tax_percentage)
+    gross_income = sum(
+        (i.gross_amount for i in income_items if i.tax_percentage is None),
+        Decimal("0"),
+    )
     net_income = calculate_net_income(income_items, settings.tax_percentage)
     current_balance = sum((a.balance for a in accounts), Decimal("0"))
     total_expenses = sum((e.amount for e in expenses), Decimal("0"))

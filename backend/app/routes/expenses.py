@@ -38,6 +38,7 @@ def create_expense() -> Response | tuple[Response, int]:
     item = ExpenseItem(
         name=data["name"],
         amount=Decimal(str(data["amount"])),
+        is_savings_goal=data.get("is_savings_goal", False),
     )
     session.add(item)
     session.commit()
@@ -62,6 +63,8 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
         item.name = data["name"]
     if "amount" in data:
         item.amount = Decimal(str(data["amount"]))
+    if "is_savings_goal" in data:
+        item.is_savings_goal = data["is_savings_goal"]
 
     session.commit()
     return jsonify(item.to_dict())
