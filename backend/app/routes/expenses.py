@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from app import get_session
 from app.models import ExpenseItem
@@ -9,7 +9,7 @@ bp = Blueprint("expenses", __name__)
 
 
 @bp.route("/api/expenses", methods=["GET"])
-def list_expenses():
+def list_expenses() -> Response:
     """List all expense items."""
     session = get_session()
     items = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
@@ -17,7 +17,7 @@ def list_expenses():
 
 
 @bp.route("/api/expenses", methods=["POST"])
-def create_expense():
+def create_expense() -> Response | tuple[Response, int]:
     """Create a new expense item."""
     session = get_session()
     data = request.get_json()
@@ -42,7 +42,7 @@ def create_expense():
 
 
 @bp.route("/api/expenses/<int:expense_id>", methods=["PUT"])
-def update_expense(expense_id: int):
+def update_expense(expense_id: int) -> Response | tuple[Response, int]:
     """Update an existing expense item."""
     session = get_session()
     item = session.query(ExpenseItem).filter_by(id=expense_id).first()
@@ -64,7 +64,7 @@ def update_expense(expense_id: int):
 
 
 @bp.route("/api/expenses/<int:expense_id>", methods=["DELETE"])
-def delete_expense(expense_id: int):
+def delete_expense(expense_id: int) -> tuple[Response, int]:
     """Delete an expense item."""
     session = get_session()
     item = session.query(ExpenseItem).filter_by(id=expense_id).first()

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 from app import get_session
 from app.models import IncomeItem
@@ -9,7 +9,7 @@ bp = Blueprint("income", __name__)
 
 
 @bp.route("/api/income", methods=["GET"])
-def list_income():
+def list_income() -> Response:
     """List all income items."""
     session = get_session()
     items = session.query(IncomeItem).order_by(IncomeItem.name).all()
@@ -17,7 +17,7 @@ def list_income():
 
 
 @bp.route("/api/income", methods=["POST"])
-def create_income():
+def create_income() -> Response | tuple[Response, int]:
     """Create a new income item."""
     session = get_session()
     data = request.get_json()
@@ -48,7 +48,7 @@ def create_income():
 
 
 @bp.route("/api/income/<int:income_id>", methods=["PUT"])
-def update_income(income_id: int):
+def update_income(income_id: int) -> Response | tuple[Response, int]:
     """Update an existing income item."""
     session = get_session()
     item = session.query(IncomeItem).filter_by(id=income_id).first()
@@ -75,7 +75,7 @@ def update_income(income_id: int):
 
 
 @bp.route("/api/income/<int:income_id>", methods=["DELETE"])
-def delete_income(income_id: int):
+def delete_income(income_id: int) -> tuple[Response, int]:
     """Delete an income item."""
     session = get_session()
     item = session.query(IncomeItem).filter_by(id=income_id).first()

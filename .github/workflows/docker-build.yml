@@ -1,0 +1,67 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: vipu-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-compose:
+    name: Docker Compose Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          echo "SECRET_KEY=test-secret-key-for-ci" >> .env
+          echo "POSTGRES_PASSWORD=test-password-for-ci" >> .env
+
+      - name: Build and start services
+        run: docker compose up -d --build
+
+      - name: Wait for services to be healthy
+        run: |
+          echo "Waiting for backend to be ready..."
+          for i in {1..30}; do
+            if curl -s http://localhost:5000/api/health | grep -q "ok"; then
+              echo "Backend is ready!"
+              exit 0
+            fi
+            echo "Attempt $i: Backend not ready yet..."
+            sleep 2
+          done
+          echo "Backend failed to start"
+          docker compose logs
+          exit 1
+
+      - name: Test health endpoint
+        run: |
+          response=$(curl -s http://localhost:5000/api/health)
+          echo "Health response: $response"
+          echo "$response" | grep -q "ok"
+
+      - name: Stop services
+        if: always()
+        run: docker compose down -v
