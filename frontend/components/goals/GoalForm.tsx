@@ -140,9 +140,8 @@ export function GoalForm({ open, onOpenChange, existingGoal }: GoalFormProps) {
     e.preventDefault();
 
     const parsedValue = parseFloat(targetValue) || 0;
-    const formattedDate = targetDate
-      ? new Date(targetDate + "T00:00:00Z").toISOString()
-      : null;
+    // Send date as YYYY-MM-DD string; backend parses it correctly
+    const formattedDate = targetDate || null;
 
     const goalData = {
       name,

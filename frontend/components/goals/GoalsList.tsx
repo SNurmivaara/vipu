@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { GoalProgress, GoalType, TrackingPeriod } from "@/types";
 import { deleteGoal } from "@/lib/api";
@@ -44,6 +45,10 @@ function formatTargetDate(dateString: string | null): string | null {
 
 export function GoalsList({ goals }: GoalsListProps) {
   const [editingGoal, setEditingGoal] = useState<GoalProgress | null>(null);
+  const [deletingGoal, setDeletingGoal] = useState<{
+    id: number;
+    name: string;
+  } | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -53,15 +58,16 @@ export function GoalsList({ goals }: GoalsListProps) {
       queryClient.invalidateQueries({ queryKey: ["goals"] });
       queryClient.invalidateQueries({ queryKey: ["goals-progress"] });
       toast({ title: "Goal deleted", type: "success" });
+      setDeletingGoal(null);
     },
     onError: () => {
       toast({ title: "Failed to delete goal", type: "error" });
     },
   });
 
-  const handleDelete = (id: number, name: string) => {
-    if (confirm(`Delete goal "${name}"?`)) {
-      deleteMutation.mutate(id);
+  const handleDeleteConfirm = () => {
+    if (deletingGoal) {
+      deleteMutation.mutate(deletingGoal.id);
     }
   };
 
@@ -81,7 +87,9 @@ export function GoalsList({ goals }: GoalsListProps) {
             key={item.goal.id}
             item={item}
             onEdit={() => setEditingGoal(item)}
-            onDelete={() => handleDelete(item.goal.id, item.goal.name)}
+            onDelete={() =>
+              setDeletingGoal({ id: item.goal.id, name: item.goal.name })
+            }
           />
         ))}
       </div>
@@ -93,6 +101,43 @@ export function GoalsList({ goals }: GoalsListProps) {
           existingGoal={editingGoal.goal}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog.Root
+        open={!!deletingGoal}
+        onOpenChange={(open) => !open && setDeletingGoal(null)}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6">
+            <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Delete Goal
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+              Are you sure you want to delete &quot;{deletingGoal?.name}&quot;?
+              This action cannot be undone.
+            </Dialog.Description>
+            <div className="flex justify-end gap-3 mt-6">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                type="button"
+                onClick={handleDeleteConfirm}
+                disabled={deleteMutation.isPending}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }
