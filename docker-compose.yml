@@ -39,16 +39,11 @@ services:
       retries: 3
 
   frontend:
-    build:
-      context: ./frontend
-      args:
-        - NEXT_PUBLIC_API_URL=https://vipu.${DOMAIN}
+    build: ./frontend
     container_name: vipu-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:5000
     depends_on:
       backend:
         condition: service_healthy
