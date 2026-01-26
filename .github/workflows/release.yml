@@ -8,7 +8,7 @@ on:
       force_build:
         description: 'Force build both images (skip change detection)'
         required: false
-        default: 'true'
+        default: true
         type: boolean
       tag:
         description: 'Tag to use for images (e.g., v1.0.1)'
@@ -79,8 +79,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-backend:${{ inputs.tag || github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/vipu-backend:latest
+            ghcr.io/snurmivaara/vipu-backend:${{ inputs.tag || github.ref_name }}
+            ghcr.io/snurmivaara/vipu-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -112,7 +112,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-frontend:${{ inputs.tag || github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/vipu-frontend:latest
+            ghcr.io/snurmivaara/vipu-frontend:${{ inputs.tag || github.ref_name }}
+            ghcr.io/snurmivaara/vipu-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
