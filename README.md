@@ -8,6 +8,26 @@
 
 > **Note:** This app is built with Finnish personal finance in mind (tax percentages, payroll deductions, €). The core budgeting features work anywhere, but some features assume Finnish conventions.
 
+## What Kind of Budgeting Is This?
+
+Vipu uses **balance-based budgeting** - a middle ground between micro-management and no tracking at all.
+
+| Approach | Examples | Vipu |
+|----------|----------|------|
+| **Micro** | YNAB, Mint | Tracks every transaction, allocates every euro | No |
+| **Balance-based** | Vipu | Tracks balances and recurring obligations | **Yes** |
+| **Macro** | Spreadsheets, net worth only | Just totals, no expense awareness | No |
+
+**The core idea:** Know your recurring obligations, maintain enough balance to cover them, check in weekly. Don't sweat individual transactions.
+
+This works well if you:
+- Have relatively stable income and expenses
+- Don't want to categorize every coffee purchase
+- Care more about "am I on track?" than "where did €47.50 go?"
+- Want the peace of mind of always being one month ahead
+
+For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu/guide.html).
+
 ## Features
 
 ### Weekly Budget Tracking
