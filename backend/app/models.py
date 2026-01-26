@@ -427,6 +427,9 @@ class Goal(Base):
     target_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    starting_value: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )  # For liability goals: initial balance when goal was created
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
@@ -446,6 +449,9 @@ class Goal(Base):
             "category": self.category.to_dict() if self.category else None,
             "tracking_period": self.tracking_period,
             "target_date": self.target_date.isoformat() if self.target_date else None,
+            "starting_value": (
+                float(self.starting_value) if self.starting_value is not None else None
+            ),
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat(),
         }
