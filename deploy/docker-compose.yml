@@ -50,8 +50,6 @@ services:
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=${API_URL:-http://localhost:5000}
     depends_on:
       backend:
         condition: service_healthy

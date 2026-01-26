@@ -110,7 +110,7 @@ curl -O https://raw.githubusercontent.com/SNurmivaara/vipu/main/deploy/.env.exam
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your settings (POSTGRES_PASSWORD, SECRET_KEY, API_URL, CORS_ORIGINS)
+# Edit .env with your settings (POSTGRES_PASSWORD, SECRET_KEY, CORS_ORIGINS)
 
 # Start services
 docker compose up -d
@@ -192,9 +192,8 @@ cd frontend
 # Install dependencies
 npm install
 
-# Set up environment
+# Set up environment (optional - no config needed for default setup)
 cp .env.example .env.local
-# Edit .env.local with your backend URL (default: http://localhost:5000)
 
 # Run development server
 npm run dev

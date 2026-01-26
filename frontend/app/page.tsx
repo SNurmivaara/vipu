@@ -145,8 +145,7 @@ export default function BudgetPage() {
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
         <div className="text-red-500">Failed to load budget data</div>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Make sure the backend is running at{" "}
-          {process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"}
+          Make sure the backend is running and accessible at /api
         </p>
       </div>
     );
