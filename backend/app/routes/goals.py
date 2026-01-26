@@ -126,6 +126,23 @@ def create_goal() -> Response | tuple[Response, int]:
         except ValueError:
             return jsonify({"error": DATE_FORMAT_ERROR}), 400
 
+    # For category_target goals on liability categories, capture starting value
+    starting_value = None
+    if goal_type == "category_target" and category_id:
+        category = session.query(NetWorthCategory).filter_by(id=category_id).first()
+        if category and category.group and category.group.group_type == "liability":
+            # Get current value from latest snapshot
+            latest_snapshot = (
+                session.query(NetWorthSnapshot)
+                .order_by(NetWorthSnapshot.year.desc(), NetWorthSnapshot.month.desc())
+                .first()
+            )
+            if latest_snapshot:
+                for entry in latest_snapshot.entries:
+                    if entry.category_id == category_id:
+                        starting_value = entry.amount
+                        break
+
     goal = Goal(
         name=name,
         goal_type=goal_type,
@@ -133,6 +150,7 @@ def create_goal() -> Response | tuple[Response, int]:
         category_id=category_id,
         tracking_period=tracking_period,
         target_date=target_date,
+        starting_value=starting_value,
         is_active=bool(data.get("is_active", True)),
     )
     session.add(goal)
@@ -318,10 +336,20 @@ def _calculate_goal_progress(
 
     elif goal.goal_type == "category_target":
         # Target balance for a specific category
+        is_liability = (
+            goal.category
+            and goal.category.group
+            and goal.category.group.group_type == "liability"
+        )
+        details["is_liability"] = is_liability
+        details["starting_value"] = (
+            float(goal.starting_value) if goal.starting_value is not None else None
+        )
+
         if latest and goal.category_id:
             current_value = _get_category_amount_in_snapshot(latest, goal.category_id)
             # For liabilities, use absolute value for display
-            if goal.category and goal.category.group.group_type == "liability":
+            if is_liability:
                 current_value = abs(current_value)
             details["latest_month"] = f"{latest.year}-{latest.month:02d}"
             details["category_name"] = goal.category.name if goal.category else None
@@ -424,20 +452,41 @@ def _calculate_goal_progress(
 
     # Calculate progress percentage
     target = goal.target_value
-    if target > 0:
-        progress_pct = float((current_value / target) * 100)
-    elif target == 0 and current_value >= 0:
-        progress_pct = 100.0
+    is_liability_goal = (
+        goal.goal_type == "category_target"
+        and details.get("is_liability", False)
+        and goal.starting_value is not None
+    )
+
+    if is_liability_goal:
+        # For liability goals: progress = (starting - current) / (starting - target)
+        # E.g., loan started at 26728, now 20000, target 0:
+        # progress = (26728 - 20000) / (26728 - 0) = 6728 / 26728 = 25.2%
+        starting = Decimal(str(goal.starting_value))
+        if starting > target:
+            progress_pct = float((starting - current_value) / (starting - target) * 100)
+        elif starting == target:
+            # Already at target
+            progress_pct = 100.0
+        else:
+            progress_pct = 0.0
+        # For liabilities, achieved when current <= target
+        is_achieved = current_value <= target
     else:
-        progress_pct = 0.0
+        # Standard progress: current / target
+        if target > 0:
+            progress_pct = float((current_value / target) * 100)
+        elif target == 0 and current_value >= 0:
+            progress_pct = 100.0
+        else:
+            progress_pct = 0.0
+        # Standard: achieved when current >= target
+        is_achieved = current_value >= target
 
     # Cap at 100%
     progress_pct = min(progress_pct, 100.0)
     # Floor at 0%
     progress_pct = max(progress_pct, 0.0)
-
-    # Check if goal is achieved
-    is_achieved = current_value >= target
 
     # Calculate forecast for target-based goals
     forecast_info: dict | None = None

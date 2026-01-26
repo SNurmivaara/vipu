@@ -166,6 +166,10 @@ def calculate_goal_forecast(
     - Whether the goal is on track to be met by target_date
     - What monthly change is required to meet the goal on time
 
+    For liability category_target goals (debt payoff):
+    - Progress is measured as reduction toward target (usually 0)
+    - Monthly change is the rate of debt reduction (positive = paying down)
+
     Args:
         goal: The goal to forecast for
         current_value: Current progress value toward the goal
@@ -176,7 +180,22 @@ def calculate_goal_forecast(
         GoalForecastInfo with projection details
     """
     target = float(goal.target_value)
-    remaining = target - current_value
+
+    # Check if this is a liability goal (debt payoff)
+    is_liability_goal = (
+        goal.goal_type == "category_target"
+        and goal.category
+        and goal.category.group
+        and goal.category.group.group_type == "liability"
+        and goal.starting_value is not None
+    )
+
+    if is_liability_goal:
+        # For liability goals: remaining = current - target (amount left to pay off)
+        remaining = current_value - target
+    else:
+        # For asset goals: remaining = target - current (amount to grow)
+        remaining = target - current_value
 
     # Calculate current monthly change rate
     current_monthly_change = 0.0
@@ -184,9 +203,17 @@ def calculate_goal_forecast(
     if goal.goal_type == "net_worth_target":
         current_monthly_change, _ = calculate_monthly_change_rate(snapshots, "quarter")
     elif goal.goal_type == "category_target" and category_id:
-        current_monthly_change = _calculate_category_change_rate(
+        raw_change = _calculate_category_change_rate(
             snapshots, category_id, period="quarter"
         )
+        if is_liability_goal:
+            # For liabilities, debt reduction shows as negative change in raw data
+            # (e.g., -26728 to -25000 = +1728 change, which is negative reduction)
+            # But we store as positive amounts, so decreasing = negative raw change
+            # We want positive "payoff rate", so negate
+            current_monthly_change = -raw_change
+        else:
+            current_monthly_change = raw_change
     elif goal.goal_type in ("category_monthly", "category_rate"):
         # For these goal types, current_value already represents the rate
         current_monthly_change = current_value

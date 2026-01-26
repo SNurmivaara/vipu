@@ -20,6 +20,13 @@ const GOAL_TYPE_LABELS: Record<GoalType, string> = {
   category_rate: "Rate",
 };
 
+function getGoalTypeLabel(goalType: GoalType, isLiability: boolean): string {
+  if (goalType === "category_target" && isLiability) {
+    return "Debt Payoff";
+  }
+  return GOAL_TYPE_LABELS[goalType];
+}
+
 const TRACKING_PERIOD_LABELS: Record<TrackingPeriod, string> = {
   month: "1M",
   quarter: "3M",
@@ -175,6 +182,7 @@ function GoalCard({ item, onEdit, onDelete }: GoalCardProps) {
   } = item;
   const targetDate = formatTargetDate(goal.target_date);
   const hasTargetDate = goal.target_date !== null;
+  const isLiability = details.is_liability ?? false;
 
   // Build subtitle showing category and/or tracking period
   const subtitleParts: string[] = [];
@@ -207,8 +215,13 @@ function GoalCard({ item, onEdit, onDelete }: GoalCardProps) {
             )}
           </div>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-              {GOAL_TYPE_LABELS[goal.goal_type]}
+            <span className={cn(
+              "text-xs px-2 py-0.5 rounded-full",
+              isLiability
+                ? "bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400"
+                : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+            )}>
+              {getGoalTypeLabel(goal.goal_type, isLiability)}
             </span>
             {subtitleParts.length > 0 && (
               <span className="text-xs text-gray-500 dark:text-gray-400">
@@ -286,16 +299,40 @@ function GoalCard({ item, onEdit, onDelete }: GoalCardProps) {
 
       {/* Progress Values */}
       <div className="flex justify-between items-center text-sm">
-        <span className="text-gray-600 dark:text-gray-400">
-          {formatGoalValue(goal.goal_type, current_value)}
-        </span>
-        <span className="font-medium text-gray-900 dark:text-gray-100">
-          {progress_percentage.toFixed(1).replace(".", ",")} %
-        </span>
-        <span className="text-gray-600 dark:text-gray-400">
-          {formatGoalValue(goal.goal_type, target_value)}
-        </span>
+        {isLiability && details.starting_value !== undefined && details.starting_value !== null ? (
+          <>
+            <span className="text-gray-600 dark:text-gray-400">
+              <span className="text-xs text-gray-400 dark:text-gray-500">Remaining: </span>
+              {formatGoalValue(goal.goal_type, current_value)}
+            </span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {progress_percentage.toFixed(1).replace(".", ",")} %
+            </span>
+            <span className="text-gray-600 dark:text-gray-400">
+              <span className="text-xs text-gray-400 dark:text-gray-500">Target: </span>
+              {formatGoalValue(goal.goal_type, target_value)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="text-gray-600 dark:text-gray-400">
+              {formatGoalValue(goal.goal_type, current_value)}
+            </span>
+            <span className="font-medium text-gray-900 dark:text-gray-100">
+              {progress_percentage.toFixed(1).replace(".", ",")} %
+            </span>
+            <span className="text-gray-600 dark:text-gray-400">
+              {formatGoalValue(goal.goal_type, target_value)}
+            </span>
+          </>
+        )}
       </div>
+      {/* Starting value info for debt payoff goals */}
+      {isLiability && details.starting_value !== undefined && details.starting_value !== null && (
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Started at {formatCurrency(details.starting_value)} • Paid off {formatCurrency(details.starting_value - current_value)}
+        </p>
+      )}
 
       {/* Forecast info for target-based goals */}
       {forecast && !is_achieved && (

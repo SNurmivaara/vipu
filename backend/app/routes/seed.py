@@ -368,8 +368,14 @@ def import_data() -> Response | tuple[Response, int]:
             category_name_to_id[c["name"]] = category.id
 
         # Import snapshots with entries
+        # Sort by date to ensure correct change_from_previous calculation
         snapshots_data = data.get("networth_snapshots", [])
-        for s in snapshots_data:
+        snapshots_data_sorted = sorted(
+            snapshots_data, key=lambda s: (s["year"], s["month"])
+        )
+
+        previous_net_worth: Decimal | None = None
+        for s in snapshots_data_sorted:
             snapshot = NetWorthSnapshot(
                 month=s["month"],
                 year=s["year"],
@@ -390,8 +396,9 @@ def import_data() -> Response | tuple[Response, int]:
                 )
                 session.add(entry)
 
-            # Calculate snapshot totals
-            snapshot.calculate_totals()
+            # Calculate snapshot totals with previous month's net worth
+            snapshot.calculate_totals(previous_net_worth)
+            previous_net_worth = snapshot.net_worth
 
         # Import goals
         goals_data = data.get("goals", [])

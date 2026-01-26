@@ -22,28 +22,95 @@ interface NetWorthChartProps {
   netWorthGoals?: GoalProgress[];
 }
 
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-];
+// Format month/year as compact "M/YY" (e.g., "1/25" for January 2025)
+function formatMonthLabel(month: number, year: number): string {
+  return `${month}/${String(year).slice(-2)}`;
+}
 
-const PERIOD_LABELS: Record<ForecastPeriod, string> = {
-  month: "1M",
-  quarter: "3M",
-  half_year: "6M",
-  year: "1Y",
+// Format value as compact K/M (e.g., "200k" or "1.5M")
+function formatCompactValue(value: number): string {
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  } else if (value >= 1000) {
+    const thousands = value / 1000;
+    return thousands % 1 === 0 ? `${thousands}k` : `${thousands.toFixed(1)}k`;
+  }
+  return `${value}`;
+}
+
+// Aggregate data points for longer time scales
+// Returns the sampling interval (1 = every point, 3 = quarterly, 12 = yearly)
+function getAggregationInterval(dataLength: number, timeScale: TimeScale): number {
+  // For very short scales, always show every point
+  if (timeScale === "1m" || timeScale === "3m") {
+    return 1;
+  }
+
+  // For 6M and 1Y, show every point unless we have too many
+  if (timeScale === "6m" || timeScale === "1y") {
+    if (dataLength > 24) {
+      return 2; // Every other month if > 2 years of data
+    }
+    return 1;
+  }
+
+  // For 5Y scale, show quarterly (every 3 months)
+  if (timeScale === "5y") {
+    return 3;
+  }
+
+  // For Max scale, adapt based on data length
+  if (dataLength > 60) {
+    return 12; // Yearly for > 5 years of data
+  } else if (dataLength > 24) {
+    return 3; // Quarterly for > 2 years
+  }
+  return 1; // Monthly otherwise
+}
+
+// Time scales for filtering historical data
+type TimeScale = "max" | "5y" | "1y" | "6m" | "3m" | "1m";
+
+const TIME_SCALE_LABELS: Record<TimeScale, string> = {
+  max: "Max",
+  "5y": "5Y",
+  "1y": "1Y",
+  "6m": "6M",
+  "3m": "3M",
+  "1m": "1M",
+};
+
+// Historical months to show for each time scale
+const TIME_SCALE_HISTORY_MONTHS: Record<TimeScale, number | null> = {
+  max: null, // Show all history
+  "5y": 60,
+  "1y": 12,
+  "6m": 6,
+  "3m": 3,
+  "1m": 1,
+};
+
+// Forecast period type for API calls
+const TIME_SCALE_FORECAST_PERIOD: Record<TimeScale, ForecastPeriod> = {
+  max: "year",
+  "5y": "year",
+  "1y": "year",
+  "6m": "half_year",
+  "3m": "quarter",
+  "1m": "month",
 };
 
 const STORAGE_KEY = "vipu-chart-settings";
 
 interface ChartSettings {
   showForecast: boolean;
-  forecastPeriod: ForecastPeriod;
+  timeScale: TimeScale;
 }
 
 function loadChartSettings(): ChartSettings {
   if (typeof window === "undefined") {
-    return { showForecast: false, forecastPeriod: "quarter" };
+    return { showForecast: false, timeScale: "1y" };
   }
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -51,13 +118,13 @@ function loadChartSettings(): ChartSettings {
       const parsed = JSON.parse(stored);
       return {
         showForecast: parsed.showForecast ?? false,
-        forecastPeriod: parsed.forecastPeriod ?? "quarter",
+        timeScale: parsed.timeScale ?? "1y",
       };
     }
   } catch {
     // Ignore parse errors
   }
-  return { showForecast: false, forecastPeriod: "quarter" };
+  return { showForecast: false, timeScale: "1y" };
 }
 
 function saveChartSettings(settings: ChartSettings) {
@@ -71,50 +138,107 @@ function saveChartSettings(settings: ChartSettings) {
 
 export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartProps) {
   const [showForecast, setShowForecast] = useState(false);
-  const [forecastPeriod, setForecastPeriod] = useState<ForecastPeriod>("quarter");
+  const [timeScale, setTimeScale] = useState<TimeScale>("1y");
   const [isHydrated, setIsHydrated] = useState(false);
+
+  // Derive forecast period from time scale
+  const forecastPeriod = TIME_SCALE_FORECAST_PERIOD[timeScale];
 
   // Load settings from localStorage after hydration
   useEffect(() => {
     const settings = loadChartSettings();
     setShowForecast(settings.showForecast);
-    setForecastPeriod(settings.forecastPeriod);
+    setTimeScale(settings.timeScale);
     setIsHydrated(true);
   }, []);
 
   // Save settings when they change (after initial hydration)
   useEffect(() => {
     if (isHydrated) {
-      saveChartSettings({ showForecast, forecastPeriod });
+      saveChartSettings({ showForecast, timeScale });
     }
-  }, [showForecast, forecastPeriod, isHydrated]);
+  }, [showForecast, timeScale, isHydrated]);
 
   const handleToggleForecast = useCallback(() => {
     setShowForecast((prev) => !prev);
   }, []);
 
-  const handlePeriodChange = useCallback((period: ForecastPeriod) => {
-    setForecastPeriod(period);
+  const handleTimeScaleChange = useCallback((scale: TimeScale) => {
+    setTimeScale(scale);
   }, []);
 
+  // Determine which time scales are available based on data
+  const availableScales = useMemo(() => {
+    if (snapshots.length === 0) return [];
+    const totalMonths = snapshots.length;
+    const scales: TimeScale[] = [];
+
+    // Always show Max if we have data
+    scales.push("max");
+
+    // Add scales that have enough data (or close to it)
+    if (totalMonths >= 24) scales.push("5y"); // Show 5Y if at least 2 years
+    if (totalMonths >= 6) scales.push("1y");  // Show 1Y if at least 6 months
+    if (totalMonths >= 3) scales.push("6m");  // Show 6M if at least 3 months
+    if (totalMonths >= 2) scales.push("3m");  // Show 3M if at least 2 months
+    scales.push("1m"); // Always show 1M
+
+    return scales;
+  }, [snapshots.length]);
+
+  // Calculate months ahead for forecast - match the history length
+  const forecastMonthsAhead = useMemo(() => {
+    const historyMonths = TIME_SCALE_HISTORY_MONTHS[timeScale];
+    if (historyMonths === null) return 12; // Default for "max"
+    return historyMonths;
+  }, [timeScale]);
+
   const { data: forecast, isLoading: forecastLoading, isError: forecastError } = useQuery({
-    queryKey: ["forecast", forecastPeriod],
-    queryFn: () => fetchForecast({ period: forecastPeriod, months_ahead: 12 }),
+    queryKey: ["forecast", forecastPeriod, forecastMonthsAhead],
+    queryFn: () => fetchForecast({
+      period: forecastPeriod,
+      months_ahead: forecastMonthsAhead
+    }),
     enabled: showForecast && snapshots.length > 0,
   });
 
   const chartData = useMemo(() => {
-    const historicalData = [...snapshots]
-      .reverse()
-      .map((snapshot) => ({
-        name: `${MONTH_NAMES[snapshot.month - 1]} ${snapshot.year}`,
-        netWorth: snapshot.net_worth,
-        assets: snapshot.total_assets,
-        liabilities: Math.abs(snapshot.total_liabilities),
-        forecast: null as number | null,
-      }));
+    const historyMonthsLimit = TIME_SCALE_HISTORY_MONTHS[timeScale];
 
-    // Add forecast data if enabled
+    // Slice snapshots based on time scale (they come newest-first)
+    const filteredSnapshots = historyMonthsLimit === null
+      ? snapshots
+      : snapshots.slice(0, Math.min(historyMonthsLimit, snapshots.length));
+
+    // Reverse to get oldest-first order
+    const chronologicalSnapshots = [...filteredSnapshots].reverse();
+
+    // Calculate total data points (history + forecast if enabled)
+    const forecastLength = (showForecast && forecast?.projections) ? forecast.projections.length : 0;
+    const totalDataPoints = chronologicalSnapshots.length + forecastLength;
+
+    // Determine aggregation interval based on total data points
+    const interval = getAggregationInterval(totalDataPoints, timeScale);
+
+    // Sample data points at the interval, always including the last point
+    const sampledSnapshots = chronologicalSnapshots.filter((_, index, arr) => {
+      // Always include first point
+      if (index === 0) return true;
+      // Always include last point (most recent)
+      if (index === arr.length - 1) return true;
+      // Include points at the interval
+      return index % interval === 0;
+    });
+
+    const historicalData = sampledSnapshots.map((snapshot) => ({
+      name: formatMonthLabel(snapshot.month, snapshot.year),
+      netWorth: snapshot.net_worth,
+      assets: snapshot.total_assets,
+      liabilities: Math.abs(snapshot.total_liabilities),
+      forecast: null as number | null,
+    }));
+
+    // Add forecast data if enabled - append all forecast months after history
     if (showForecast && forecast?.projections) {
       // Connect the forecast line to the last historical point
       if (historicalData.length > 0 && forecast.projections.length > 0) {
@@ -122,9 +246,15 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
         lastHistorical.forecast = lastHistorical.netWorth;
       }
 
-      // Add forecast points
-      const forecastData = forecast.projections.map((p) => ({
-        name: `${MONTH_NAMES[p.month - 1]} ${p.year}`,
+      // Sample forecast at same interval for consistency
+      const sampledForecast = forecast.projections.filter((_, index, arr) => {
+        if (index === 0) return true;
+        if (index === arr.length - 1) return true;
+        return index % interval === 0;
+      });
+
+      const forecastData = sampledForecast.map((p) => ({
+        name: formatMonthLabel(p.month, p.year),
         netWorth: null as number | null,
         assets: null as number | null,
         liabilities: null as number | null,
@@ -135,7 +265,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     }
 
     return historicalData;
-  }, [snapshots, showForecast, forecast]);
+  }, [snapshots, showForecast, forecast, timeScale]);
 
   // Filter for net worth goals only, include required monthly rate
   const netWorthGoalLines = useMemo(() => {
@@ -148,6 +278,23 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
         requiredMonthly: g.forecast?.required_monthly_change ?? null,
       }));
   }, [netWorthGoals]);
+
+  // Calculate Y-axis domain to include goal lines
+  const yAxisDomain = useMemo(() => {
+    const dataValues = chartData
+      .flatMap(d => [d.netWorth, d.forecast])
+      .filter((v): v is number => v !== null);
+    const goalValues = netWorthGoalLines.map(g => g.value);
+    const allValues = [...dataValues, ...goalValues];
+
+    if (allValues.length === 0) return [0, 'auto'] as const;
+
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    // Add 5% padding
+    const padding = (maxVal - minVal) * 0.05;
+    return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)] as const;
+  }, [chartData, netWorthGoalLines]);
 
   if (snapshots.length === 0) {
     return (
@@ -177,15 +324,21 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     label,
   }: {
     active?: boolean;
-    payload?: Array<{ value: number | null; dataKey: string }>;
+    payload?: Array<{
+      value: number | null;
+      dataKey: string;
+      payload: { netWorth: number | null; forecast: number | null; assets: number | null; liabilities: number | null };
+    }>;
     label?: string;
   }) => {
     if (active && payload && payload.length) {
-      const netWorth = payload.find(p => p.dataKey === "netWorth")?.value;
-      const forecast = payload.find(p => p.dataKey === "forecast")?.value;
-      const assets = payload.find(p => p.dataKey === "assets")?.value;
-      const liabilities = payload.find(p => p.dataKey === "liabilities")?.value;
-      const isForecast = forecast !== null && netWorth === null;
+      // Access the underlying data point directly from the payload
+      const dataPoint = payload[0]?.payload;
+      if (!dataPoint) return null;
+
+      const { netWorth, forecast, assets, liabilities } = dataPoint;
+      // Check if this is a forecast point (forecast has value, netWorth is null)
+      const isForecast = forecast != null && netWorth == null;
 
       return (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
@@ -199,7 +352,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
           </p>
           {isForecast ? (
             <p className="text-sm text-amber-600 dark:text-amber-400">
-              Projected: {formatCurrency(forecast ?? 0)}
+              Net Worth: {formatCurrency(forecast)}
             </p>
           ) : (
             <>
@@ -227,23 +380,22 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
           Net Worth Over Time
         </div>
         <div className="flex items-center gap-3">
-          {showForecast && (
-            <div className="flex items-center gap-1">
-              {(Object.keys(PERIOD_LABELS) as ForecastPeriod[]).map((period) => (
-                <button
-                  key={period}
-                  onClick={() => handlePeriodChange(period)}
-                  className={`px-2 py-1 text-xs rounded ${
-                    forecastPeriod === period
-                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                      : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  }`}
-                >
-                  {PERIOD_LABELS[period]}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Time scale selector */}
+          <div className="flex items-center gap-1">
+            {availableScales.map((scale) => (
+              <button
+                key={scale}
+                onClick={() => handleTimeScaleChange(scale)}
+                className={`px-2 py-1 text-xs rounded ${
+                  timeScale === scale
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                }`}
+              >
+                {TIME_SCALE_LABELS[scale]}
+              </button>
+            ))}
+          </div>
           <button
             onClick={handleToggleForecast}
             className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors ${
@@ -325,12 +477,14 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
               strokeDasharray="3 3"
               stroke="#e5e7eb"
               className="dark:stroke-gray-700"
+              vertical={false}
             />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 10 }}
               tickLine={false}
               axisLine={false}
+              interval={0}
               className="text-gray-600 dark:text-gray-400"
             />
             <YAxis
@@ -339,6 +493,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
               tickLine={false}
               axisLine={false}
               width={60}
+              domain={yAxisDomain}
               className="text-gray-600 dark:text-gray-400"
             />
             <Tooltip content={<CustomTooltip />} />
@@ -366,13 +521,36 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
                 key={`goal-${index}`}
                 y={goal.value}
                 stroke={goal.achieved ? "#10b981" : "#f59e0b"}
-                strokeDasharray="5 5"
+                strokeDasharray="8 4"
                 strokeWidth={2}
-                label={{
-                  value: goal.name,
-                  position: "right",
-                  fill: goal.achieved ? "#10b981" : "#f59e0b",
-                  fontSize: 11,
+                label={({ viewBox }) => {
+                  const { x, y, width } = viewBox as { x: number; y: number; width: number };
+                  const labelText = formatCompactValue(goal.value);
+                  const labelWidth = labelText.length * 7 + 8;
+                  const centerX = x + width / 2;
+                  const color = goal.achieved ? "#10b981" : "#f59e0b";
+                  return (
+                    <g>
+                      <rect
+                        x={centerX - labelWidth / 2}
+                        y={y - 8}
+                        width={labelWidth}
+                        height={16}
+                        fill="white"
+                        className="dark:fill-gray-900"
+                      />
+                      <text
+                        x={centerX}
+                        y={y + 4}
+                        textAnchor="middle"
+                        fill={color}
+                        fontSize={10}
+                        fontWeight={600}
+                      >
+                        {labelText}
+                      </text>
+                    </g>
+                  );
                 }}
               />
             ))}

@@ -142,6 +142,7 @@ export interface Goal {
   category_id: number | null;
   tracking_period: TrackingPeriod | null;
   target_date: string | null;
+  starting_value: number | null;
   is_active: boolean;
   created_at: string;
 }
@@ -164,6 +165,8 @@ export interface GoalProgressDetails {
   total_change?: number;
   avg_monthly_change?: number;
   months_tracked?: number;
+  is_liability?: boolean;
+  starting_value?: number | null;
 }
 
 export interface GoalForecast {

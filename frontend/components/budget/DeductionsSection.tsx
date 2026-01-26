@@ -19,7 +19,7 @@ const deductionFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
     name: "gross_amount",
-    label: "Loaded Amount (€)",
+    label: "Gross (€)",
     type: "number" as const,
     required: true,
     min: 0,
@@ -27,7 +27,7 @@ const deductionFields = [
   },
   {
     name: "tax_percentage",
-    label: "Deduction Rate (%)",
+    label: "Rate (%)",
     type: "number" as const,
     required: true,
     min: 0,
@@ -135,9 +135,9 @@ export function DeductionsSection({
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
       <div className="grid grid-cols-4 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         <span>Name</span>
-        <span className="text-right">Loaded</span>
+        <span className="text-right">Gross</span>
         <span className="text-right">Rate</span>
-        <span className="text-right">Deducted</span>
+        <span className="text-right">Net</span>
       </div>
       {deductions.map((item) => {
         const netAmount = calculateNetAmount(item);

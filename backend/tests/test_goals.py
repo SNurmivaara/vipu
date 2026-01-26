@@ -1545,3 +1545,206 @@ class TestGoalForecast:
         assert progress["is_achieved"] is True
         assert progress["forecast"]["months_until_target"] == 0
         assert progress["forecast"]["on_track"] is True
+
+
+class TestLiabilityGoalProgress:
+    """Tests for liability/debt payoff goal progress calculation."""
+
+    def test_liability_goal_captures_starting_value(self, client):
+        """Creating a category_target for liability captures starting_value."""
+        client.post("/api/networth/categories/seed")
+
+        # Create initial snapshot with liability
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 26728}],  # Loan liability
+            },
+        )
+
+        # Create goal to pay off the loan
+        response = client.post(
+            "/api/goals",
+            json={
+                "name": "Pay Off Loan",
+                "goal_type": "category_target",
+                "target_value": 0,
+                "category_id": 11,
+            },
+        )
+
+        assert response.status_code == 201
+        assert response.json["starting_value"] == 26728
+
+    def test_liability_goal_progress_calculation(self, client):
+        """Progress is calculated correctly for debt payoff goals."""
+        client.post("/api/networth/categories/seed")
+
+        # Create initial snapshot with liability: 26728
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 26728}],
+            },
+        )
+
+        # Create goal BEFORE paying down (to capture starting value)
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Pay Off Loan",
+                "goal_type": "category_target",
+                "target_value": 0,
+                "category_id": 11,
+            },
+        )
+
+        # Update snapshot to show loan paid down to 20000
+        client.put(
+            "/api/networth/1",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 20000}],
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+
+        # Started at 26728, now at 20000, target 0
+        # Progress = (26728 - 20000) / (26728 - 0) = 6728 / 26728 = 25.18%
+        assert progress["current_value"] == 20000
+        assert progress["target_value"] == 0
+        assert progress["details"]["is_liability"] is True
+        assert progress["details"]["starting_value"] == 26728
+        assert 25.0 <= progress["progress_percentage"] <= 26.0
+        assert progress["is_achieved"] is False
+
+    def test_liability_goal_achieved_when_paid_off(self, client):
+        """Liability goal is achieved when current_value <= target."""
+        client.post("/api/networth/categories/seed")
+
+        # Create snapshot with initial debt
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 10000}],
+            },
+        )
+
+        # Create goal
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Pay Off Loan",
+                "goal_type": "category_target",
+                "target_value": 0,
+                "category_id": 11,
+            },
+        )
+
+        # Pay off completely (update to 0)
+        client.put(
+            "/api/networth/1",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 0}],
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+
+        assert progress["current_value"] == 0
+        assert progress["progress_percentage"] == 100.0
+        assert progress["is_achieved"] is True
+
+    def test_liability_goal_partial_paydown_target(self, client):
+        """Liability goal with non-zero target (partial payoff)."""
+        client.post("/api/networth/categories/seed")
+
+        # Initial debt: 50000
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 50000}],
+            },
+        )
+
+        # Goal: Pay down to 10000 (pay off 40000)
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Pay Down to 10k",
+                "goal_type": "category_target",
+                "target_value": 10000,
+                "category_id": 11,
+            },
+        )
+
+        # Pay down to 30000 (paid off 20000 of 40000 needed = 50%)
+        client.put(
+            "/api/networth/1",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 11, "amount": 30000}],
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+
+        # Started at 50000, now at 30000, target 10000
+        # Progress = (50000 - 30000) / (50000 - 10000) = 20000 / 40000 = 50%
+        assert progress["current_value"] == 30000
+        assert progress["target_value"] == 10000
+        assert progress["progress_percentage"] == 50.0
+        assert progress["is_achieved"] is False
+
+    def test_asset_goal_not_affected_by_liability_logic(self, client):
+        """Asset category_target goals still work the old way."""
+        client.post("/api/networth/categories/seed")
+
+        # Create snapshot with asset (category 1 = checking)
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [{"category_id": 1, "amount": 5000}],
+            },
+        )
+
+        # Goal: Save up to 10000
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Save 10k",
+                "goal_type": "category_target",
+                "target_value": 10000,
+                "category_id": 1,
+            },
+        )
+
+        response = client.get("/api/goals/progress")
+        progress = response.json[0]
+
+        # Asset goal: 5000 / 10000 = 50%
+        assert progress["current_value"] == 5000
+        assert progress["target_value"] == 10000
+        assert progress["progress_percentage"] == 50.0
+        assert progress["is_achieved"] is False
+        # No starting_value for asset goals
+        assert progress["goal"]["starting_value"] is None
+        assert progress["details"].get("is_liability") is False
