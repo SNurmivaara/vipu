@@ -74,33 +74,67 @@ curl http://localhost:5000/api/budget/current
 
 ## Production Deployment
 
-For homelab or production deployments, pre-built images are published to GitHub Container Registry (GHCR) via the release workflow.
+For homelab or production deployments, pre-built images are published to GitHub Container Registry (GHCR).
+
+### Deploy with Pre-built Images
+
+No source code needed - just download the deployment files:
+
+```bash
+# Create a directory for vipu
+mkdir vipu && cd vipu
+
+# Download deployment files
+curl -O https://raw.githubusercontent.com/SNurmivaara/vipu/main/deploy/docker-compose.yml
+curl -O https://raw.githubusercontent.com/SNurmivaara/vipu/main/deploy/.env.example
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings (POSTGRES_PASSWORD, SECRET_KEY, API_URL, CORS_ORIGINS)
+
+# Start services
+docker compose up -d
+
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:5000
+```
 
 ### GHCR Images
 
-Images are built and pushed when you publish a GitHub release:
-- `ghcr.io/snurmivaara/vipu-backend:TAG` and `ghcr.io/snurmivaara/vipu-backend:latest`
-- `ghcr.io/snurmivaara/vipu-frontend:TAG` and `ghcr.io/snurmivaara/vipu-frontend:latest`
+Images are available at:
+- `ghcr.io/snurmivaara/vipu-backend:latest` (or `:v1.0.1`, etc.)
+- `ghcr.io/snurmivaara/vipu-frontend:latest` (or `:v1.0.1`, etc.)
 
-The release workflow only builds images for components that changed since the last release (using path filtering), and builds for both `linux/amd64` and `linux/arm64` architectures.
+Both `linux/amd64` and `linux/arm64` architectures are supported.
 
-### Creating a Release
+### Updating
+
+```bash
+# Pull latest images and restart
+docker compose pull
+docker compose up -d
+```
+
+### Creating a New Release (Maintainers)
 
 1. Create and push a tag:
    ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
+   git tag v1.0.2
+   git push origin v1.0.2
    ```
 
 2. Go to GitHub → Releases → "Draft a new release"
 3. Select your tag and publish the release
 4. The workflow will automatically build and push images to GHCR
 
-## API Documentation
+## Documentation
 
-Full API documentation is available at **[snurmivaara.github.io/vipu](https://snurmivaara.github.io/vipu/)**.
+Full documentation is available at **[snurmivaara.github.io/vipu](https://snurmivaara.github.io/vipu/)**:
 
-When running locally, interactive docs are also available at `http://localhost:5000/docs`.
+- **[User Guide](https://snurmivaara.github.io/vipu/guide.html)** - Learn how Vipu works and get started
+- **[API Reference](https://snurmivaara.github.io/vipu/api.html)** - Technical API documentation
+
+When running locally, interactive API docs are also available at `http://localhost:5000/docs`.
 
 ## Development Setup
 
@@ -209,7 +243,11 @@ vipu/
 │   ├── types/               # TypeScript interfaces
 │   ├── Dockerfile
 │   └── package.json
-├── docker-compose.yml
+├── deploy/                  # Production deployment (GHCR images)
+│   ├── docker-compose.yml
+│   └── .env.example
+├── docker-compose.yml       # Local build from source
+├── docker-compose.dev.yml   # Development with hot reload
 └── .env.example
 ```
 
