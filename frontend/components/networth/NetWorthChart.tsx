@@ -324,15 +324,21 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     label,
   }: {
     active?: boolean;
-    payload?: Array<{ value: number | null; dataKey: string }>;
+    payload?: Array<{
+      value: number | null;
+      dataKey: string;
+      payload: { netWorth: number | null; forecast: number | null; assets: number | null; liabilities: number | null };
+    }>;
     label?: string;
   }) => {
     if (active && payload && payload.length) {
-      const netWorth = payload.find(p => p.dataKey === "netWorth")?.value;
-      const forecast = payload.find(p => p.dataKey === "forecast")?.value;
-      const assets = payload.find(p => p.dataKey === "assets")?.value;
-      const liabilities = payload.find(p => p.dataKey === "liabilities")?.value;
-      const isForecast = forecast !== null && netWorth === null;
+      // Access the underlying data point directly from the payload
+      const dataPoint = payload[0]?.payload;
+      if (!dataPoint) return null;
+
+      const { netWorth, forecast, assets, liabilities } = dataPoint;
+      // Check if this is a forecast point (forecast has value, netWorth is null)
+      const isForecast = forecast != null && netWorth == null;
 
       return (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3">
@@ -346,7 +352,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
           </p>
           {isForecast ? (
             <p className="text-sm text-amber-600 dark:text-amber-400">
-              Projected: {formatCurrency(forecast ?? 0)}
+              Net Worth: {formatCurrency(forecast)}
             </p>
           ) : (
             <>
