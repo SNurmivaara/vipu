@@ -46,6 +46,7 @@ services:
       - "3000:3000"
     environment:
       - WATCHPACK_POLLING=true
+      - BACKEND_URL=http://backend:5000
     volumes:
       - ./frontend/app:/app/app
       - ./frontend/components:/app/components
