@@ -27,6 +27,18 @@ function formatMonthLabel(month: number, year: number): string {
   return `${month}/${String(year).slice(-2)}`;
 }
 
+// Format value as compact K/M (e.g., "200k" or "1.5M")
+function formatCompactValue(value: number): string {
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  } else if (value >= 1000) {
+    const thousands = value / 1000;
+    return thousands % 1 === 0 ? `${thousands}k` : `${thousands.toFixed(1)}k`;
+  }
+  return `${value}`;
+}
+
 // Aggregate data points for longer time scales
 // Returns the sampling interval (1 = every point, 3 = quarterly, 12 = yearly)
 function getAggregationInterval(dataLength: number, timeScale: TimeScale): number {
@@ -267,6 +279,23 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
       }));
   }, [netWorthGoals]);
 
+  // Calculate Y-axis domain to include goal lines
+  const yAxisDomain = useMemo(() => {
+    const dataValues = chartData
+      .flatMap(d => [d.netWorth, d.forecast])
+      .filter((v): v is number => v !== null);
+    const goalValues = netWorthGoalLines.map(g => g.value);
+    const allValues = [...dataValues, ...goalValues];
+
+    if (allValues.length === 0) return [0, 'auto'] as const;
+
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
+    // Add 5% padding
+    const padding = (maxVal - minVal) * 0.05;
+    return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)] as const;
+  }, [chartData, netWorthGoalLines]);
+
   if (snapshots.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
@@ -458,6 +487,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
               tickLine={false}
               axisLine={false}
               width={60}
+              domain={yAxisDomain}
               className="text-gray-600 dark:text-gray-400"
             />
             <Tooltip content={<CustomTooltip />} />
@@ -485,13 +515,36 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
                 key={`goal-${index}`}
                 y={goal.value}
                 stroke={goal.achieved ? "#10b981" : "#f59e0b"}
-                strokeDasharray="5 5"
+                strokeDasharray="8 4"
                 strokeWidth={2}
-                label={{
-                  value: goal.name,
-                  position: "right",
-                  fill: goal.achieved ? "#10b981" : "#f59e0b",
-                  fontSize: 11,
+                label={({ viewBox }) => {
+                  const { x, y, width } = viewBox as { x: number; y: number; width: number };
+                  const labelText = formatCompactValue(goal.value);
+                  const labelWidth = labelText.length * 7 + 8;
+                  const centerX = x + width / 2;
+                  const color = goal.achieved ? "#10b981" : "#f59e0b";
+                  return (
+                    <g>
+                      <rect
+                        x={centerX - labelWidth / 2}
+                        y={y - 8}
+                        width={labelWidth}
+                        height={16}
+                        fill="white"
+                        className="dark:fill-gray-900"
+                      />
+                      <text
+                        x={centerX}
+                        y={y + 4}
+                        textAnchor="middle"
+                        fill={color}
+                        fontSize={10}
+                        fontWeight={600}
+                      >
+                        {labelText}
+                      </text>
+                    </g>
+                  );
                 }}
               />
             ))}
