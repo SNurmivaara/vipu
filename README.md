@@ -76,16 +76,25 @@ curl http://localhost:5000/api/budget/current
 
 For homelab or production deployments, pre-built images are published to GitHub Container Registry (GHCR) via the release workflow.
 
-- GHCR images (built on tag push):
-	- `ghcr.io/snurmivaara/vipu-backend:TAG` and `ghcr.io/snurmivaara/vipu-backend:latest`
-	- `ghcr.io/snurmivaara/vipu-frontend:TAG` and `ghcr.io/snurmivaara/vipu-frontend:latest`
+### GHCR Images
 
-- Quick tag to create a release (triggers the GHCR build):
+Images are built and pushed when you publish a GitHub release:
+- `ghcr.io/snurmivaara/vipu-backend:TAG` and `ghcr.io/snurmivaara/vipu-backend:latest`
+- `ghcr.io/snurmivaara/vipu-frontend:TAG` and `ghcr.io/snurmivaara/vipu-frontend:latest`
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+The release workflow only builds images for components that changed since the last release (using path filtering), and builds for both `linux/amd64` and `linux/arm64` architectures.
+
+### Creating a Release
+
+1. Create and push a tag:
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+2. Go to GitHub → Releases → "Draft a new release"
+3. Select your tag and publish the release
+4. The workflow will automatically build and push images to GHCR
 
 ## API Documentation
 

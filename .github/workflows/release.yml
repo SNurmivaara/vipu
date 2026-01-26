@@ -2,50 +2,106 @@ name: Release images to GHCR
 
 on:
   release:
-    types: [ published ]
+    types: [published]
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  build-and-push:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get previous release tag
+        id: prev_tag
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${{ github.ref_name }}$" | head -n1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "base=HEAD~100" >> $GITHUB_OUTPUT
+          else
+            echo "base=$PREV_TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          base: ${{ steps.prev_tag.outputs.base }}
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+
+  build-and-push-backend:
+    name: Build & Push Backend
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
-          file: ./backend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            snurmivaara/vipu-backend:${{ github.ref_name }}
-            snurmivaara/vipu-backend:latest
+            ghcr.io/${{ github.repository_owner }}/vipu-backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/vipu-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-and-push-frontend:
+    name: Build & Push Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: ./frontend
-          file: ./frontend/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            snurmivaara/vipu-frontend:${{ github.ref_name }}
-            snurmivaara/vipu-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/vipu-frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/vipu-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
