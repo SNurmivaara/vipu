@@ -3,6 +3,17 @@ name: Release images to GHCR
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build both images (skip change detection)'
+        required: false
+        default: 'true'
+        type: boolean
+      tag:
+        description: 'Tag to use for images (e.g., v1.0.1)'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -43,7 +54,7 @@ jobs:
   build-and-push-backend:
     name: Build & Push Backend
     needs: changes
-    if: needs.changes.outputs.backend == 'true'
+    if: needs.changes.outputs.backend == 'true' || inputs.force_build == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +79,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-backend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/vipu-backend:${{ inputs.tag || github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/vipu-backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -76,7 +87,7 @@ jobs:
   build-and-push-frontend:
     name: Build & Push Frontend
     needs: changes
-    if: needs.changes.outputs.frontend == 'true'
+    if: needs.changes.outputs.frontend == 'true' || inputs.force_build == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,7 +112,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository_owner }}/vipu-frontend:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/vipu-frontend:${{ inputs.tag || github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/vipu-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
