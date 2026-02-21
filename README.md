@@ -92,61 +92,6 @@ curl -X POST http://localhost:5000/api/seed
 curl http://localhost:5000/api/budget/current
 ```
 
-## Production Deployment
-
-For homelab or production deployments, pre-built images are published to GitHub Container Registry (GHCR).
-
-### Deploy with Pre-built Images
-
-No source code needed - just download the deployment files:
-
-```bash
-# Create a directory for vipu
-mkdir vipu && cd vipu
-
-# Download deployment files
-curl -O https://raw.githubusercontent.com/SNurmivaara/vipu/main/deploy/docker-compose.yml
-curl -O https://raw.githubusercontent.com/SNurmivaara/vipu/main/deploy/.env.example
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your settings (POSTGRES_PASSWORD, SECRET_KEY, CORS_ORIGINS)
-
-# Start services
-docker compose up -d
-
-# Frontend: http://localhost:3000
-# Backend API: http://localhost:5000
-```
-
-### GHCR Images
-
-Images are available at:
-- `ghcr.io/snurmivaara/vipu-backend:latest` (or `:v1.0.1`, etc.)
-- `ghcr.io/snurmivaara/vipu-frontend:latest` (or `:v1.0.1`, etc.)
-
-Both `linux/amd64` and `linux/arm64` architectures are supported.
-
-### Updating
-
-```bash
-# Pull latest images and restart
-docker compose pull
-docker compose up -d
-```
-
-### Creating a New Release (Maintainers)
-
-1. Create and push a tag:
-   ```bash
-   git tag v1.0.2
-   git push origin v1.0.2
-   ```
-
-2. Go to GitHub → Releases → "Draft a new release"
-3. Select your tag and publish the release
-4. The workflow will automatically build and push images to GHCR
-
 ## Documentation
 
 Full documentation is available at **[snurmivaara.github.io/vipu](https://snurmivaara.github.io/vipu/)**:
