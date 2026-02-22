@@ -239,7 +239,6 @@ def export_data() -> Response:
                 "category_name": (
                     category_lookup.get(g.category_id, "") if g.category_id else None
                 ),
-                "tracking_period": g.tracking_period,
                 "target_date": g.target_date.isoformat() if g.target_date else None,
                 "is_active": g.is_active,
             }
@@ -418,7 +417,6 @@ def import_data() -> Response | tuple[Response, int]:
                 goal_type=g["goal_type"],
                 target_value=Decimal(str(g["target_value"])),
                 category_id=category_id,
-                tracking_period=g.get("tracking_period"),
                 target_date=target_date,
                 is_active=g.get("is_active", True),
             )

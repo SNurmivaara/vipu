@@ -266,7 +266,6 @@ export default function BudgetPage() {
           <ExpensesSection
             expenses={data.expenses.filter((e) => !e.is_savings_goal)}
             collapsible
-            defaultOpen
           />
           <SavingsGoalsSection
             savingsGoals={data.expenses.filter((e) => e.is_savings_goal)}
@@ -319,7 +318,7 @@ export default function BudgetPage() {
             </Dialog.Description>
             {pendingImportData && (
               <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                   Version {pendingImportData.version}
                   {pendingImportData.version === 2 && " (includes net worth)"}
                 </p>

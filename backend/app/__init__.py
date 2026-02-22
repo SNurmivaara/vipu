@@ -45,6 +45,12 @@ def create_app(config_class: type | None = None) -> APIFlask:
     # Use checkfirst=True to avoid race conditions with multiple workers
     Base.metadata.create_all(engine, checkfirst=True)
 
+    # Run database migrations
+    from app.migrations import run_migrations
+
+    with Session() as session:
+        run_migrations(session)
+
     from app.routes import (
         accounts,
         budget,

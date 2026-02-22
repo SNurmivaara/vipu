@@ -4,7 +4,12 @@ from apiflask import APIBlueprint
 from flask import Response, jsonify
 
 from app import get_session
-from app.models import Account, BudgetSettings, ExpenseItem, IncomeItem
+from app.models import (
+    Account,
+    BudgetSettings,
+    ExpenseItem,
+    IncomeItem,
+)
 
 bp = APIBlueprint("budget", __name__, tag="Budget")
 

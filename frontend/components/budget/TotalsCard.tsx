@@ -65,7 +65,7 @@ export function TotalsCard({ totals }: TotalsCardProps) {
               {formatCurrency(totals.net_position)}
             </span>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Balance after covering monthly expenses
           </p>
         </div>

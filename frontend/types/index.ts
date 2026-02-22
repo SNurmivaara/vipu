@@ -126,13 +126,15 @@ export interface GroupFormData {
 }
 
 // Goal types
+// New types: net_worth, savings_rate, savings_goal
+// Old types kept for backward compatibility: net_worth_target, category_target, category_rate
 export type GoalType =
+  | "net_worth"
+  | "savings_rate"
+  | "savings_goal"
   | "net_worth_target"
   | "category_target"
-  | "category_monthly"
   | "category_rate";
-
-export type TrackingPeriod = "month" | "quarter" | "half_year" | "year";
 
 export interface Goal {
   id: number;
@@ -140,9 +142,8 @@ export interface Goal {
   goal_type: GoalType;
   target_value: number;
   category_id: number | null;
-  tracking_period: TrackingPeriod | null;
+  category?: NetWorthCategory | null;
   target_date: string | null;
-  starting_value: number | null;
   is_active: boolean;
   created_at: string;
 }
@@ -152,29 +153,8 @@ export interface GoalFormData {
   goal_type: GoalType;
   target_value: number;
   category_id: number | null;
-  tracking_period: TrackingPeriod | null;
   target_date: string | null;
   is_active: boolean;
-}
-
-export interface GoalProgressDetails {
-  latest_month?: string | null;
-  category_name?: string | null;
-  tracking_period?: TrackingPeriod;
-  net_income?: number;
-  total_change?: number;
-  avg_monthly_change?: number;
-  months_tracked?: number;
-  is_liability?: boolean;
-  starting_value?: number | null;
-}
-
-export interface GoalForecast {
-  forecast_date: string | null;
-  months_until_target: number | null;
-  on_track: boolean;
-  required_monthly_change: number;
-  current_monthly_change: number;
 }
 
 export interface GoalProgress {
@@ -183,8 +163,9 @@ export interface GoalProgress {
   target_value: number;
   progress_percentage: number;
   is_achieved: boolean;
-  details: GoalProgressDetails;
-  forecast: GoalForecast | null;
+  status: "on_track" | "behind" | null;
+  data_months: number;
+  category_name?: string | null;
 }
 
 // Forecast types
