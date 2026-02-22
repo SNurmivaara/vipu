@@ -53,23 +53,32 @@ def _get_applied_migrations(session: Session) -> set[str]:
 
 
 def _apply_migration(session: Session, migration: dict) -> None:
-    """Apply a single migration and record it."""
+    """Apply a single migration and record it.
+
+    The migration and its recording are done in a single transaction.
+    If any part fails, the entire migration is rolled back.
+    """
     migration_id = migration["id"]
     migration_name = migration["name"]
 
     logger.info(f"Applying migration {migration_id}: {migration_name}")
 
-    # Execute the migration SQL
-    session.execute(text(migration["sql"]))
+    try:
+        # Execute the migration SQL
+        session.execute(text(migration["sql"]))
 
-    # Record that this migration was applied
-    session.execute(
-        text("INSERT INTO _migrations (id, name) VALUES (:id, :name)"),
-        {"id": migration_id, "name": migration_name},
-    )
-    session.commit()
+        # Record that this migration was applied
+        session.execute(
+            text("INSERT INTO _migrations (id, name) VALUES (:id, :name)"),
+            {"id": migration_id, "name": migration_name},
+        )
+        session.commit()
 
-    logger.info(f"Migration {migration_id} applied successfully")
+        logger.info(f"Migration {migration_id} applied successfully")
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Migration {migration_id} failed: {e}")
+        raise
 
 
 def run_migrations(session: Session) -> int:

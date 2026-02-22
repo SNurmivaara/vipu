@@ -510,7 +510,7 @@ export function CategoryManager({ open, onOpenChange, categories }: CategoryMana
                                     style={{ backgroundColor: g.color }}
                                   />
                                   <Select.ItemText>{g.name}</Select.ItemText>
-                                  <span className="text-xs text-gray-500 ml-1">
+                                  <span className="text-sm text-gray-500 ml-1">
                                     ({g.group_type})
                                   </span>
                                 </Select.Item>
@@ -720,7 +720,7 @@ function GroupRow({
           style={{ backgroundColor: group.color }}
         />
         <span className="text-sm text-gray-900 dark:text-gray-100">{group.name}</span>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
+        <span className="text-sm text-gray-500 dark:text-gray-400">
           ({categoryCount} {categoryCount === 1 ? "category" : "categories"})
         </span>
       </div>
@@ -758,7 +758,7 @@ function CategoryRow({
       <div className="flex items-center gap-2">
         <span className="text-sm text-gray-900 dark:text-gray-100">{category.name}</span>
         {!category.is_personal && (
-          <span className="text-xs text-gray-400 dark:text-gray-500">(company)</span>
+          <span className="text-sm text-gray-400 dark:text-gray-500">(company)</span>
         )}
       </div>
       <div className="flex items-center gap-1">

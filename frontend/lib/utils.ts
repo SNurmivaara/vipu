@@ -17,6 +17,18 @@ export function formatCurrency(value: number): string {
 }
 
 /**
+ * Format a number as European currency, rounded to whole euros (1 234 €)
+ * No decimal places shown.
+ */
+export function formatCurrencyRounded(value: number): string {
+  const formatted = new Intl.NumberFormat("fi-FI", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(value));
+  return `${formatted} €`;
+}
+
+/**
  * Format a percentage (26,5 %)
  */
 export function formatPercentage(value: number): string {

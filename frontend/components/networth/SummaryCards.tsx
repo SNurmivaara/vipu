@@ -1,7 +1,7 @@
 "use client";
 
 import { NetWorthSnapshot } from "@/types";
-import { formatCurrency, cn, getBalanceColor } from "@/lib/utils";
+import { formatCurrencyRounded, cn, getBalanceColor } from "@/lib/utils";
 
 interface SummaryCardsProps {
   snapshots: NetWorthSnapshot[];
@@ -64,11 +64,15 @@ export function SummaryCards({ snapshots }: SummaryCardsProps) {
         <div
           className={cn("text-2xl font-bold", getBalanceColor(latest.net_worth))}
         >
-          {formatCurrency(latest.net_worth)}
+          {formatCurrencyRounded(latest.net_worth)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Assets: {formatCurrency(latest.total_assets)} / Liabilities:{" "}
-          {formatCurrency(Math.abs(latest.total_liabilities))}
+        <div className="text-sm mt-2 space-y-0.5">
+          <div className="text-emerald-600 dark:text-emerald-400">
+            {formatCurrencyRounded(latest.total_assets)} assets
+          </div>
+          <div className="text-red-600 dark:text-red-400">
+            {formatCurrencyRounded(Math.abs(latest.total_liabilities))} liabilities
+          </div>
         </div>
       </div>
 
@@ -78,11 +82,11 @@ export function SummaryCards({ snapshots }: SummaryCardsProps) {
         </div>
         <div className={cn("text-2xl font-bold", changeColor)}>
           {changePrefix}
-          {formatCurrency(latest.change_from_previous)}
+          {formatCurrencyRounded(latest.change_from_previous)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
           {changePrefix}
-          {changePercent.toFixed(1).replace(".", ",")} % from previous month
+          {changePercent.toFixed(1).replace(".", ",")} % from previous
         </div>
       </div>
 
@@ -91,10 +95,10 @@ export function SummaryCards({ snapshots }: SummaryCardsProps) {
           Personal / Company
         </div>
         <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-          {formatCurrency(latest.personal_wealth)}
+          {formatCurrencyRounded(latest.personal_wealth)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-          Company: {formatCurrency(latest.company_wealth)}
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          Company: {formatCurrencyRounded(latest.company_wealth)}
         </div>
       </div>
     </div>

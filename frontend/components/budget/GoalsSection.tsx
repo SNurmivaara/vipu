@@ -158,7 +158,7 @@ export function GoalsSection({
               <span className="text-gray-900 dark:text-gray-100 font-medium">
                 {gp.goal.name}
               </span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+              <span className="text-sm px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                 {GOAL_TYPE_LABELS[gp.goal.goal_type]}
               </span>
               {/* Monthly required for numeric goals with deadlines */}
@@ -171,20 +171,20 @@ export function GoalsSection({
                 );
                 if (monthlyRequired === null) return null;
                 return (
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
+                  <span className="text-sm text-gray-400 dark:text-gray-500">
                     {formatCurrency(monthlyRequired)}/mo
                   </span>
                 );
               })()}
               {gp.is_achieved && !["savings_rate", "category_rate"].includes(gp.goal.goal_type) && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
+                <span className="text-sm px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
                   Achieved
                 </span>
               )}
             </div>
             {gp.status && (
               <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
+                className={`text-sm px-2 py-0.5 rounded-full ${
                   gp.status === "on_track"
                     ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
                     : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
@@ -196,7 +196,7 @@ export function GoalsSection({
           </div>
 
           {gp.category_name && (
-            <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+            <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
               {gp.category_name}
             </div>
           )}
@@ -220,7 +220,7 @@ export function GoalsSection({
           </div>
 
           {gp.goal.goal_type === "savings_rate" && gp.data_months < 2 && (
-            <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            <div className="text-sm text-amber-600 dark:text-amber-400 mt-1">
               Needs more snapshot data
             </div>
           )}

@@ -485,7 +485,7 @@ function GroupSection({
         />
         <span
           className={cn(
-            "text-xs font-semibold uppercase tracking-wide",
+            "text-sm font-semibold uppercase tracking-wide",
             isLiability
               ? "text-red-600 dark:text-red-400"
               : "text-gray-500 dark:text-gray-400"
@@ -504,7 +504,7 @@ function GroupSection({
             >
               {cat.name}
               {!cat.is_personal && (
-                <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">
+                <span className="ml-1 text-sm text-gray-400 dark:text-gray-500">
                   (company)
                 </span>
               )}

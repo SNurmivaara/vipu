@@ -132,7 +132,7 @@ export function AllocationChart({ snapshot }: AllocationChartProps) {
         </div>
 
         {/* Legend - stacked on the right */}
-        <div className="flex-1 flex flex-col gap-2 min-w-0">
+        <div className="flex-1 flex flex-col justify-center gap-2 min-w-0">
           {/* Top groups as detailed cards */}
           {topGroups.map((item, index) => {
             const percentage = snapshot.percentages[`${item.name}_pct`] || 0;
@@ -145,7 +145,7 @@ export function AllocationChart({ snapshot }: AllocationChartProps) {
                   className="w-3 h-3 rounded-full flex-shrink-0"
                   style={{ backgroundColor: item.color }}
                 />
-                <div className="flex-1 min-w-0 text-xs">
+                <div className="flex-1 min-w-0 text-sm">
                   <div className="font-medium text-gray-700 dark:text-gray-300 truncate">
                     {item.name}
                   </div>
@@ -161,7 +161,7 @@ export function AllocationChart({ snapshot }: AllocationChartProps) {
           {remainingGroups.length > 0 && (
             <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
               {remainingGroups.map((item, index) => (
-                <div key={index} className="flex items-center gap-1.5 text-xs">
+                <div key={index} className="flex items-center gap-1.5 text-sm">
                   <div
                     className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ backgroundColor: item.color }}

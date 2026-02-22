@@ -110,7 +110,7 @@ export function AccountsSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      <div className="grid grid-cols-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         <span>Account</span>
         <span className="text-right">Balance</span>
       </div>

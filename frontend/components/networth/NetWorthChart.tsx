@@ -9,20 +9,34 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  ReferenceLine,
   Line,
   ComposedChart,
 } from "recharts";
-import { NetWorthSnapshot, ForecastPeriod } from "@/types";
+import { NetWorthSnapshot, GoalProgress, ForecastPeriod } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { fetchForecast } from "@/lib/api";
 
 interface NetWorthChartProps {
   snapshots: NetWorthSnapshot[];
+  netWorthGoals?: GoalProgress[];
 }
 
 // Format month/year as compact "M/YY" (e.g., "1/25" for January 2025)
 function formatMonthLabel(month: number, year: number): string {
   return `${month}/${String(year).slice(-2)}`;
+}
+
+// Format value as compact K/M (e.g., "200k" or "1.5M")
+function formatCompactValue(value: number): string {
+  if (value >= 1000000) {
+    const millions = value / 1000000;
+    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
+  } else if (value >= 1000) {
+    const thousands = value / 1000;
+    return thousands % 1 === 0 ? `${thousands}k` : `${thousands.toFixed(1)}k`;
+  }
+  return `${value}`;
 }
 
 // Aggregate data points for longer time scales
@@ -122,7 +136,7 @@ function saveChartSettings(settings: ChartSettings) {
   }
 }
 
-export function NetWorthChart({ snapshots }: NetWorthChartProps) {
+export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartProps) {
   const [showForecast, setShowForecast] = useState(false);
   const [timeScale, setTimeScale] = useState<TimeScale>("1y");
   const [isHydrated, setIsHydrated] = useState(false);
@@ -253,26 +267,51 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
     return historicalData;
   }, [snapshots, showForecast, forecast, timeScale]);
 
-  // Calculate Y-axis domain
+  // Filter for net worth goals only (supports both old and new type names)
+  const netWorthGoalLines = useMemo(() => {
+    return netWorthGoals
+      .filter((g) =>
+        (g.goal.goal_type === "net_worth" || g.goal.goal_type === "net_worth_target") &&
+        g.goal.is_active
+      )
+      .map((g) => ({
+        name: g.goal.name,
+        value: g.target_value,
+        achieved: g.is_achieved,
+      }));
+  }, [netWorthGoals]);
+
+  // Calculate Y-axis domain to include goal lines
   const yAxisDomain = useMemo(() => {
     const dataValues = chartData
       .flatMap(d => [d.netWorth, d.forecast])
       .filter((v): v is number => v !== null);
+    const goalValues = netWorthGoalLines.map(g => g.value);
+    const allValues = [...dataValues, ...goalValues];
 
-    if (dataValues.length === 0) return [0, 'auto'] as const;
+    if (allValues.length === 0) return [0, 'auto'] as const;
 
-    const minVal = Math.min(...dataValues);
-    const maxVal = Math.max(...dataValues);
+    const minVal = Math.min(...allValues);
+    const maxVal = Math.max(...allValues);
     // Add 5% padding
     const padding = (maxVal - minVal) * 0.05;
     return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)] as const;
-  }, [chartData]);
+  }, [chartData, netWorthGoalLines]);
+
+  // Calculate optimal tick interval based on data points
+  const xAxisInterval = useMemo(() => {
+    const dataPoints = chartData.length;
+    if (dataPoints <= 6) return 0; // Show all
+    if (dataPoints <= 12) return 1; // Every other
+    if (dataPoints <= 24) return 2; // Every third
+    return Math.floor(dataPoints / 6) - 1; // ~6 labels max
+  }, [chartData.length]);
 
   if (snapshots.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
-          Net Worth Over Time
+          NW Trend
         </div>
         <div className="h-64 flex items-center justify-center text-gray-500 dark:text-gray-400">
           No data to display
@@ -317,7 +356,7 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
           <p className="font-medium text-gray-900 dark:text-gray-100 mb-2">
             {label}
             {isForecast && (
-              <span className="ml-2 text-xs text-amber-600 dark:text-amber-400">
+              <span className="ml-2 text-sm text-amber-600 dark:text-amber-400">
                 (Projected)
               </span>
             )}
@@ -349,7 +388,7 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
       <div className="flex items-center justify-between mb-4">
         <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Net Worth Over Time
+          NW Trend
         </div>
         <div className="flex items-center gap-3">
           {/* Time scale selector */}
@@ -358,7 +397,7 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
               <button
                 key={scale}
                 onClick={() => handleTimeScaleChange(scale)}
-                className={`px-2 py-1 text-xs rounded ${
+                className={`px-2 py-1 text-sm rounded ${
                   timeScale === scale
                     ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
                     : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -370,7 +409,7 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
           </div>
           <button
             onClick={handleToggleForecast}
-            className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded transition-colors ${
+            className={`flex items-center gap-1.5 px-2 py-1 text-sm rounded transition-colors ${
               showForecast
                 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
                 : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -395,7 +434,7 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
       </div>
 
       {showForecast && (
-        <div className="mb-3 text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="mb-3 text-sm text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-4 gap-y-1">
           {forecastLoading && (
             <span className="text-amber-500">Loading forecast...</span>
           )}
@@ -431,18 +470,18 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
             />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 14 }}
               tickLine={false}
               axisLine={false}
-              interval={0}
+              interval={xAxisInterval}
               className="text-gray-600 dark:text-gray-400"
             />
             <YAxis
               tickFormatter={formatYAxis}
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 14 }}
               tickLine={false}
               axisLine={false}
-              width={60}
+              width={70}
               domain={yAxisDomain}
               className="text-gray-600 dark:text-gray-400"
             />
@@ -466,6 +505,70 @@ export function NetWorthChart({ snapshots }: NetWorthChartProps) {
                 connectNulls={true}
               />
             )}
+            {netWorthGoalLines.map((goal, index) => {
+              const color = goal.achieved ? "#10b981" : "#f59e0b";
+              return (
+                <ReferenceLine
+                  key={`goal-${index}`}
+                  y={goal.value}
+                  stroke="none"
+                  label={({ viewBox }) => {
+                    const { x, y, width } = viewBox as { x: number; y: number; width: number };
+                    const labelText = formatCompactValue(goal.value);
+                    const labelWidth = labelText.length * 9 + 12;
+                    const centerX = x + width / 2;
+                    const gapStart = centerX - labelWidth / 2 - 4;
+                    const gapEnd = centerX + labelWidth / 2 + 4;
+                    // Draw line segments on either side of the label
+                    return (
+                      <g>
+                        {/* Left line segment */}
+                        <line
+                          x1={x}
+                          y1={y}
+                          x2={gapStart}
+                          y2={y}
+                          stroke={color}
+                          strokeWidth={2}
+                          strokeDasharray="8 4"
+                        />
+                        {/* Right line segment */}
+                        <line
+                          x1={gapEnd}
+                          y1={y}
+                          x2={x + width}
+                          y2={y}
+                          stroke={color}
+                          strokeWidth={2}
+                          strokeDasharray="8 4"
+                        />
+                        {/* Label background */}
+                        <rect
+                          x={centerX - labelWidth / 2}
+                          y={y - 10}
+                          width={labelWidth}
+                          height={20}
+                          rx={4}
+                          fill={color}
+                          fillOpacity={0.15}
+                        />
+                        {/* Label text */}
+                        <text
+                          x={centerX}
+                          y={y + 5}
+                          textAnchor="middle"
+                          fontSize={14}
+                          fontWeight={500}
+                          fill={color}
+                        >
+                          {labelText}
+                        </text>
+                      </g>
+                    );
+                  }}
+                />
+              );
+            })}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

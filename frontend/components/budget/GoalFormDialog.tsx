@@ -145,7 +145,7 @@ export function GoalFormDialog({
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 {GOAL_TYPES.find((t) => t.value === values.goal_type)
                   ?.description}
               </p>
@@ -223,7 +223,7 @@ export function GoalFormDialog({
                 }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 Set a deadline to track if you&apos;re on pace
               </p>
             </div>

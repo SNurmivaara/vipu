@@ -42,7 +42,7 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
         >
           {formatCurrency(currentReality)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
           Balance minus monthly expenses
         </div>
       </div>
@@ -57,25 +57,25 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
         >
           {formatCurrency(endOfMonth)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
           Plus net income ({formatCurrency(netIncome)})
         </div>
       </div>
 
-      {/* Goal Distance */}
+      {/* After Monthly Savings */}
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          With Savings Goals
+          After Monthly Savings
         </div>
         <div
           className={cn("text-2xl font-bold", getBalanceColor(goalDistance))}
         >
           {formatCurrency(goalDistance)}
         </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
           {savingsGoals > 0
-            ? `Including ${formatCurrency(savingsGoals)} in goals`
-            : "No savings goals set"}
+            ? `Minus ${formatCurrency(savingsGoals)} in savings`
+            : "No monthly savings set"}
         </div>
       </div>
     </div>

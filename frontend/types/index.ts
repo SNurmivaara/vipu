@@ -126,7 +126,15 @@ export interface GroupFormData {
 }
 
 // Goal types
-export type GoalType = "net_worth" | "savings_rate" | "savings_goal";
+// New types: net_worth, savings_rate, savings_goal
+// Old types kept for backward compatibility: net_worth_target, category_target, category_rate
+export type GoalType =
+  | "net_worth"
+  | "savings_rate"
+  | "savings_goal"
+  | "net_worth_target"
+  | "category_target"
+  | "category_rate";
 
 export interface Goal {
   id: number;

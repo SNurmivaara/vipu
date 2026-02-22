@@ -110,7 +110,7 @@ export function ExpensesSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      <div className="grid grid-cols-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         <span>Expense</span>
         <span className="text-right">Monthly</span>
       </div>

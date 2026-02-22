@@ -5,13 +5,18 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NetWorthSnapshot, NetWorthCategory } from "@/types";
 import { deleteSnapshot } from "@/lib/api";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrencyRounded, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { SnapshotForm } from "./SnapshotForm";
 
 interface SnapshotListProps {
   snapshots: NetWorthSnapshot[];
   categories: NetWorthCategory[];
+}
+
+// Group categories by their group for display
+function groupCategoriesById(categories: NetWorthCategory[]): Map<number, NetWorthCategory> {
+  return new Map(categories.map(c => [c.id, c]));
 }
 
 const MONTH_NAMES = [
@@ -22,9 +27,11 @@ const MONTH_NAMES = [
 export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
   const [editingSnapshot, setEditingSnapshot] = useState<NetWorthSnapshot | null>(null);
   const [deletingSnapshot, setDeletingSnapshot] = useState<NetWorthSnapshot | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const categoryMap = groupCategoriesById(categories);
 
   const deleteMutation = useMutation({
     mutationFn: deleteSnapshot,
@@ -65,83 +72,135 @@ export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
                   ? "text-red-600 dark:text-red-400"
                   : "text-gray-500 dark:text-gray-400";
             const changePrefix = snapshot.change_from_previous > 0 ? "+" : "";
+            const isExpanded = expandedId === snapshot.id;
+
+            // Group entries by their category's group
+            const entriesByGroup = snapshot.entries.reduce((acc, entry) => {
+              const cat = categoryMap.get(entry.category_id);
+              if (!cat) return acc;
+              const groupName = cat.group?.name ?? "Other";
+              if (!acc[groupName]) acc[groupName] = [];
+              acc[groupName].push({ ...entry, categoryName: cat.name, isLiability: cat.group?.group_type === "liability" });
+              return acc;
+            }, {} as Record<string, Array<{ category_id: number; amount: number; categoryName: string; isLiability: boolean }>>);
 
             return (
-              <div
-                key={snapshot.id}
-                className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-4">
-                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                      {MONTH_NAMES[snapshot.month - 1]} {snapshot.year}
-                    </div>
-                    <div
-                      className={cn(
-                        "text-lg font-semibold",
-                        snapshot.net_worth >= 0
-                          ? "text-emerald-700 dark:text-emerald-400"
-                          : "text-red-600 dark:text-red-400"
-                      )}
-                    >
-                      {formatCurrency(snapshot.net_worth)}
+              <div key={snapshot.id}>
+                <div
+                  className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
+                  onClick={() => setExpandedId(isExpanded ? null : snapshot.id)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-4">
+                      <svg
+                        className={cn(
+                          "w-4 h-4 text-gray-400 transition-transform",
+                          isExpanded && "rotate-90"
+                        )}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {MONTH_NAMES[snapshot.month - 1]} {snapshot.year}
+                      </div>
+                      <div
+                        className={cn(
+                          "text-lg font-semibold",
+                          snapshot.net_worth >= 0
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-red-600 dark:text-red-400"
+                        )}
+                      >
+                        {formatCurrencyRounded(snapshot.net_worth)}
+                      </div>
+                      <span className={cn("text-sm", changeColor)}>
+                        {changePrefix}{formatCurrencyRounded(snapshot.change_from_previous)}
+                      </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    <span>
-                      Assets: {formatCurrency(snapshot.total_assets)}
-                    </span>
-                    <span>
-                      Liabilities: {formatCurrency(Math.abs(snapshot.total_liabilities))}
-                    </span>
-                    <span className={changeColor}>
-                      {changePrefix}{formatCurrency(snapshot.change_from_previous)}
-                    </span>
+                  <div className="flex items-center gap-2 ml-4" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => setEditingSnapshot(snapshot)}
+                      className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      title="Edit"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        <path d="m15 5 4 4" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setDeletingSnapshot(snapshot)}
+                      className="p-1.5 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                      title="Delete"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                      </svg>
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 ml-4">
-                  <button
-                    onClick={() => setEditingSnapshot(snapshot)}
-                    className="p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    title="Edit"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
-                      <path d="m15 5 4 4" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setDeletingSnapshot(snapshot)}
-                    className="p-1.5 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                    title="Delete"
-                  >
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 6h18" />
-                      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                    </svg>
-                  </button>
-                </div>
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div className="px-4 pb-4 pt-1 bg-gray-50 dark:bg-gray-800/30">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3">
+                      {Object.entries(entriesByGroup).map(([groupName, entries]) => (
+                        <div key={groupName} className="min-w-0">
+                          <div className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                            {groupName}
+                          </div>
+                          <div className="space-y-0.5">
+                            {entries.map((entry) => (
+                              <div
+                                key={entry.category_id}
+                                className="flex justify-between gap-2 text-sm"
+                              >
+                                <span className="text-gray-600 dark:text-gray-400 truncate min-w-0">
+                                  {entry.categoryName}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "tabular-nums whitespace-nowrap flex-shrink-0",
+                                    entry.isLiability
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-emerald-600 dark:text-emerald-400"
+                                  )}
+                                >
+                                  {formatCurrencyRounded(entry.amount)}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}

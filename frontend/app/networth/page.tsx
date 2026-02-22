@@ -304,7 +304,7 @@ export default function NetWorthPage() {
       {/* Charts Row */}
       {hasSnapshots && (
         <div className="grid gap-4 md:grid-cols-2">
-          <NetWorthChart snapshots={snapshotList} />
+          <NetWorthChart snapshots={snapshotList} netWorthGoals={goalsProgress} />
           <AllocationChart snapshot={latestSnapshot} />
         </div>
       )}
@@ -377,7 +377,7 @@ export default function NetWorthPage() {
             </Dialog.Description>
             {pendingImportData && (
               <div className="mt-4 p-3 bg-gray-100 dark:bg-gray-800 rounded-md text-sm text-gray-700 dark:text-gray-300 space-y-1">
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                   Version {pendingImportData.version}
                   {pendingImportData.version === 2 && " (includes net worth)"}
                 </p>

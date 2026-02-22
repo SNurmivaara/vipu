@@ -111,7 +111,7 @@ export function SavingsGoalsSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+      <div className="grid grid-cols-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
         <span>Goal</span>
         <span className="text-right">Target</span>
       </div>
@@ -172,7 +172,7 @@ export function SavingsGoalsSection({
     return (
       <>
         <CollapsibleSection
-          title="Savings Goals"
+          title="Monthly Savings"
           total={formatCurrency(totalGoals)}
           totalClassName="text-blue-600 dark:text-blue-400"
           defaultOpen={defaultOpen}
@@ -189,7 +189,7 @@ export function SavingsGoalsSection({
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
         <h2 className="font-semibold text-gray-900 dark:text-gray-100">
-          Savings Goals
+          Monthly Savings
         </h2>
         <button
           onClick={openNew}
