@@ -266,7 +266,6 @@ export default function BudgetPage() {
           <ExpensesSection
             expenses={data.expenses.filter((e) => !e.is_savings_goal)}
             collapsible
-            defaultOpen
           />
           <SavingsGoalsSection
             savingsGoals={data.expenses.filter((e) => e.is_savings_goal)}

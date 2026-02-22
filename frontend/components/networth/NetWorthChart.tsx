@@ -9,34 +9,20 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
   Line,
   ComposedChart,
 } from "recharts";
-import { NetWorthSnapshot, GoalProgress, ForecastPeriod } from "@/types";
+import { NetWorthSnapshot, ForecastPeriod } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { fetchForecast } from "@/lib/api";
 
 interface NetWorthChartProps {
   snapshots: NetWorthSnapshot[];
-  netWorthGoals?: GoalProgress[];
 }
 
 // Format month/year as compact "M/YY" (e.g., "1/25" for January 2025)
 function formatMonthLabel(month: number, year: number): string {
   return `${month}/${String(year).slice(-2)}`;
-}
-
-// Format value as compact K/M (e.g., "200k" or "1.5M")
-function formatCompactValue(value: number): string {
-  if (value >= 1000000) {
-    const millions = value / 1000000;
-    return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
-  } else if (value >= 1000) {
-    const thousands = value / 1000;
-    return thousands % 1 === 0 ? `${thousands}k` : `${thousands.toFixed(1)}k`;
-  }
-  return `${value}`;
 }
 
 // Aggregate data points for longer time scales
@@ -136,7 +122,7 @@ function saveChartSettings(settings: ChartSettings) {
   }
 }
 
-export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartProps) {
+export function NetWorthChart({ snapshots }: NetWorthChartProps) {
   const [showForecast, setShowForecast] = useState(false);
   const [timeScale, setTimeScale] = useState<TimeScale>("1y");
   const [isHydrated, setIsHydrated] = useState(false);
@@ -267,34 +253,20 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     return historicalData;
   }, [snapshots, showForecast, forecast, timeScale]);
 
-  // Filter for net worth goals only, include required monthly rate
-  const netWorthGoalLines = useMemo(() => {
-    return netWorthGoals
-      .filter((g) => g.goal.goal_type === "net_worth_target" && g.goal.is_active)
-      .map((g) => ({
-        name: g.goal.name,
-        value: g.target_value,
-        achieved: g.is_achieved,
-        requiredMonthly: g.forecast?.required_monthly_change ?? null,
-      }));
-  }, [netWorthGoals]);
-
-  // Calculate Y-axis domain to include goal lines
+  // Calculate Y-axis domain
   const yAxisDomain = useMemo(() => {
     const dataValues = chartData
       .flatMap(d => [d.netWorth, d.forecast])
       .filter((v): v is number => v !== null);
-    const goalValues = netWorthGoalLines.map(g => g.value);
-    const allValues = [...dataValues, ...goalValues];
 
-    if (allValues.length === 0) return [0, 'auto'] as const;
+    if (dataValues.length === 0) return [0, 'auto'] as const;
 
-    const minVal = Math.min(...allValues);
-    const maxVal = Math.max(...allValues);
+    const minVal = Math.min(...dataValues);
+    const maxVal = Math.max(...dataValues);
     // Add 5% padding
     const padding = (maxVal - minVal) * 0.05;
     return [Math.floor(minVal - padding), Math.ceil(maxVal + padding)] as const;
-  }, [chartData, netWorthGoalLines]);
+  }, [chartData]);
 
   if (snapshots.length === 0) {
     return (
@@ -431,32 +403,10 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
             <span className="text-red-500 dark:text-red-400">Failed to load forecast</span>
           )}
           {forecast && (
-            <>
-              <span className="inline-flex items-center gap-1">
-                <span className="w-3 h-0.5 bg-amber-500" style={{ borderStyle: "dashed" }}></span>
-                Current pace: {formatCurrency(forecast.monthly_change_rate)}/mo
-              </span>
-              {/* Show required pace only for the most behind-schedule goal */}
-              {(() => {
-                const behindGoals = netWorthGoalLines
-                  .filter(g => !g.achieved && g.requiredMonthly && g.requiredMonthly > 0)
-                  .sort((a, b) => (b.requiredMonthly ?? 0) - (a.requiredMonthly ?? 0));
-                const mostUrgent = behindGoals[0];
-                if (!mostUrgent) return null;
-                const isOnTrack = forecast.monthly_change_rate >= mostUrgent.requiredMonthly!;
-                return (
-                  <span
-                    className={`inline-flex items-center gap-1 ${
-                      isOnTrack
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-amber-600 dark:text-amber-400"
-                    }`}
-                  >
-                    {mostUrgent.name}: {formatCurrency(mostUrgent.requiredMonthly!)}/mo needed
-                  </span>
-                );
-              })()}
-            </>
+            <span className="inline-flex items-center gap-1">
+              <span className="w-3 h-0.5 bg-amber-500" style={{ borderStyle: "dashed" }}></span>
+              Current pace: {formatCurrency(forecast.monthly_change_rate)}/mo
+            </span>
           )}
         </div>
       )}
@@ -516,44 +466,6 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
                 connectNulls={true}
               />
             )}
-            {netWorthGoalLines.map((goal, index) => (
-              <ReferenceLine
-                key={`goal-${index}`}
-                y={goal.value}
-                stroke={goal.achieved ? "#10b981" : "#f59e0b"}
-                strokeDasharray="8 4"
-                strokeWidth={2}
-                label={({ viewBox }) => {
-                  const { x, y, width } = viewBox as { x: number; y: number; width: number };
-                  const labelText = formatCompactValue(goal.value);
-                  const labelWidth = labelText.length * 7 + 8;
-                  const centerX = x + width / 2;
-                  const color = goal.achieved ? "#10b981" : "#f59e0b";
-                  return (
-                    <g>
-                      <rect
-                        x={centerX - labelWidth / 2}
-                        y={y - 8}
-                        width={labelWidth}
-                        height={16}
-                        fill="white"
-                        className="dark:fill-gray-900"
-                      />
-                      <text
-                        x={centerX}
-                        y={y + 4}
-                        textAnchor="middle"
-                        fill={color}
-                        fontSize={10}
-                        fontWeight={600}
-                      >
-                        {labelText}
-                      </text>
-                    </g>
-                  );
-                }}
-              />
-            ))}
           </ComposedChart>
         </ResponsiveContainer>
       </div>

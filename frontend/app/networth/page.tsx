@@ -2,9 +2,8 @@
 
 import { useState, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNetWorthSnapshots, useNetWorthCategories } from "@/hooks/useNetWorth";
-import { useGoalsProgress } from "@/hooks/useGoals";
 import { useTheme } from "@/hooks/useTheme";
 import {
   SummaryCards,
@@ -14,7 +13,7 @@ import {
   SnapshotList,
   CategoryManager,
 } from "@/components/networth";
-import { GoalsList, GoalForm } from "@/components/goals";
+import { GoalsSection } from "@/components/budget";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -23,19 +22,22 @@ import {
   resetNetWorth,
   exportBudget,
   importBudget,
+  fetchGoalsProgress,
   ExportData,
 } from "@/lib/api";
 
 export default function NetWorthPage() {
   const { data: snapshots, isLoading: snapshotsLoading, error: snapshotsError } = useNetWorthSnapshots();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError } = useNetWorthCategories();
-  const { data: goalsProgress = [] } = useGoalsProgress();
+  const { data: goalsProgress = [] } = useQuery({
+    queryKey: ["goals-progress"],
+    queryFn: fetchGoalsProgress,
+  });
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const [formOpen, setFormOpen] = useState(false);
-  const [goalFormOpen, setGoalFormOpen] = useState(false);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
@@ -181,7 +183,7 @@ export default function NetWorthPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-          Net Worth
+          Wealth
         </h2>
         <div className="flex items-center gap-3">
           {hasCategories && (
@@ -302,29 +304,16 @@ export default function NetWorthPage() {
       {/* Charts Row */}
       {hasSnapshots && (
         <div className="grid gap-4 md:grid-cols-2">
-          <NetWorthChart snapshots={snapshotList} netWorthGoals={goalsProgress} />
+          <NetWorthChart snapshots={snapshotList} />
           <AllocationChart snapshot={latestSnapshot} />
         </div>
       )}
 
-      {/* Goals Section */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">
-            Goals
-          </h3>
-          <button
-            onClick={() => setGoalFormOpen(true)}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          >
-            + New Goal
-          </button>
-        </div>
-        <GoalsList goals={goalsProgress} />
-      </div>
-
-      {/* Goal Form */}
-      <GoalForm open={goalFormOpen} onOpenChange={setGoalFormOpen} />
+      {/* Financial Goals */}
+      <GoalsSection
+        goals={goalsProgress}
+        categories={categoryList}
+      />
 
       {/* Snapshot List */}
       {hasCategories && (

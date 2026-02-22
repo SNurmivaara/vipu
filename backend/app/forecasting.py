@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from app.models import Goal, NetWorthSnapshot
+from app.models import NetWorthSnapshot
 
 # Type aliases for clarity
 TrackingPeriod = Literal["month", "quarter", "half_year", "year"]
@@ -48,17 +48,6 @@ class NetWorthForecast:
     monthly_change_rate: float  # Average monthly change used for projection
     data_points_used: int  # Number of snapshots used for calculation
     projections: list[ForecastPoint]
-
-
-@dataclass
-class GoalForecastInfo:
-    """Forecast information for a specific goal."""
-
-    forecast_date: str | None  # ISO date when goal will be reached, None if never
-    months_until_target: int | None  # Months until goal reached, None if never
-    on_track: bool  # True if goal will be met by target_date
-    required_monthly_change: float  # Monthly change needed to meet goal on time
-    current_monthly_change: float  # Current average monthly change
 
 
 def calculate_monthly_change_rate(
@@ -151,183 +140,6 @@ def generate_net_worth_forecast(
         data_points_used=data_points,
         projections=projections,
     )
-
-
-def calculate_goal_forecast(
-    goal: Goal,
-    current_value: float,
-    snapshots: list[NetWorthSnapshot],
-    category_id: int | None = None,
-) -> GoalForecastInfo:
-    """Calculate forecast information for a goal.
-
-    For net_worth_target and category_target goals, calculates:
-    - When the goal will be reached at current pace
-    - Whether the goal is on track to be met by target_date
-    - What monthly change is required to meet the goal on time
-
-    For liability category_target goals (debt payoff):
-    - Progress is measured as reduction toward target (usually 0)
-    - Monthly change is the rate of debt reduction (positive = paying down)
-
-    Args:
-        goal: The goal to forecast for
-        current_value: Current progress value toward the goal
-        snapshots: List of snapshots ordered newest first
-        category_id: Category ID for category-based goals
-
-    Returns:
-        GoalForecastInfo with projection details
-    """
-    target = float(goal.target_value)
-
-    # Check if this is a liability goal (debt payoff)
-    is_liability_goal = (
-        goal.goal_type == "category_target"
-        and goal.category
-        and goal.category.group
-        and goal.category.group.group_type == "liability"
-        and goal.starting_value is not None
-    )
-
-    if is_liability_goal:
-        # For liability goals: remaining = current - target (amount left to pay off)
-        remaining = current_value - target
-    else:
-        # For asset goals: remaining = target - current (amount to grow)
-        remaining = target - current_value
-
-    # Calculate current monthly change rate
-    current_monthly_change = 0.0
-
-    if goal.goal_type == "net_worth_target":
-        current_monthly_change, _ = calculate_monthly_change_rate(snapshots, "quarter")
-    elif goal.goal_type == "category_target" and category_id:
-        raw_change = _calculate_category_change_rate(
-            snapshots, category_id, period="quarter"
-        )
-        if is_liability_goal:
-            # For liabilities, debt reduction shows as negative change in raw data
-            # (e.g., -26728 to -25000 = +1728 change, which is negative reduction)
-            # But we store as positive amounts, so decreasing = negative raw change
-            # We want positive "payoff rate", so negate
-            current_monthly_change = -raw_change
-        else:
-            current_monthly_change = raw_change
-    elif goal.goal_type in ("category_monthly", "category_rate"):
-        # For these goal types, current_value already represents the rate
-        current_monthly_change = current_value
-
-    # Calculate months until target (if ever)
-    months_until_target: int | None = None
-    forecast_date: str | None = None
-
-    if current_monthly_change > 0 and remaining > 0:
-        # Round up to account for partial months (e.g., 2.3 months -> 3 months)
-        months_until_target = int(remaining / current_monthly_change) + 1
-        # Calculate the forecast date
-        if snapshots:
-            latest = snapshots[0]
-            forecast_month = latest.month + months_until_target
-            forecast_year = latest.year
-
-            while forecast_month > 12:
-                forecast_month -= 12
-                forecast_year += 1
-
-            forecast_date = f"{forecast_year}-{forecast_month:02d}-01"
-    elif remaining <= 0:
-        # Goal already achieved
-        months_until_target = 0
-        forecast_date = datetime.now().strftime("%Y-%m-%d")
-
-    # Check if on track for target_date
-    on_track = False
-    required_monthly_change = 0.0
-
-    if goal.target_date:
-        target_dt = goal.target_date
-        if snapshots:
-            latest = snapshots[0]
-            current_dt = datetime(latest.year, latest.month, 1)
-
-            # Calculate months remaining until target date
-            months_remaining = (target_dt.year - current_dt.year) * 12 + (
-                target_dt.month - current_dt.month
-            )
-
-            if months_remaining > 0 and remaining > 0:
-                # Safe to divide: months_remaining > 0 is checked above
-                required_monthly_change = remaining / months_remaining
-                on_track = current_monthly_change >= required_monthly_change
-            elif remaining <= 0:
-                # Already achieved
-                on_track = True
-                required_monthly_change = 0.0
-            else:
-                # Target date passed but not achieved
-                on_track = False
-                # Would need to achieve it all at once
-                required_monthly_change = remaining
-    else:
-        # No target date - always "on track" as long as we're making progress
-        on_track = current_monthly_change > 0 or remaining <= 0
-
-    return GoalForecastInfo(
-        forecast_date=forecast_date,
-        months_until_target=months_until_target,
-        on_track=on_track,
-        required_monthly_change=round(required_monthly_change, 2),
-        current_monthly_change=round(current_monthly_change, 2),
-    )
-
-
-def _calculate_category_change_rate(
-    snapshots: list[NetWorthSnapshot],
-    category_id: int,
-    period: ForecastPeriod = "quarter",
-) -> float:
-    """Calculate average monthly change rate for a specific category.
-
-    Args:
-        snapshots: List of snapshots ordered newest first
-        category_id: Category to track
-        period: Time period to use for calculation
-
-    Returns:
-        Average monthly change rate for the category
-    """
-    if len(snapshots) < 2:
-        return 0.0
-
-    num_months = PERIOD_MONTHS.get(period, 3)
-
-    total_change = Decimal("0")
-    changes_count = 0
-
-    for i in range(min(num_months, len(snapshots) - 1)):
-        current = snapshots[i]
-        previous = snapshots[i + 1]
-
-        curr_amt = _get_category_amount(current, category_id)
-        prev_amt = _get_category_amount(previous, category_id)
-        change = curr_amt - prev_amt
-
-        total_change += change
-        changes_count += 1
-
-    if changes_count == 0:
-        return 0.0
-
-    return float(total_change / changes_count)
-
-
-def _get_category_amount(snapshot: NetWorthSnapshot, category_id: int) -> Decimal:
-    """Get the amount for a specific category in a snapshot."""
-    for entry in snapshot.entries:
-        if entry.category_id == category_id:
-            return entry.amount if entry.amount is not None else Decimal("0")
-    return Decimal("0")
 
 
 # =============================================================================

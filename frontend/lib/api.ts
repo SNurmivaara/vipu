@@ -177,7 +177,6 @@ export interface ExportData {
     goal_type: string;
     target_value: number;
     category_name: string | null;
-    tracking_period: string | null;
     target_date: string | null;
     is_active: boolean;
   }[];
