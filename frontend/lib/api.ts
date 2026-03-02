@@ -232,6 +232,23 @@ export const deleteSnapshot = async (id: number): Promise<void> => {
   await api.delete(`/networth/${id}`);
 };
 
+// Get previous month's snapshot entries for prefill
+export interface PreviousEntriesResponse {
+  previous_month: number;
+  previous_year: number;
+  entries: Record<number, number>; // category_id -> amount
+}
+
+export const getPreviousEntries = async (
+  year: number,
+  month: number
+): Promise<PreviousEntriesResponse> => {
+  const { data } = await api.get<PreviousEntriesResponse>(
+    `/networth/${year}/${month}/previous-entries`
+  );
+  return data;
+};
+
 export const seedNetWorth = async (): Promise<{ message: string }> => {
   const { data } = await api.post<{ message: string }>("/networth/seed");
   return data;
