@@ -5,7 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NetWorthCategory, NetWorthSnapshot, NetWorthGroup } from "@/types";
-import { createSnapshot, updateSnapshot, getSnapshotPrefill } from "@/lib/api";
+import { createSnapshot, updateSnapshot, getSnapshotPrefill, getPreviousEntries } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { useNetWorthGroups, useNetWorthSnapshots } from "@/hooks/useNetWorth";
@@ -79,6 +79,7 @@ export function SnapshotForm({
   const [year, setYear] = useState(existingSnapshot?.year ?? now.getFullYear());
   const [amounts, setAmounts] = useState<Record<number, number>>({});
   const [isPrefilling, setIsPrefilling] = useState(false);
+  const [isCopyingPrevious, setIsCopyingPrevious] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -163,6 +164,40 @@ export function SnapshotForm({
       setIsPrefilling(false);
     }
   }, [categories, toast]);
+
+  const handleCopyFromPrevious = useCallback(async () => {
+    setIsCopyingPrevious(true);
+    try {
+      const prevData = await getPreviousEntries(year, month);
+      const prevMonthName = MONTHS.find((m) => m.value === prevData.previous_month)?.label;
+
+      setAmounts((prev) => {
+        const newAmounts = { ...prev };
+        // Copy entries from previous month (only for categories that exist)
+        for (const [categoryIdStr, amount] of Object.entries(prevData.entries)) {
+          const categoryId = Number(categoryIdStr);
+          // Only copy if the category still exists
+          if (categories.some((c) => c.id === categoryId)) {
+            newAmounts[categoryId] = amount;
+          }
+        }
+        return newAmounts;
+      });
+
+      const copiedCount = Object.keys(prevData.entries).filter((catId) =>
+        categories.some((c) => c.id === Number(catId))
+      ).length;
+
+      toast({
+        title: `Copied ${copiedCount} entries from ${prevMonthName}`,
+        type: "success",
+      });
+    } catch {
+      toast({ title: "No previous month data found", type: "error" });
+    } finally {
+      setIsCopyingPrevious(false);
+    }
+  }, [year, month, categories, toast]);
 
   const createMutation = useMutation({
     mutationFn: createSnapshot,
@@ -363,13 +398,25 @@ export function SnapshotForm({
                   </Select.Portal>
                 </Select.Root>
               </div>
+            </div>
+
+            {/* Prefill buttons */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleCopyFromPrevious}
+                disabled={isCopyingPrevious}
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
+              >
+                {isCopyingPrevious ? "Loading..." : "Copy from previous month"}
+              </button>
               <button
                 type="button"
                 onClick={handlePrefillFromBudget}
                 disabled={isPrefilling}
-                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 whitespace-nowrap"
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50"
               >
-                {isPrefilling ? "Loading..." : "Prefill from budget"}
+                {isPrefilling ? "Loading..." : "Fill from budget"}
               </button>
             </div>
 

@@ -513,6 +513,57 @@ def get_snapshot(year: int, month: int) -> Response | tuple[Response, int]:
     return jsonify(snapshot.to_dict())
 
 
+@bp.get("/api/networth/<int:year>/<int:month>/previous-entries")
+def get_previous_entries(year: int, month: int) -> Response | tuple[Response, int]:
+    """Get entries from the previous month's snapshot.
+
+    Returns a mapping of category_id to amount for copying into a new snapshot.
+    Amounts are returned as absolute values (liabilities become positive).
+    """
+    if month < 1 or month > 12:
+        return jsonify({"error": "month must be between 1 and 12"}), 400
+
+    # Calculate previous month
+    if month == 1:
+        prev_year = year - 1
+        prev_month = 12
+    else:
+        prev_year = year
+        prev_month = month - 1
+
+    session = get_session()
+    previous = (
+        session.query(NetWorthSnapshot)
+        .filter_by(year=prev_year, month=prev_month)
+        .first()
+    )
+
+    if not previous:
+        return (
+            jsonify(
+                {
+                    "error": f"No snapshot found for {prev_year}-{prev_month:02d}",
+                    "previous_month": prev_month,
+                    "previous_year": prev_year,
+                }
+            ),
+            404,
+        )
+
+    # Return entries as category_id -> absolute amount mapping
+    entries = {
+        entry.category_id: abs(float(entry.amount)) for entry in previous.entries
+    }
+
+    return jsonify(
+        {
+            "previous_month": prev_month,
+            "previous_year": prev_year,
+            "entries": entries,
+        }
+    )
+
+
 @bp.post("/api/networth")
 def create_snapshot() -> Response | tuple[Response, int]:
     """Create a new net worth snapshot with entries.
