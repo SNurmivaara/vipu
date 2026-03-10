@@ -319,7 +319,7 @@ class TestBudget:
         # Check totals
         totals = data["totals"]
 
-        # Gross income: 5000 + 300 + 200 + 1000 = 6500 (lunch benefit excluded as deduction)
+        # Gross income: 5000+300+200+1000 = 6500 (lunch benefit excluded)
         assert totals["gross_income"] == 6500.0
 
         # Net income calculation:
@@ -334,7 +334,7 @@ class TestBudget:
         # Current balance: 3500 + 8000 + (-750) + (-200) = 10550
         assert totals["current_balance"] == 10550.0
 
-        # Total expenses: 1200 + 100 + 150 + 50 + 1200 + 50 + 800 + 300 + 100 + 500 = 4450
+        # Total expenses: 1200+100+150+50+1200+50+800+300+100+500 = 4450
         assert totals["total_expenses"] == 4450.0
 
         # Net position: 10550 - 4450 = 6100
