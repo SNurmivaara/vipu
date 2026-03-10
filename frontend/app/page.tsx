@@ -37,6 +37,7 @@ export default function BudgetPage() {
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<ExportData | null>(null);
   const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const toggleTheme = () => {
@@ -201,6 +202,9 @@ export default function BudgetPage() {
             <MenuItem onClick={toggleTheme}>
               {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
             </MenuItem>
+            <MenuItem onClick={() => setShowArchived(!showArchived)}>
+              {showArchived ? "Hide archived items" : "Show archived items"}
+            </MenuItem>
             <MenuSeparator />
             <MenuItem onClick={handleExport}>Export data</MenuItem>
             <MenuItem onClick={handleImportClick}>Import data</MenuItem>
@@ -241,15 +245,35 @@ export default function BudgetPage() {
 
       <BudgetSummary data={data} />
 
+      {showArchived && (
+        <div className="flex items-center justify-between px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm">
+          <span className="text-amber-800 dark:text-amber-200">
+            Showing archived items
+          </span>
+          <button
+            onClick={() => setShowArchived(false)}
+            className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
+          >
+            Hide
+          </button>
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-4">
           <IncomeSection
-            income={data.income.filter((i) => !i.is_deduction)}
+            income={[
+              ...data.income.filter((i) => !i.is_deduction),
+              ...(showArchived ? data.archived_income.filter((i) => !i.is_deduction) : []),
+            ]}
             settings={data.settings}
             collapsible
           />
           <DeductionsSection
-            deductions={data.income.filter((i) => i.is_deduction)}
+            deductions={[
+              ...data.income.filter((i) => i.is_deduction),
+              ...(showArchived ? data.archived_income.filter((i) => i.is_deduction) : []),
+            ]}
             collapsible
           />
           <AccountsSection
@@ -264,11 +288,17 @@ export default function BudgetPage() {
         </div>
         <div className="space-y-4">
           <ExpensesSection
-            expenses={data.expenses.filter((e) => !e.is_savings_goal)}
+            expenses={[
+              ...data.expenses.filter((e) => !e.is_savings_goal),
+              ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal) : []),
+            ]}
             collapsible
           />
           <SavingsGoalsSection
-            savingsGoals={data.expenses.filter((e) => e.is_savings_goal)}
+            savingsGoals={[
+              ...data.expenses.filter((e) => e.is_savings_goal),
+              ...(showArchived ? data.archived_expenses.filter((e) => e.is_savings_goal) : []),
+            ]}
             collapsible
           />
         </div>

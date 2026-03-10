@@ -43,10 +43,18 @@ def create_account() -> Response | tuple[Response, int]:
     if abs(balance) > MAX_AMOUNT_VALUE:
         return jsonify({"error": "balance exceeds maximum allowed value"}), 400
 
+    # Validate payment_due_day for credit cards
+    payment_due_day = data.get("payment_due_day")
+    if payment_due_day is not None:
+        payment_due_day = int(payment_due_day)
+        if payment_due_day < 1 or payment_due_day > 31:
+            return jsonify({"error": "payment_due_day must be between 1 and 31"}), 400
+
     account = Account(
         name=name,
         balance=balance,
         is_credit=bool(data.get("is_credit", False)),
+        payment_due_day=payment_due_day,
     )
     session.add(account)
     session.commit()
@@ -82,6 +90,14 @@ def update_account(account_id: int) -> Response | tuple[Response, int]:
         account.balance = balance
     if "is_credit" in data:
         account.is_credit = bool(data["is_credit"])
+
+    if "payment_due_day" in data:
+        payment_due_day = data["payment_due_day"]
+        if payment_due_day is not None:
+            payment_due_day = int(payment_due_day)
+            if payment_due_day < 1 or payment_due_day > 31:
+                return jsonify({"error": "payment_due_day must be 1-31"}), 400
+        account.payment_due_day = payment_due_day
 
     session.commit()
     return jsonify(account.to_dict())

@@ -62,3 +62,11 @@ export function parseEuropeanNumber(value: string): number {
   const normalized = value.replace(/\s/g, "").replace(",", ".");
   return parseFloat(normalized) || 0;
 }
+
+/**
+ * Format a date string (ISO) to a short format (e.g., "Mar 25")
+ */
+export function formatDateShort(isoDate: string): string {
+  const date = new Date(isoDate);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}

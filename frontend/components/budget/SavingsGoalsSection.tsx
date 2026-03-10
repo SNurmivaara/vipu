@@ -19,12 +19,30 @@ const savingsGoalFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
     name: "amount",
-    label: "Target Amount (€)",
+    label: "Amount (€)",
     type: "number" as const,
     required: true,
     min: 0,
     step: 0.01,
   },
+  {
+    name: "due_day",
+    label: "Due Day (of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
+  },
+  {
+    name: "frequency_value",
+    label: "Frequency",
+    type: "frequency" as const,
+    unitFieldName: "frequency_unit",
+  },
+  { name: "is_ephemeral", label: "One-time goal", type: "checkbox" as const },
+  { name: "start_date", label: "Start Date", type: "date" as const },
+  { name: "end_date", label: "End Date", type: "date" as const },
 ];
 
 export function SavingsGoalsSection({
@@ -77,6 +95,13 @@ export function SavingsGoalsSection({
       name: values.name as string,
       amount: values.amount as number,
       is_savings_goal: true,
+      due_day: (values.due_day as number) || 1,
+      frequency_value: (values.frequency_value as number) || 1,
+      frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
+      start_date: (values.start_date as string) || null,
+      end_date: (values.end_date as string) || null,
+      is_ephemeral: values.is_ephemeral as boolean,
+      archived_at: null,
     };
 
     if (isNew) {
@@ -156,10 +181,22 @@ export function SavingsGoalsSection({
           ? {
               name: editItem.name,
               amount: editItem.amount,
+              due_day: editItem.due_day,
+              frequency_value: editItem.frequency_value,
+              frequency_unit: editItem.frequency_unit,
+              is_ephemeral: editItem.is_ephemeral,
+              start_date: editItem.start_date || "",
+              end_date: editItem.end_date || "",
             }
           : {
               name: "",
               amount: 0,
+              due_day: 1,
+              frequency_value: 1,
+              frequency_unit: "months",
+              is_ephemeral: false,
+              start_date: "",
+              end_date: "",
             }
       }
       onSave={handleSave}

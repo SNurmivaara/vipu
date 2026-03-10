@@ -4,7 +4,10 @@ export interface Account {
   balance: number;
   is_credit: boolean;
   updated_at: string;
+  payment_due_day: number | null;
 }
+
+export type FrequencyUnit = "days" | "weeks" | "months" | "years";
 
 export interface IncomeItem {
   id: number;
@@ -13,6 +16,13 @@ export interface IncomeItem {
   is_taxed: boolean;
   tax_percentage?: number;
   is_deduction: boolean;
+  due_day: number;
+  frequency_value: number;
+  frequency_unit: FrequencyUnit;
+  start_date: string | null;
+  end_date: string | null;
+  is_ephemeral: boolean;
+  archived_at: string | null;
 }
 
 export interface ExpenseItem {
@@ -20,12 +30,20 @@ export interface ExpenseItem {
   name: string;
   amount: number;
   is_savings_goal: boolean;
+  due_day: number;
+  frequency_value: number;
+  frequency_unit: FrequencyUnit;
+  start_date: string | null;
+  end_date: string | null;
+  is_ephemeral: boolean;
+  archived_at: string | null;
 }
 
 export interface BudgetSettings {
   id: number;
   tax_percentage: number;
   updated_at: string;
+  payday_day: number;
 }
 
 export interface BudgetTotals {
@@ -34,6 +52,12 @@ export interface BudgetTotals {
   current_balance: number;
   total_expenses: number;
   net_position: number;
+  // Deadline-aware totals
+  next_payday: string;
+  expenses_before_payday: number;
+  income_before_payday: number;
+  savings_before_payday: number;
+  cc_payments_before_payday: number;
 }
 
 export interface BudgetData {
@@ -42,6 +66,8 @@ export interface BudgetData {
   accounts: Account[];
   expenses: ExpenseItem[];
   totals: BudgetTotals;
+  archived_income: IncomeItem[];
+  archived_expenses: ExpenseItem[];
 }
 
 export type AccountFormData = Omit<Account, "id" | "updated_at">;
@@ -49,7 +75,7 @@ export type IncomeFormData = Omit<IncomeItem, "id">;
 export type DeductionFormData = Omit<IncomeItem, "id">;
 export type ExpenseFormData = Omit<ExpenseItem, "id">;
 export type SavingsGoalFormData = Omit<ExpenseItem, "id">;
-export type SettingsFormData = Pick<BudgetSettings, "tax_percentage">;
+export type SettingsFormData = Pick<BudgetSettings, "tax_percentage" | "payday_day">;
 
 // Net Worth types
 export type GroupType = "asset" | "liability";

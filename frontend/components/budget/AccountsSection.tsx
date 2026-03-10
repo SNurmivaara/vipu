@@ -76,6 +76,7 @@ export function AccountsSection({
       name: values.name as string,
       balance: values.balance as number,
       is_credit: false,
+      payment_due_day: null,
     };
 
     if (isNew) {

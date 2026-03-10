@@ -1,9 +1,16 @@
+from datetime import date
 from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify
 
 from app import get_session
+from app.deadline_calc import (
+    calculate_cc_payments_before_payday,
+    calculate_expenses_before_payday,
+    calculate_income_before_payday,
+    get_next_payday,
+)
 from app.models import (
     Account,
     BudgetSettings,
@@ -29,13 +36,14 @@ def get_current_budget() -> Response:
     """Get current budget state with calculated totals.
 
     Returns all income, accounts, expenses, settings, and computed totals.
+    Includes deadline-aware calculations for amounts due before next payday.
     """
     session = get_session()
 
     # Get or create settings
     settings = session.query(BudgetSettings).first()
     if not settings:
-        settings = BudgetSettings(tax_percentage=Decimal("25.0"))
+        settings = BudgetSettings(tax_percentage=Decimal("25.0"), payday_day=25)
         session.add(settings)
         session.commit()
 
@@ -44,29 +52,61 @@ def get_current_budget() -> Response:
     accounts = session.query(Account).order_by(Account.name).all()
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
-    # Calculate totals
+    # Split active vs archived items
+    active_income = [i for i in income_items if i.archived_at is None]
+    archived_income = [i for i in income_items if i.archived_at is not None]
+    active_expenses = [e for e in expenses if e.archived_at is None]
+    archived_expenses = [e for e in expenses if e.archived_at is not None]
+
+    # Calculate totals (using active items only)
     # Gross income excludes deductions
     gross_income = sum(
-        (i.gross_amount for i in income_items if not i.is_deduction),
+        (i.gross_amount for i in active_income if not i.is_deduction),
         Decimal("0"),
     )
-    net_income = calculate_net_income(income_items, settings.tax_percentage)
+    net_income = calculate_net_income(active_income, settings.tax_percentage)
     current_balance = sum((a.balance for a in accounts), Decimal("0"))
-    total_expenses = sum((e.amount for e in expenses), Decimal("0"))
+    total_expenses = sum((e.amount for e in active_expenses), Decimal("0"))
     net_position = current_balance - total_expenses
+
+    # Calculate deadline-aware totals
+    today = date.today()
+    next_payday = get_next_payday(today, settings.payday_day)
+
+    expenses_before_payday = calculate_expenses_before_payday(
+        active_expenses, today, next_payday, include_savings=False
+    )
+    savings_before_payday = calculate_expenses_before_payday(
+        active_expenses, today, next_payday, include_savings=True
+    )
+    income_before_payday = calculate_income_before_payday(
+        active_income, today, next_payday, settings.tax_percentage
+    )
+    cc_payments_before_payday = calculate_cc_payments_before_payday(
+        accounts, today, next_payday
+    )
 
     return jsonify(
         {
             "settings": settings.to_dict(),
-            "income": [i.to_dict() for i in income_items],
+            "income": [i.to_dict() for i in active_income],
             "accounts": [a.to_dict() for a in accounts],
-            "expenses": [e.to_dict() for e in expenses],
+            "expenses": [e.to_dict() for e in active_expenses],
+            "archived_income": [i.to_dict() for i in archived_income],
+            "archived_expenses": [e.to_dict() for e in archived_expenses],
             "totals": {
+                # Existing totals (backward compat)
                 "gross_income": float(gross_income),
                 "net_income": float(net_income),
                 "current_balance": float(current_balance),
                 "total_expenses": float(total_expenses),
                 "net_position": float(net_position),
+                # Deadline-aware totals
+                "next_payday": next_payday.isoformat(),
+                "expenses_before_payday": float(expenses_before_payday),
+                "income_before_payday": float(income_before_payday),
+                "savings_before_payday": float(savings_before_payday),
+                "cc_payments_before_payday": float(cc_payments_before_payday),
             },
         }
     )

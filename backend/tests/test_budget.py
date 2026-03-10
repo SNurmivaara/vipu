@@ -307,35 +307,38 @@ class TestBudget:
         assert response.status_code == 200
         data = response.json
 
-        # Check counts
-        assert len(data["income"]) == 3
-        assert len(data["accounts"]) == 3
-        assert len(data["expenses"]) == 6
+        # Check counts (5 income, 4 accounts, 10 expenses)
+        assert len(data["income"]) == 5
+        assert len(data["accounts"]) == 4
+        assert len(data["expenses"]) == 10
 
         # Check settings
         assert data["settings"]["tax_percentage"] == 25.0
+        assert data["settings"]["payday_day"] == 25
 
         # Check totals
         totals = data["totals"]
 
-        # Gross income: 5000 + 500 = 5500 (lunch benefit excluded as deduction)
-        assert totals["gross_income"] == 5500.0
+        # Gross income: 5000 + 300 + 200 + 1000 = 6500 (lunch benefit excluded as deduction)
+        assert totals["gross_income"] == 6500.0
 
         # Net income calculation:
         # Salary: 5000 * 0.75 = 3750
-        # Side income: 500 * 0.75 = 375
+        # Freelance: 300 * 0.75 = 225
+        # Dividends: 200 (untaxed)
+        # Year-end bonus: 1000 * 0.75 = 750
         # Lunch benefit: -200 * 0.75 = -150 (deduction)
-        # Total: 3750 + 375 + (-150) = 3975
-        assert totals["net_income"] == 3975.0
+        # Total: 3750 + 225 + 200 + 750 + (-150) = 4775
+        assert totals["net_income"] == 4775.0
 
-        # Current balance: 3500 + 2000 + (-500) = 5000
-        assert totals["current_balance"] == 5000.0
+        # Current balance: 3500 + 8000 + (-750) + (-200) = 10550
+        assert totals["current_balance"] == 10550.0
 
-        # Total expenses: 1200 + 400 + 150 + 100 + 50 + 500 = 2400
-        assert totals["total_expenses"] == 2400.0
+        # Total expenses: 1200 + 100 + 150 + 50 + 1200 + 50 + 800 + 300 + 100 + 500 = 4450
+        assert totals["total_expenses"] == 4450.0
 
-        # Net position: 5000 - 2400 = 2600
-        assert totals["net_position"] == 2600.0
+        # Net position: 10550 - 4450 = 6100
+        assert totals["net_position"] == 6100.0
 
 
 class TestSeed:
@@ -349,9 +352,9 @@ class TestSeed:
 
         assert data["message"] == "Example data seeded successfully"
         assert data["counts"]["settings"] == 1
-        assert data["counts"]["income_items"] == 3
-        assert data["counts"]["accounts"] == 3
-        assert data["counts"]["expenses"] == 6
+        assert data["counts"]["income_items"] == 5
+        assert data["counts"]["accounts"] == 4
+        assert data["counts"]["expenses"] == 10
 
     def test_seed_is_idempotent(self, client):
         """POST /api/seed clears and recreates data."""
@@ -363,9 +366,9 @@ class TestSeed:
         # Should still have same counts (not doubled)
         budget_response = client.get("/api/budget/current")
         data = budget_response.json
-        assert len(data["income"]) == 3
-        assert len(data["accounts"]) == 3
-        assert len(data["expenses"]) == 6
+        assert len(data["income"]) == 5
+        assert len(data["accounts"]) == 4
+        assert len(data["expenses"]) == 10
 
 
 class TestNetIncomeCalculation:

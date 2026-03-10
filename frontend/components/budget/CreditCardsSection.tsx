@@ -25,6 +25,14 @@ const creditCardFields = [
     step: 0.01,
     defaultSign: "negative" as const,
   },
+  {
+    name: "payment_due_day",
+    label: "Payment Due Day (of month)",
+    type: "number" as const,
+    min: 1,
+    max: 31,
+    step: 1,
+  },
 ];
 
 export function CreditCardsSection({
@@ -77,6 +85,7 @@ export function CreditCardsSection({
       name: values.name as string,
       balance: values.balance as number,
       is_credit: true,
+      payment_due_day: (values.payment_due_day as number) || null,
     };
 
     if (isNew) {
@@ -166,10 +175,12 @@ export function CreditCardsSection({
           ? {
               name: editItem.name,
               balance: editItem.balance,
+              payment_due_day: editItem.payment_due_day || "",
             }
           : {
               name: "",
               balance: 0,
+              payment_due_day: "",
             }
       }
       onSave={handleSave}

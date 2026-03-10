@@ -1,81 +1,88 @@
 "use client";
 
 import { BudgetData } from "@/types";
-import { formatCurrency, getBalanceColor, cn } from "@/lib/utils";
+import {
+  formatCurrency,
+  formatDateShort,
+  getBalanceColor,
+  cn,
+} from "@/lib/utils";
 
 interface BudgetSummaryProps {
   data: BudgetData;
 }
 
 export function BudgetSummary({ data }: BudgetSummaryProps) {
-  // Calculate separated totals
-  const monthlyExpenses = data.expenses
-    .filter((e) => !e.is_savings_goal)
-    .reduce((sum, e) => sum + e.amount, 0);
+  const {
+    current_balance,
+    expenses_before_payday,
+    income_before_payday,
+    savings_before_payday,
+    cc_payments_before_payday,
+    next_payday,
+  } = data.totals;
 
-  const savingsGoals = data.expenses
-    .filter((e) => e.is_savings_goal)
-    .reduce((sum, e) => sum + e.amount, 0);
+  // Total obligations before next payday
+  const obligationsBeforePayday =
+    expenses_before_payday + cc_payments_before_payday;
 
-  const currentBalance = data.totals.current_balance;
-  const netIncome = data.totals.net_income;
+  // Three financial states (deadline-aware):
+  // 1. Current Position: Balance minus obligations due before next payday
+  const currentPosition = current_balance - obligationsBeforePayday;
 
-  // Three financial states:
-  // 1. Current Reality: Balance - Monthly Expenses (ignoring goals)
-  const currentReality = currentBalance - monthlyExpenses;
+  // 2. After Next Payday: Current position plus income arriving before payday
+  const afterPayday = currentPosition + income_before_payday;
 
-  // 2. End of Month: Current + Net Income - Monthly Expenses
-  const endOfMonth = currentBalance + netIncome - monthlyExpenses;
-
-  // 3. Goal Distance: How much more needed to cover everything including goals
-  const goalDistance = currentBalance + netIncome - monthlyExpenses - savingsGoals;
+  // 3. After Savings: After payday minus savings goals due before payday
+  const afterSavings = afterPayday - savings_before_payday;
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
-      {/* Current Reality */}
+      {/* Current Position */}
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
           Current Position
         </div>
         <div
-          className={cn("text-2xl font-bold", getBalanceColor(currentReality))}
+          className={cn("text-2xl font-bold", getBalanceColor(currentPosition))}
         >
-          {formatCurrency(currentReality)}
+          {formatCurrency(currentPosition)}
         </div>
         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          Balance minus monthly expenses
+          After {formatCurrency(obligationsBeforePayday)} due by{" "}
+          {formatDateShort(next_payday)}
         </div>
       </div>
 
-      {/* End of Month */}
+      {/* After Next Payday */}
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          After This Month
+          After Next Payday
         </div>
         <div
-          className={cn("text-2xl font-bold", getBalanceColor(endOfMonth))}
+          className={cn("text-2xl font-bold", getBalanceColor(afterPayday))}
         >
-          {formatCurrency(endOfMonth)}
+          {formatCurrency(afterPayday)}
         </div>
         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          Plus net income ({formatCurrency(netIncome)})
+          Plus {formatCurrency(income_before_payday)} income
         </div>
       </div>
 
-      {/* After Monthly Savings */}
+      {/* After Savings */}
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          After Monthly Savings
+          After Savings
         </div>
         <div
-          className={cn("text-2xl font-bold", getBalanceColor(goalDistance))}
+          className={cn("text-2xl font-bold", getBalanceColor(afterSavings))}
         >
-          {formatCurrency(goalDistance)}
+          {formatCurrency(afterSavings)}
         </div>
         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          {savingsGoals > 0
-            ? `Minus ${formatCurrency(savingsGoals)} in savings`
-            : "No monthly savings set"}
+          {savings_before_payday > 0
+            ? `Minus ${formatCurrency(savings_before_payday)} in savings`
+            : "No savings due this period"}
         </div>
       </div>
     </div>

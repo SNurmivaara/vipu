@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -25,6 +25,7 @@ def seed_data() -> Response:
     """Seed example data for demos/testing.
 
     Clears all existing data and creates example accounts, income, and expenses.
+    Includes various deadline configurations for comprehensive testing.
     """
     session = get_session()
 
@@ -34,28 +35,60 @@ def seed_data() -> Response:
     session.query(ExpenseItem).delete()
     session.query(BudgetSettings).delete()
 
-    # Create settings
-    settings = BudgetSettings(tax_percentage=Decimal("25.0"))
+    # Create settings with payday on 25th
+    settings = BudgetSettings(tax_percentage=Decimal("25.0"), payday_day=25)
     session.add(settings)
 
-    # Create income items
+    # Create income items with various frequencies
     income_items = [
+        # Monthly salary on payday
         IncomeItem(
             name="Salary",
             gross_amount=Decimal("5000.00"),
             is_taxed=True,
+            due_day=25,
+            frequency_value=1,
+            frequency_unit="months",
         ),
+        # Bi-weekly side gig
         IncomeItem(
-            name="Side income",
-            gross_amount=Decimal("500.00"),
+            name="Freelance",
+            gross_amount=Decimal("300.00"),
             is_taxed=True,
+            due_day=15,
+            frequency_value=2,
+            frequency_unit="weeks",
         ),
+        # Quarterly dividend
+        IncomeItem(
+            name="Dividends",
+            gross_amount=Decimal("200.00"),
+            is_taxed=False,
+            due_day=1,
+            frequency_value=3,
+            frequency_unit="months",
+        ),
+        # One-time bonus (ephemeral)
+        IncomeItem(
+            name="Year-end bonus",
+            gross_amount=Decimal("1000.00"),
+            is_taxed=True,
+            due_day=20,
+            frequency_value=1,
+            frequency_unit="months",
+            is_ephemeral=True,
+            start_date=date.today(),
+        ),
+        # Lunch benefit deduction
         IncomeItem(
             name="Lunch benefit",
             gross_amount=Decimal("200.00"),
             is_taxed=True,
-            tax_percentage=Decimal("75.0"),  # 75% deduction rate
+            tax_percentage=Decimal("75.0"),
             is_deduction=True,
+            due_day=25,
+            frequency_value=1,
+            frequency_unit="months",
         ),
     ]
     for item in income_items:
@@ -70,26 +103,115 @@ def seed_data() -> Response:
         ),
         Account(
             name="Savings",
-            balance=Decimal("2000.00"),
+            balance=Decimal("8000.00"),
             is_credit=False,
         ),
+        # Credit card with payment due day
         Account(
-            name="Credit Card",
-            balance=Decimal("-500.00"),
+            name="Visa",
+            balance=Decimal("-750.00"),
             is_credit=True,
+            payment_due_day=15,
+        ),
+        Account(
+            name="Mastercard",
+            balance=Decimal("-200.00"),
+            is_credit=True,
+            payment_due_day=5,
         ),
     ]
     for account in accounts:
         session.add(account)
 
-    # Create expenses
+    # Create expenses with various frequencies
     expenses = [
-        ExpenseItem(name="Rent", amount=Decimal("1200.00")),
-        ExpenseItem(name="Groceries", amount=Decimal("400.00")),
-        ExpenseItem(name="Utilities", amount=Decimal("150.00")),
-        ExpenseItem(name="Transport", amount=Decimal("100.00")),
-        ExpenseItem(name="Subscriptions", amount=Decimal("50.00")),
-        ExpenseItem(name="Savings", amount=Decimal("500.00")),
+        # Monthly rent on 1st
+        ExpenseItem(
+            name="Rent",
+            amount=Decimal("1200.00"),
+            due_day=1,
+            frequency_value=1,
+            frequency_unit="months",
+        ),
+        # Weekly groceries
+        ExpenseItem(
+            name="Groceries",
+            amount=Decimal("100.00"),
+            due_day=1,
+            frequency_value=1,
+            frequency_unit="weeks",
+        ),
+        # Monthly utilities
+        ExpenseItem(
+            name="Utilities",
+            amount=Decimal("150.00"),
+            due_day=15,
+            frequency_value=1,
+            frequency_unit="months",
+        ),
+        # Bi-weekly transport pass
+        ExpenseItem(
+            name="Transport",
+            amount=Decimal("50.00"),
+            due_day=1,
+            frequency_value=2,
+            frequency_unit="weeks",
+        ),
+        # Yearly insurance (spread monthly)
+        ExpenseItem(
+            name="Insurance",
+            amount=Decimal("1200.00"),
+            due_day=10,
+            frequency_value=1,
+            frequency_unit="years",
+        ),
+        # Monthly subscriptions
+        ExpenseItem(
+            name="Subscriptions",
+            amount=Decimal("50.00"),
+            due_day=1,
+            frequency_value=1,
+            frequency_unit="months",
+        ),
+        # One-time expense (ephemeral) - vacation booking
+        ExpenseItem(
+            name="Vacation booking",
+            amount=Decimal("800.00"),
+            due_day=10,
+            frequency_value=1,
+            frequency_unit="months",
+            is_ephemeral=True,
+            start_date=date.today(),
+        ),
+        # Savings goal - monthly
+        ExpenseItem(
+            name="Emergency fund",
+            amount=Decimal("300.00"),
+            is_savings_goal=True,
+            due_day=25,
+            frequency_value=1,
+            frequency_unit="months",
+        ),
+        # Savings goal - bi-weekly
+        ExpenseItem(
+            name="Investment",
+            amount=Decimal("100.00"),
+            is_savings_goal=True,
+            due_day=1,
+            frequency_value=2,
+            frequency_unit="weeks",
+        ),
+        # One-time savings goal (ephemeral)
+        ExpenseItem(
+            name="New laptop fund",
+            amount=Decimal("500.00"),
+            is_savings_goal=True,
+            due_day=15,
+            frequency_value=1,
+            frequency_unit="months",
+            is_ephemeral=True,
+            start_date=date.today(),
+        ),
     ]
     for expense in expenses:
         session.add(expense)
