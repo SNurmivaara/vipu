@@ -20,21 +20,27 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     savings_before_payday,
     cc_payments_before_payday,
     next_payday,
+    next_period_end,
+    expenses_next_period,
+    savings_next_period,
+    cc_payments_next_period,
   } = data.totals;
 
-  // Total obligations before next payday
+  // Total obligations before next payday (expenses + savings + CC payments)
   const obligationsBeforePayday =
-    expenses_before_payday + cc_payments_before_payday;
+    expenses_before_payday + savings_before_payday + cc_payments_before_payday;
 
   // Three financial states (deadline-aware):
-  // 1. Current Position: Balance minus obligations due before next payday
+  // 1. Current Position: Balance minus ALL obligations due before next payday
   const currentPosition = current_balance - obligationsBeforePayday;
 
   // 2. After Next Payday: Current position plus income arriving before payday
   const afterPayday = currentPosition + income_before_payday;
 
-  // 3. After Savings: After payday minus savings goals due before payday
-  const afterSavings = afterPayday - savings_before_payday;
+  // 3. Next Month Preview: After payday minus next period obligations
+  const nextPeriodObligations =
+    expenses_next_period + savings_next_period + cc_payments_next_period;
+  const nextMonthPreview = afterPayday - nextPeriodObligations;
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
@@ -69,20 +75,20 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
         </div>
       </div>
 
-      {/* After Savings */}
+      {/* Next Month Preview */}
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
         <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          After Savings
+          Next Month Preview
         </div>
         <div
-          className={cn("text-2xl font-bold", getBalanceColor(afterSavings))}
+          className={cn("text-2xl font-bold", getBalanceColor(nextMonthPreview))}
         >
-          {formatCurrency(afterSavings)}
+          {formatCurrency(nextMonthPreview)}
         </div>
         <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          {savings_before_payday > 0
-            ? `Minus ${formatCurrency(savings_before_payday)} in savings`
-            : "No savings due this period"}
+          {nextPeriodObligations > 0
+            ? `Minus ${formatCurrency(nextPeriodObligations)} due by ${formatDateShort(next_period_end)}`
+            : "No obligations next period"}
         </div>
       </div>
     </div>

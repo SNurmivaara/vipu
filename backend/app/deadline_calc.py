@@ -51,6 +51,24 @@ def get_next_payday(today: date, payday_day: int) -> date:
         return date(next_year, next_month, normalized_day)
 
 
+def get_payday_after(payday: date, payday_day: int) -> date:
+    """Calculate the payday following a given payday.
+
+    Args:
+        payday: A payday date
+        payday_day: Day of month for payday (1-31)
+
+    Returns:
+        The next payday after the given payday
+    """
+    if payday.month == 12:
+        next_month, next_year = 1, payday.year + 1
+    else:
+        next_month, next_year = payday.month + 1, payday.year
+    normalized_day = normalize_day(payday_day, next_year, next_month)
+    return date(next_year, next_month, normalized_day)
+
+
 def get_occurrences_in_window(
     due_day: int,
     frequency_value: int,
@@ -97,10 +115,17 @@ def get_occurrences_in_window(
     if start_date and start_date > window_end:
         return []
 
-    # Ephemeral: one-time on start_date
+    # Ephemeral: one-time on start_date (or due_day of current month if no start_date)
     if is_ephemeral:
-        if start_date and window_start <= start_date <= window_end:
-            occurrences.append(start_date)
+        if start_date:
+            occurrence = start_date
+        else:
+            # Fall back to due_day of window_start's month
+            year, month = window_start.year, window_start.month
+            occurrence_day = normalize_day(due_day, year, month)
+            occurrence = date(year, month, occurrence_day)
+        if window_start <= occurrence <= window_end:
+            occurrences.append(occurrence)
         return occurrences
 
     # Recurring logic based on frequency_unit

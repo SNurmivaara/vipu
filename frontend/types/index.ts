@@ -58,6 +58,11 @@ export interface BudgetTotals {
   income_before_payday: number;
   savings_before_payday: number;
   cc_payments_before_payday: number;
+  // Next period totals (payday to following payday)
+  next_period_end: string;
+  expenses_next_period: number;
+  savings_next_period: number;
+  cc_payments_next_period: number;
 }
 
 export interface BudgetData {

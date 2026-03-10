@@ -205,6 +205,36 @@ class TestGetOccurrencesInWindow:
         )
         assert occurrences == []
 
+    def test_ephemeral_no_start_date_uses_due_day(self):
+        # One-time item without start_date should use due_day of current month
+        occurrences = get_occurrences_in_window(
+            due_day=13,
+            frequency_value=1,
+            frequency_unit="months",
+            start_date=None,
+            end_date=None,
+            is_ephemeral=True,
+            archived_at=None,
+            window_start=date(2026, 3, 10),
+            window_end=date(2026, 3, 13),
+        )
+        assert occurrences == [date(2026, 3, 13)]
+
+    def test_ephemeral_no_start_date_outside_window(self):
+        # One-time item without start_date, but due_day already passed
+        occurrences = get_occurrences_in_window(
+            due_day=5,
+            frequency_value=1,
+            frequency_unit="months",
+            start_date=None,
+            end_date=None,
+            is_ephemeral=True,
+            archived_at=None,
+            window_start=date(2026, 3, 10),
+            window_end=date(2026, 3, 25),
+        )
+        assert occurrences == []  # due_day=5 is before window_start=10
+
     def test_archived_item(self):
         # Archived items should return no occurrences
         occurrences = get_occurrences_in_window(
