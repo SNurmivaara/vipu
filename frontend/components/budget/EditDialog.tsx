@@ -10,7 +10,7 @@ import { FrequencyPicker } from "./FrequencyPicker";
 interface Field {
   name: string;
   label: string;
-  type: "text" | "number" | "checkbox" | "signed_number" | "frequency" | "date";
+  type: "text" | "number" | "checkbox" | "signed_number" | "frequency" | "date" | "due_day";
   required?: boolean;
   min?: number;
   max?: number;
@@ -19,6 +19,9 @@ interface Field {
   defaultSign?: "positive" | "negative";
   // For frequency fields, specify the unit field name
   unitFieldName?: string;
+  // Conditional visibility: show field only when condition is met
+  showWhen?: { field: string; value: boolean };
+  hideWhen?: { field: string; value: boolean };
 }
 
 interface EditDialogProps {
@@ -111,7 +114,15 @@ export function EditDialog({
           </Dialog.Title>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {fields.map((field) => (
+            {fields.map((field) => {
+              // Check conditional visibility
+              if (field.showWhen && values[field.showWhen.field] !== field.showWhen.value) {
+                return null;
+              }
+              if (field.hideWhen && values[field.hideWhen.field] === field.hideWhen.value) {
+                return null;
+              }
+              return (
               <div key={field.name} className="space-y-1">
                 {field.type === "checkbox" ? (
                   <div className="flex items-center gap-2">
@@ -267,7 +278,8 @@ export function EditDialog({
                   </>
                 )}
               </div>
-            ))}
+            );
+            })}
 
             <div className="flex justify-between pt-4">
               <div>

@@ -27,6 +27,15 @@ const incomeFields = [
     step: 0.01,
   },
   { name: "is_taxed", label: "Is Taxed", type: "checkbox" as const },
+  { name: "is_ephemeral", label: "One-time income", type: "checkbox" as const },
+  // For one-time: show date picker
+  {
+    name: "one_time_date",
+    label: "Date",
+    type: "date" as const,
+    showWhen: { field: "is_ephemeral", value: true },
+  },
+  // For recurring: show due day, frequency, and optional date range
   {
     name: "due_day",
     label: "Due Day (of month)",
@@ -35,16 +44,27 @@ const incomeFields = [
     min: 1,
     max: 31,
     step: 1,
+    hideWhen: { field: "is_ephemeral", value: true },
   },
   {
     name: "frequency_value",
     label: "Frequency",
     type: "frequency" as const,
     unitFieldName: "frequency_unit",
+    hideWhen: { field: "is_ephemeral", value: true },
   },
-  { name: "is_ephemeral", label: "One-time income", type: "checkbox" as const },
-  { name: "start_date", label: "Start Date", type: "date" as const },
-  { name: "end_date", label: "End Date", type: "date" as const },
+  {
+    name: "start_date",
+    label: "Start Date (optional)",
+    type: "date" as const,
+    hideWhen: { field: "is_ephemeral", value: true },
+  },
+  {
+    name: "end_date",
+    label: "End Date (optional)",
+    type: "date" as const,
+    hideWhen: { field: "is_ephemeral", value: true },
+  },
 ];
 
 /**
@@ -108,18 +128,31 @@ export function IncomeSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
+    const isEphemeral = values.is_ephemeral as boolean;
+    const oneTimeDate = values.one_time_date as string;
+
+    // For one-time income, extract due_day from the date and set start_date
+    let dueDay = (values.due_day as number) || 1;
+    let startDate = (values.start_date as string) || null;
+
+    if (isEphemeral && oneTimeDate) {
+      const date = new Date(oneTimeDate);
+      dueDay = date.getDate();
+      startDate = oneTimeDate;
+    }
+
     const data: IncomeFormData = {
       name: values.name as string,
       gross_amount: values.gross_amount as number,
       is_taxed: values.is_taxed as boolean,
       tax_percentage: undefined,
       is_deduction: false,
-      due_day: (values.due_day as number) || 1,
+      due_day: dueDay,
       frequency_value: (values.frequency_value as number) || 1,
       frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
-      start_date: (values.start_date as string) || null,
-      end_date: (values.end_date as string) || null,
-      is_ephemeral: values.is_ephemeral as boolean,
+      start_date: startDate,
+      end_date: isEphemeral ? null : ((values.end_date as string) || null),
+      is_ephemeral: isEphemeral,
       archived_at: null,
     };
 
@@ -227,7 +260,8 @@ export function IncomeSection({
               frequency_value: editItem.frequency_value,
               frequency_unit: editItem.frequency_unit,
               is_ephemeral: editItem.is_ephemeral,
-              start_date: editItem.start_date || "",
+              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
+              start_date: editItem.is_ephemeral ? "" : (editItem.start_date || ""),
               end_date: editItem.end_date || "",
             }
           : {
@@ -238,6 +272,7 @@ export function IncomeSection({
               frequency_value: 1,
               frequency_unit: "months",
               is_ephemeral: false,
+              one_time_date: "",
               start_date: "",
               end_date: "",
             }

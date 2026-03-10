@@ -97,10 +97,16 @@ def get_occurrences_in_window(
     if start_date and start_date > window_end:
         return []
 
-    # Ephemeral: one-time on start_date
+    # Ephemeral: one-time on start_date (or due_day of current month if no start_date)
     if is_ephemeral:
-        if start_date and window_start <= start_date <= window_end:
-            occurrences.append(start_date)
+        if start_date:
+            occurrence = start_date
+        else:
+            # Fall back to due_day of window_start's month
+            occurrence_day = normalize_day(due_day, window_start.year, window_start.month)
+            occurrence = date(window_start.year, window_start.month, occurrence_day)
+        if window_start <= occurrence <= window_end:
+            occurrences.append(occurrence)
         return occurrences
 
     # Recurring logic based on frequency_unit
