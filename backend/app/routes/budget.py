@@ -10,6 +10,7 @@ from app.deadline_calc import (
     calculate_expenses_before_payday,
     calculate_income_before_payday,
     get_next_payday,
+    get_payday_after,
 )
 from app.models import (
     Account,
@@ -72,6 +73,7 @@ def get_current_budget() -> Response:
     # Calculate deadline-aware totals
     today = date.today()
     next_payday = get_next_payday(today, settings.payday_day)
+    next_period_end = get_payday_after(next_payday, settings.payday_day)
 
     expenses_before_payday = calculate_expenses_before_payday(
         active_expenses, today, next_payday, include_savings=False
@@ -84,6 +86,17 @@ def get_current_budget() -> Response:
     )
     cc_payments_before_payday = calculate_cc_payments_before_payday(
         accounts, today, next_payday
+    )
+
+    # Calculate next period totals (payday to following payday)
+    expenses_next_period = calculate_expenses_before_payday(
+        active_expenses, next_payday, next_period_end, include_savings=False
+    )
+    savings_next_period = calculate_expenses_before_payday(
+        active_expenses, next_payday, next_period_end, include_savings=True
+    )
+    cc_payments_next_period = calculate_cc_payments_before_payday(
+        accounts, next_payday, next_period_end
     )
 
     return jsonify(
@@ -107,6 +120,11 @@ def get_current_budget() -> Response:
                 "income_before_payday": float(income_before_payday),
                 "savings_before_payday": float(savings_before_payday),
                 "cc_payments_before_payday": float(cc_payments_before_payday),
+                # Next period totals (payday to following payday)
+                "next_period_end": next_period_end.isoformat(),
+                "expenses_next_period": float(expenses_next_period),
+                "savings_next_period": float(savings_next_period),
+                "cc_payments_next_period": float(cc_payments_next_period),
             },
         }
     )
