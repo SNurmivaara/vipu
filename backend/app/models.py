@@ -1,8 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -37,6 +38,8 @@ class Account(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+    # Credit card payment due day (1-31, null means use full balance)
+    payment_due_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -46,11 +49,12 @@ class Account(Base):
             "balance": float(self.balance),
             "is_credit": self.is_credit,
             "updated_at": self.updated_at.isoformat(),
+            "payment_due_day": self.payment_due_day,
         }
 
 
 class IncomeItem(Base):
-    """Monthly income source."""
+    """Income source with deadline tracking."""
 
     __tablename__ = "income_items"
 
@@ -63,6 +67,19 @@ class IncomeItem(Base):
     tax_percentage: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     is_deduction: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    # Deadline fields
+    due_day: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    frequency_value: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    frequency_unit: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="months"
+    )
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_ephemeral: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -74,6 +91,13 @@ class IncomeItem(Base):
                 float(self.tax_percentage) if self.tax_percentage is not None else None
             ),
             "is_deduction": self.is_deduction,
+            "due_day": self.due_day,
+            "frequency_value": self.frequency_value,
+            "frequency_unit": self.frequency_unit,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "is_ephemeral": self.is_ephemeral,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
         }
 
     def calculate_net(self, default_tax_percentage: Decimal) -> Decimal:
@@ -105,7 +129,7 @@ class IncomeItem(Base):
 
 
 class ExpenseItem(Base):
-    """Monthly expense or savings goal."""
+    """Expense or savings goal with deadline tracking."""
 
     __tablename__ = "expense_items"
 
@@ -116,6 +140,19 @@ class ExpenseItem(Base):
         Boolean, nullable=False, default=False
     )
 
+    # Deadline fields
+    due_day: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    frequency_value: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    frequency_unit: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="months"
+    )
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_ephemeral: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     def to_dict(self) -> dict:
         """Convert to dictionary."""
         return {
@@ -123,6 +160,13 @@ class ExpenseItem(Base):
             "name": self.name,
             "amount": float(self.amount),
             "is_savings_goal": self.is_savings_goal,
+            "due_day": self.due_day,
+            "frequency_value": self.frequency_value,
+            "frequency_unit": self.frequency_unit,
+            "start_date": self.start_date.isoformat() if self.start_date else None,
+            "end_date": self.end_date.isoformat() if self.end_date else None,
+            "is_ephemeral": self.is_ephemeral,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
         }
 
 
@@ -138,6 +182,8 @@ class BudgetSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
+    # Payday day of month (1-31) - the rollover anchor for budget calculations
+    payday_day: Mapped[int] = mapped_column(Integer, nullable=False, default=25)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -145,6 +191,7 @@ class BudgetSettings(Base):
             "id": self.id,
             "tax_percentage": float(self.tax_percentage),
             "updated_at": self.updated_at.isoformat(),
+            "payday_day": self.payday_day,
         }
 
 

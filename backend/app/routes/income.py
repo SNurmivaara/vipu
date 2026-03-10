@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -10,6 +11,21 @@ bp = APIBlueprint("income", __name__, tag="Income")
 
 MAX_NAME_LENGTH = 100
 MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+VALID_FREQUENCY_UNITS = ("days", "weeks", "months", "years")
+
+
+def parse_date(value: str | None) -> date | None:
+    """Parse ISO date string to date object."""
+    if not value:
+        return None
+    return date.fromisoformat(value)
+
+
+def parse_datetime(value: str | None) -> datetime | None:
+    """Parse ISO datetime string to datetime object."""
+    if not value:
+        return None
+    return datetime.fromisoformat(value)
 
 
 @bp.get("/api/income")
@@ -52,12 +68,37 @@ def create_income() -> Response | tuple[Response, int]:
         if tax_pct < 0 or tax_pct > 100:
             return jsonify({"error": "tax_percentage must be between 0 and 100"}), 400
 
+    # Validate deadline fields
+    due_day = int(data.get("due_day", 1))
+    if due_day < 1 or due_day > 31:
+        return jsonify({"error": "due_day must be between 1 and 31"}), 400
+
+    frequency_value = int(data.get("frequency_value", 1))
+    if frequency_value < 1:
+        return jsonify({"error": "frequency_value must be at least 1"}), 400
+
+    frequency_unit = data.get("frequency_unit", "months")
+    if frequency_unit not in VALID_FREQUENCY_UNITS:
+        return jsonify({"error": f"Invalid frequency_unit: {frequency_unit}"}), 400
+
+    try:
+        start_date = parse_date(data.get("start_date"))
+        end_date = parse_date(data.get("end_date"))
+    except ValueError:
+        return jsonify({"error": "Invalid date format (use YYYY-MM-DD)"}), 400
+
     item = IncomeItem(
         name=name,
         gross_amount=gross_amount,
         is_taxed=bool(data.get("is_taxed", True)),
         tax_percentage=tax_pct,
         is_deduction=bool(data.get("is_deduction", False)),
+        due_day=due_day,
+        frequency_value=frequency_value,
+        frequency_unit=frequency_unit,
+        start_date=start_date,
+        end_date=end_date,
+        is_ephemeral=bool(data.get("is_ephemeral", False)),
     )
     session.add(item)
     session.commit()
@@ -105,6 +146,46 @@ def update_income(income_id: int) -> Response | tuple[Response, int]:
         item.tax_percentage = tax_pct
     if "is_deduction" in data:
         item.is_deduction = bool(data["is_deduction"])
+
+    # Deadline fields
+    if "due_day" in data:
+        due_day = int(data["due_day"])
+        if due_day < 1 or due_day > 31:
+            return jsonify({"error": "due_day must be between 1 and 31"}), 400
+        item.due_day = due_day
+
+    if "frequency_value" in data:
+        frequency_value = int(data["frequency_value"])
+        if frequency_value < 1:
+            return jsonify({"error": "frequency_value must be at least 1"}), 400
+        item.frequency_value = frequency_value
+
+    if "frequency_unit" in data:
+        frequency_unit = data["frequency_unit"]
+        if frequency_unit not in VALID_FREQUENCY_UNITS:
+            return jsonify({"error": f"Invalid frequency_unit: {frequency_unit}"}), 400
+        item.frequency_unit = frequency_unit
+
+    if "start_date" in data:
+        try:
+            item.start_date = parse_date(data["start_date"])
+        except ValueError:
+            return jsonify({"error": "Invalid start_date (use YYYY-MM-DD)"}), 400
+
+    if "end_date" in data:
+        try:
+            item.end_date = parse_date(data["end_date"])
+        except ValueError:
+            return jsonify({"error": "Invalid end_date (use YYYY-MM-DD)"}), 400
+
+    if "is_ephemeral" in data:
+        item.is_ephemeral = bool(data["is_ephemeral"])
+
+    if "archived_at" in data:
+        try:
+            item.archived_at = parse_datetime(data["archived_at"])
+        except ValueError:
+            return jsonify({"error": "Invalid archived_at format. Use ISO format"}), 400
 
     session.commit()
     return jsonify(item.to_dict())

@@ -31,6 +31,62 @@ MIGRATIONS: list[dict] = [
             ALTER TABLE goals DROP COLUMN IF EXISTS starting_value;
         """,
     },
+    {
+        "id": "002_deadlines_settings",
+        "name": "Add payday_day to budget_settings",
+        "sql": """
+            ALTER TABLE budget_settings
+                ADD COLUMN IF NOT EXISTS payday_day INTEGER DEFAULT 25;
+        """,
+    },
+    {
+        "id": "003_deadlines_income",
+        "name": "Add deadline fields to income_items",
+        "sql": """
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS due_day INTEGER DEFAULT 1;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS frequency_value INTEGER DEFAULT 1;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS frequency_unit VARCHAR(20) DEFAULT 'months';
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS start_date DATE;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS end_date DATE;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS is_ephemeral BOOLEAN DEFAULT FALSE;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE;
+        """,
+    },
+    {
+        "id": "004_deadlines_expenses",
+        "name": "Add deadline fields to expense_items",
+        "sql": """
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS due_day INTEGER DEFAULT 1;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS frequency_value INTEGER DEFAULT 1;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS frequency_unit VARCHAR(20) DEFAULT 'months';
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS start_date DATE;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS end_date DATE;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS is_ephemeral BOOLEAN DEFAULT FALSE;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP WITH TIME ZONE;
+        """,
+    },
+    {
+        "id": "005_deadlines_accounts",
+        "name": "Add payment_due_day to accounts for credit cards",
+        "sql": """
+            ALTER TABLE accounts
+                ADD COLUMN IF NOT EXISTS payment_due_day INTEGER;
+        """,
+    },
 ]
 
 

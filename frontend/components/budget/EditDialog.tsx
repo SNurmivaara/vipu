@@ -4,17 +4,21 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Label from "@radix-ui/react-label";
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { FrequencyUnit } from "@/types";
+import { FrequencyPicker } from "./FrequencyPicker";
 
 interface Field {
   name: string;
   label: string;
-  type: "text" | "number" | "checkbox" | "signed_number";
+  type: "text" | "number" | "checkbox" | "signed_number" | "frequency" | "date";
   required?: boolean;
   min?: number;
   max?: number;
   step?: number;
   placeholder?: string;
   defaultSign?: "positive" | "negative";
+  // For frequency fields, specify the unit field name
+  unitFieldName?: string;
 }
 
 interface EditDialogProps {
@@ -181,6 +185,53 @@ export function EditDialog({
                         )}
                       />
                     </div>
+                  </>
+                ) : field.type === "frequency" ? (
+                  <>
+                    <Label.Root
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {field.label}
+                    </Label.Root>
+                    <FrequencyPicker
+                      value={values[field.name] as number}
+                      unit={(values[field.unitFieldName || "frequency_unit"] as FrequencyUnit) || "months"}
+                      onValueChange={(v) =>
+                        setValues((prev) => ({ ...prev, [field.name]: v }))
+                      }
+                      onUnitChange={(u) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [field.unitFieldName || "frequency_unit"]: u,
+                        }))
+                      }
+                    />
+                  </>
+                ) : field.type === "date" ? (
+                  <>
+                    <Label.Root
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {field.label}
+                    </Label.Root>
+                    <input
+                      type="date"
+                      id={field.name}
+                      value={(values[field.name] as string) || ""}
+                      onChange={(e) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [field.name]: e.target.value,
+                        }))
+                      }
+                      className={cn(
+                        "w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md",
+                        "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      )}
+                    />
                   </>
                 ) : (
                   <>

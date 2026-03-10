@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BudgetSettings, SettingsFormData } from "@/types";
+import { BudgetSettings } from "@/types";
 import { updateSettings } from "@/lib/api";
 import { formatPercentage } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
@@ -20,6 +20,15 @@ const settingsFields = [
     required: true,
     min: 0,
     step: 0.1,
+  },
+  {
+    name: "payday_day",
+    label: "Payday (day of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
   },
 ];
 
@@ -40,8 +49,9 @@ export function SettingsCard({ settings }: SettingsCardProps) {
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const data: SettingsFormData = {
+    const data = {
       tax_percentage: values.tax_percentage as number,
+      payday_day: values.payday_day as number,
     };
     updateMutation.mutate(data);
   };
@@ -50,23 +60,32 @@ export function SettingsCard({ settings }: SettingsCardProps) {
     <>
       <div
         onClick={() => setIsEditing(true)}
-        className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-200 dark:bg-gray-800 rounded-full cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-700"
+        className="inline-flex items-center gap-4 px-3 py-1.5 bg-gray-200 dark:bg-gray-800 rounded-full cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-700"
       >
-        <span className="text-sm text-gray-600 dark:text-gray-400">
-          Tax Rate:
+        <span className="inline-flex items-center gap-1">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Tax:</span>
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {formatPercentage(settings.tax_percentage)}
+          </span>
         </span>
-        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
-          {formatPercentage(settings.tax_percentage)}
+        <span className="inline-flex items-center gap-1">
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            Payday:
+          </span>
+          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">
+            {settings.payday_day}
+          </span>
         </span>
       </div>
 
       <EditDialog
         open={isEditing}
         onOpenChange={setIsEditing}
-        title="Edit Tax Rate"
+        title="Edit Settings"
         fields={settingsFields}
         initialValues={{
           tax_percentage: settings.tax_percentage,
+          payday_day: settings.payday_day,
         }}
         onSave={handleSave}
       />

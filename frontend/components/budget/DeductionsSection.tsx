@@ -34,6 +34,24 @@ const deductionFields = [
     max: 100,
     step: 0.1,
   },
+  {
+    name: "due_day",
+    label: "Due Day (of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
+  },
+  {
+    name: "frequency_value",
+    label: "Frequency",
+    type: "frequency" as const,
+    unitFieldName: "frequency_unit",
+  },
+  { name: "is_ephemeral", label: "One-time deduction", type: "checkbox" as const },
+  { name: "start_date", label: "Start Date", type: "date" as const },
+  { name: "end_date", label: "End Date", type: "date" as const },
 ];
 
 /**
@@ -96,6 +114,13 @@ export function DeductionsSection({
       is_taxed: true,
       tax_percentage: values.tax_percentage as number,
       is_deduction: true,
+      due_day: (values.due_day as number) || 1,
+      frequency_value: (values.frequency_value as number) || 1,
+      frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
+      start_date: (values.start_date as string) || null,
+      end_date: (values.end_date as string) || null,
+      is_ephemeral: values.is_ephemeral as boolean,
+      archived_at: null,
     };
 
     if (isNew) {
@@ -198,11 +223,23 @@ export function DeductionsSection({
               name: editItem.name,
               gross_amount: editItem.gross_amount,
               tax_percentage: editItem.tax_percentage ?? 0,
+              due_day: editItem.due_day,
+              frequency_value: editItem.frequency_value,
+              frequency_unit: editItem.frequency_unit,
+              is_ephemeral: editItem.is_ephemeral,
+              start_date: editItem.start_date || "",
+              end_date: editItem.end_date || "",
             }
           : {
               name: "",
               gross_amount: 0,
               tax_percentage: 75,
+              due_day: 1,
+              frequency_value: 1,
+              frequency_unit: "months",
+              is_ephemeral: false,
+              start_date: "",
+              end_date: "",
             }
       }
       onSave={handleSave}
