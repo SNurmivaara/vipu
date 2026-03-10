@@ -121,8 +121,9 @@ def get_occurrences_in_window(
             occurrence = start_date
         else:
             # Fall back to due_day of window_start's month
-            occurrence_day = normalize_day(due_day, window_start.year, window_start.month)
-            occurrence = date(window_start.year, window_start.month, occurrence_day)
+            year, month = window_start.year, window_start.month
+            occurrence_day = normalize_day(due_day, year, month)
+            occurrence = date(year, month, occurrence_day)
         if window_start <= occurrence <= window_end:
             occurrences.append(occurrence)
         return occurrences
