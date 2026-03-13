@@ -56,16 +56,14 @@ def get_current_budget() -> Response:
     # Auto-archive past ephemeral items
     today = date.today()
     now = datetime.now()
-    for item in income_items:
-        if item.archived_at is None and item.is_ephemeral:
-            occurrence = item.start_date if item.start_date else None
-            if occurrence and occurrence < today:
-                item.archived_at = now
-    for item in expenses:
-        if item.archived_at is None and item.is_ephemeral:
-            occurrence = item.start_date if item.start_date else None
-            if occurrence and occurrence < today:
-                item.archived_at = now
+    for income_item in income_items:
+        if income_item.archived_at is None and income_item.is_ephemeral:
+            if income_item.start_date and income_item.start_date < today:
+                income_item.archived_at = now
+    for expense_item in expenses:
+        if expense_item.archived_at is None and expense_item.is_ephemeral:
+            if expense_item.start_date and expense_item.start_date < today:
+                expense_item.archived_at = now
     session.commit()
 
     # Split active vs archived items
