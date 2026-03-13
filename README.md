@@ -31,18 +31,36 @@ For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu
 ## Features
 
 ### Weekly Budget Tracking
-- Set up monthly expenses (rent, utilities, subscriptions)
-- Configure income sources with tax calculations
-- Update account balances weekly
+- Set up expenses with flexible frequencies (weekly, monthly, yearly, etc.)
+- Configure income sources with tax calculations and payroll deductions
+- One-time items for things like bonuses or vacation bookings
+- Track account balances and credit cards with payment due dates
 - See your net position at a glance: `Current Balance - Monthly Expenses`
 
-### Monthly Net Worth
-- Track assets and liabilities over time
+### Net Worth Tracking
+- Track assets and liabilities over time with monthly snapshots
 - User-defined groups and categories (cash, investments, crypto, property, loans, credit)
 - Personal vs company wealth separation
 - Automatic calculation of totals, percentages, and month-over-month changes
 - Area chart for net worth trend over time
 - Pie chart for asset allocation by group
+
+### Forecasting & FIRE
+- Net worth projections based on historical trends
+- Configurable lookback period (month, quarter, half year, year)
+- FIRE calculator: FIRE number, CoastFIRE, years to retirement
+- Compound growth projections with inflation adjustment
+- Chart comparing current trajectory vs. required pace
+
+### Financial Goals
+- Goal types: net worth target, savings rate, category savings
+- On-track/behind status based on linear projection
+- Goals shown as target lines on the net worth chart
+
+### Data Management
+- JSON export/import (v2 format covers all data)
+- Seed data for demos
+- Prefill snapshots from budget account balances
 
 ## Tech Stack
 
@@ -50,7 +68,10 @@ For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu
 |-------|------------|
 | Backend | Python 3.11+, APIFlask, SQLAlchemy |
 | Database | PostgreSQL |
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
+| Charts | Recharts |
+| UI Components | Radix UI |
+| State Management | React Query (TanStack) |
 | Deployment | Docker Compose |
 
 ## Quick Start
@@ -125,8 +146,14 @@ Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`) and back
 # Stop development environment
 ./dev.sh down
 
+# View logs
+./dev.sh logs
+
 # Rebuild containers (after dependency changes)
 ./dev.sh build
+
+# Reset database (removes volumes)
+./dev.sh reset
 ```
 
 ### Frontend (without Docker)
@@ -190,28 +217,59 @@ docker compose exec postgres psql -U vipu -d vipu
 vipu/
 ├── backend/
 │   ├── app/
-│   │   ├── __init__.py      # Flask app factory
-│   │   ├── config.py        # Configuration
-│   │   ├── models.py        # SQLAlchemy models
-│   │   └── routes/          # API endpoints
-│   ├── tests/               # pytest tests
+│   │   ├── __init__.py        # Flask app factory
+│   │   ├── config.py          # Configuration
+│   │   ├── models.py          # SQLAlchemy models
+│   │   ├── forecasting.py     # Net worth forecasting & projections
+│   │   ├── deadline_calc.py   # Recurring payment & deadline logic
+│   │   └── routes/            # API endpoints
+│   │       ├── accounts.py    # Account management
+│   │       ├── budget.py      # Budget summary
+│   │       ├── expenses.py    # Expenses with frequencies
+│   │       ├── goals.py       # Financial goals & progress
+│   │       ├── income.py      # Income with deductions
+│   │       ├── networth.py    # Net worth, snapshots, forecast
+│   │       ├── seed.py        # Seed, reset, export, import
+│   │       └── settings.py    # Budget settings
+│   ├── tests/                 # pytest tests
 │   ├── Dockerfile
 │   └── pyproject.toml
 ├── frontend/
-│   ├── app/                 # Next.js app router pages
-│   ├── components/          # React components
-│   │   ├── budget/          # Budget-specific components
-│   │   └── networth/        # Net worth components (charts, forms)
-│   ├── hooks/               # React Query hooks
-│   ├── lib/                 # API client, utilities
-│   ├── types/               # TypeScript interfaces
+│   ├── app/                   # Next.js app router pages
+│   │   ├── page.tsx           # Budget dashboard
+│   │   └── networth/          # Net worth page
+│   ├── components/
+│   │   ├── budget/            # Budget components
+│   │   │   ├── IncomeSection.tsx
+│   │   │   ├── DeductionsSection.tsx
+│   │   │   ├── ExpensesSection.tsx
+│   │   │   ├── SavingsGoalsSection.tsx
+│   │   │   ├── AccountsSection.tsx
+│   │   │   ├── CreditCardsSection.tsx
+│   │   │   ├── FrequencyPicker.tsx
+│   │   │   └── ...
+│   │   ├── networth/          # Net worth components
+│   │   │   ├── NetWorthChart.tsx
+│   │   │   ├── AllocationChart.tsx
+│   │   │   ├── ForecastingPanel.tsx
+│   │   │   ├── CategoryManager.tsx
+│   │   │   ├── SnapshotForm.tsx
+│   │   │   └── ...
+│   │   └── ui/                # Shared UI components
+│   ├── hooks/                 # React Query hooks
+│   ├── lib/
+│   │   ├── api.ts             # API client
+│   │   ├── fire.ts            # FIRE calculations
+│   │   └── utils.ts           # Utilities
+│   ├── types/                 # TypeScript interfaces
 │   ├── Dockerfile
 │   └── package.json
-├── deploy/                  # Production deployment (GHCR images)
+├── docs/                      # GitHub Pages documentation
+├── deploy/                    # Production deployment (GHCR images)
 │   ├── docker-compose.yml
 │   └── .env.example
-├── docker-compose.yml       # Local build from source
-├── docker-compose.dev.yml   # Development with hot reload
+├── docker-compose.yml         # Local build from source
+├── docker-compose.dev.yml     # Development with hot reload
 └── .env.example
 ```
 
@@ -223,17 +281,6 @@ vipu/
 4. Run tests and linting (`uv run pytest && uv run ruff check . && uv run black --check .`)
 5. Commit with conventional commits (`feat:`, `fix:`, `docs:`, etc.)
 6. Push and open a Pull Request
-
-## Roadmap
-
-- [x] Backend API (Weekly Budget)
-- [x] CI/CD with GitHub Actions
-- [x] Frontend (Weekly Budget)
-- [x] Net Worth tracking backend
-- [x] Net Worth frontend with charts
-- [x] Goals and targets
-- [x] Data import/export
-- [x] Release 1.0 to GHCR
 
 ## License
 

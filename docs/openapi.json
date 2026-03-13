@@ -1,31 +1,19 @@
 {
   "info": {
-    "description": "Personal finance tracker API",
+    "description": "Personal finance tracker API with budgeting, net worth tracking, forecasting, and financial goals.",
     "title": "Vipu API",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "tags": [
-    {
-      "name": "Health"
-    },
-    {
-      "name": "Budget"
-    },
-    {
-      "name": "Accounts"
-    },
-    {
-      "name": "Income"
-    },
-    {
-      "name": "Expenses"
-    },
-    {
-      "name": "Settings"
-    },
-    {
-      "name": "Seed"
-    }
+    { "name": "Health" },
+    { "name": "Budget" },
+    { "name": "Accounts" },
+    { "name": "Income" },
+    { "name": "Expenses" },
+    { "name": "Settings" },
+    { "name": "Net Worth" },
+    { "name": "Goals" },
+    { "name": "Data Management" }
   ],
   "servers": [
     {
@@ -34,191 +22,17 @@
     }
   ],
   "paths": {
-    "/api/seed": {
-      "post": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Seed"
-        ],
-        "summary": "Seed example data for demos/testing.",
-        "description": "Clears all existing data and creates example accounts, income, and expenses."
-      }
-    },
     "/api/health": {
       "get": {
         "parameters": [],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           }
         },
-        "tags": [
-          "Health"
-        ],
+        "tags": ["Health"],
         "summary": "Health check endpoint."
-      }
-    },
-    "/api/income": {
-      "get": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Income"
-        ],
-        "summary": "List all income items."
-      },
-      "post": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Income"
-        ],
-        "summary": "Create a new income item.",
-        "description": "Requires name and gross_amount. Optional: is_taxed (default true), tax_percentage."
-      }
-    },
-    "/api/accounts": {
-      "get": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Accounts"
-        ],
-        "summary": "List all accounts."
-      },
-      "post": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Accounts"
-        ],
-        "summary": "Create a new account.",
-        "description": "Requires name. Optional: balance (default 0), is_credit (default false)."
-      }
-    },
-    "/api/expenses": {
-      "get": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Expenses"
-        ],
-        "summary": "List all expense items."
-      },
-      "post": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Expenses"
-        ],
-        "summary": "Create a new expense item.",
-        "description": "Requires name and amount."
-      }
-    },
-    "/api/settings": {
-      "get": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Settings"
-        ],
-        "summary": "Get current budget settings."
-      },
-      "put": {
-        "parameters": [],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful response"
-          }
-        },
-        "tags": [
-          "Settings"
-        ],
-        "summary": "Update budget settings.",
-        "description": "Accepts tax_percentage (0-100)."
       }
     },
     "/api/budget/current": {
@@ -226,241 +40,697 @@
         "parameters": [],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           }
         },
-        "tags": [
-          "Budget"
-        ],
+        "tags": ["Budget"],
         "summary": "Get current budget state with calculated totals.",
-        "description": "Returns all income, accounts, expenses, settings, and computed totals."
+        "description": "Returns all income, accounts, expenses, settings, and computed totals including deadline-aware calculations."
       }
     },
-    "/api/income/{income_id}": {
-      "put": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "income_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
-        ],
+    "/api/accounts": {
+      "get": {
+        "parameters": [],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
-            "description": "Not found"
           }
         },
-        "tags": [
-          "Income"
-        ],
-        "summary": "Update an existing income item."
+        "tags": ["Accounts"],
+        "summary": "List all accounts."
       },
-      "delete": {
-        "parameters": [
-          {
-            "in": "path",
-            "name": "income_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
-        ],
+      "post": {
+        "parameters": [],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
-            "description": "Not found"
           }
         },
-        "tags": [
-          "Income"
-        ],
-        "summary": "Delete an income item."
+        "tags": ["Accounts"],
+        "summary": "Create a new account.",
+        "description": "Requires name. Optional: balance (default 0), is_credit (default false), payment_due_day."
       }
     },
     "/api/accounts/{account_id}": {
       "put": {
         "parameters": [
-          {
-            "in": "path",
-            "name": "account_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
+          { "in": "path", "name": "account_id", "schema": { "type": "integer" }, "required": true }
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
             "description": "Not found"
           }
         },
-        "tags": [
-          "Accounts"
-        ],
+        "tags": ["Accounts"],
         "summary": "Update an existing account."
       },
       "delete": {
         "parameters": [
-          {
-            "in": "path",
-            "name": "account_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
+          { "in": "path", "name": "account_id", "schema": { "type": "integer" }, "required": true }
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
             "description": "Not found"
           }
         },
-        "tags": [
-          "Accounts"
-        ],
+        "tags": ["Accounts"],
         "summary": "Delete an account."
+      }
+    },
+    "/api/income": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Income"],
+        "summary": "List all income items."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Income"],
+        "summary": "Create a new income item.",
+        "description": "Requires name and gross_amount. Optional: is_taxed (default true), tax_percentage, is_deduction (default false), due_day, frequency_value, frequency_unit (days/weeks/months/years), is_ephemeral, start_date, end_date."
+      }
+    },
+    "/api/income/{income_id}": {
+      "put": {
+        "parameters": [
+          { "in": "path", "name": "income_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Income"],
+        "summary": "Update an existing income item."
+      },
+      "delete": {
+        "parameters": [
+          { "in": "path", "name": "income_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Income"],
+        "summary": "Delete an income item."
+      }
+    },
+    "/api/expenses": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Expenses"],
+        "summary": "List all expense items."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Expenses"],
+        "summary": "Create a new expense item.",
+        "description": "Requires name and amount. Optional: is_savings_goal (default false), due_day, frequency_value, frequency_unit (days/weeks/months/years), is_ephemeral, start_date, end_date."
       }
     },
     "/api/expenses/{expense_id}": {
       "put": {
         "parameters": [
-          {
-            "in": "path",
-            "name": "expense_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
-          }
+          { "in": "path", "name": "expense_id", "schema": { "type": "integer" }, "required": true }
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
             "description": "Not found"
           }
         },
-        "tags": [
-          "Expenses"
-        ],
+        "tags": ["Expenses"],
         "summary": "Update an existing expense item."
       },
       "delete": {
         "parameters": [
+          { "in": "path", "name": "expense_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Expenses"],
+        "summary": "Delete an expense item."
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Settings"],
+        "summary": "Get current budget settings."
+      },
+      "put": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Settings"],
+        "summary": "Update budget settings.",
+        "description": "Accepts tax_percentage (0-100) and payday_day (1-31)."
+      }
+    },
+    "/api/networth/groups": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "List all net worth groups, sorted by display order then name."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Create a new net worth group.",
+        "description": "Requires name and group_type (asset or liability). Optional: color (hex), display_order."
+      }
+    },
+    "/api/networth/groups/{group_id}": {
+      "put": {
+        "parameters": [
+          { "in": "path", "name": "group_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Update an existing group."
+      },
+      "delete": {
+        "parameters": [
+          { "in": "path", "name": "group_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          },
+          "409": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Conflict - group has categories"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Delete a group. Fails if group has categories."
+      }
+    },
+    "/api/networth/categories": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "List all net worth categories, sorted by display order then name."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Create a new net worth category.",
+        "description": "Requires name and group_id. Optional: is_personal (default true), display_order."
+      }
+    },
+    "/api/networth/categories/{category_id}": {
+      "put": {
+        "parameters": [
+          { "in": "path", "name": "category_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Update an existing category."
+      },
+      "delete": {
+        "parameters": [
+          { "in": "path", "name": "category_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          },
+          "409": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Conflict - category is used in snapshot entries"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Delete a category. Fails if used in any snapshot entries."
+      }
+    },
+    "/api/networth/categories/seed": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          },
+          "409": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Conflict - groups or categories already exist"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Seed default net worth groups and categories.",
+        "description": "Creates default groups (Cash, Investments, Crypto, Property, Loans, Credit Card) and categories. Fails if data already exists."
+      }
+    },
+    "/api/networth": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "List all net worth snapshots, sorted by date descending."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          },
+          "409": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Conflict - snapshot for this month already exists"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Create a new net worth snapshot with entries.",
+        "description": "Requires month and year. Entries should be a list of {category_id, amount}. Totals are computed automatically."
+      }
+    },
+    "/api/networth/{year}/{month}": {
+      "get": {
+        "parameters": [
+          { "in": "path", "name": "year", "schema": { "type": "integer" }, "required": true },
+          { "in": "path", "name": "month", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Get a specific snapshot by year and month."
+      }
+    },
+    "/api/networth/{year}/{month}/previous-entries": {
+      "get": {
+        "parameters": [
+          { "in": "path", "name": "year", "schema": { "type": "integer" }, "required": true },
+          { "in": "path", "name": "month", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "No previous snapshot found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Get entries from the previous month's snapshot.",
+        "description": "Returns a mapping of category_id to amount for copying into a new snapshot. Amounts are returned as absolute values."
+      }
+    },
+    "/api/networth/{snapshot_id}": {
+      "put": {
+        "parameters": [
+          { "in": "path", "name": "snapshot_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Update an existing net worth snapshot.",
+        "description": "Can update month/year or entries. If entries are provided, they replace all existing entries."
+      },
+      "delete": {
+        "parameters": [
+          { "in": "path", "name": "snapshot_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Delete a net worth snapshot."
+      }
+    },
+    "/api/networth/reset": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Reset all net worth data.",
+        "description": "Clears all snapshots, entries, categories, and groups."
+      }
+    },
+    "/api/networth/seed": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          },
+          "409": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Conflict - data already exists"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Seed example net worth data (12 months of fictional growth).",
+        "description": "Requires categories to be seeded first. Uses previous year for realistic demo data."
+      }
+    },
+    "/api/networth/forecast": {
+      "get": {
+        "parameters": [
           {
-            "in": "path",
-            "name": "expense_id",
-            "schema": {
-              "type": "integer"
-            },
-            "required": true
+            "in": "query",
+            "name": "period",
+            "schema": { "type": "string", "enum": ["month", "quarter", "half_year", "year"] },
+            "description": "Time period to base projection on. Default: quarter."
+          },
+          {
+            "in": "query",
+            "name": "months_ahead",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 36 },
+            "description": "Number of months to project. Default: 12."
           }
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Net Worth"],
+        "summary": "Get net worth forecast based on historical trend.",
+        "description": "Returns projected net worth values and the monthly change rate used for projection."
+      }
+    },
+    "/api/goals": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Goals"],
+        "summary": "List all goals."
+      },
+      "post": {
+        "parameters": [],
+        "responses": {
+          "201": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Created"
+          }
+        },
+        "tags": ["Goals"],
+        "summary": "Create a new goal.",
+        "description": "Required: name, goal_type (net_worth, savings_rate, savings_goal), target_value. Optional: category_id (required for savings_goal), target_date, is_active."
+      }
+    },
+    "/api/goals/{goal_id}": {
+      "get": {
+        "parameters": [
+          { "in": "path", "name": "goal_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
             "description": "Successful response"
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPError"
-                }
-              }
-            },
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
             "description": "Not found"
           }
         },
-        "tags": [
-          "Expenses"
+        "tags": ["Goals"],
+        "summary": "Get a specific goal."
+      },
+      "put": {
+        "parameters": [
+          { "in": "path", "name": "goal_id", "schema": { "type": "integer" }, "required": true }
         ],
-        "summary": "Delete an expense item."
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Goals"],
+        "summary": "Update an existing goal."
+      },
+      "delete": {
+        "parameters": [
+          { "in": "path", "name": "goal_id", "schema": { "type": "integer" }, "required": true }
+        ],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          },
+          "404": {
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HTTPError" } } },
+            "description": "Not found"
+          }
+        },
+        "tags": ["Goals"],
+        "summary": "Delete a goal."
+      }
+    },
+    "/api/goals/progress": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Goals"],
+        "summary": "Get progress for all active goals.",
+        "description": "Calculates current progress based on goal type: net_worth uses latest snapshot, savings_rate uses monthly change vs income, savings_goal uses specific category balance."
+      }
+    },
+    "/api/seed": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Data Management"],
+        "summary": "Seed example budget data for demos/testing.",
+        "description": "Clears all existing budget data and creates example accounts, income (with deductions), and expenses with various deadline configurations."
+      }
+    },
+    "/api/reset": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Data Management"],
+        "summary": "Reset all budget data.",
+        "description": "Clears all accounts, income, expenses, and resets settings to default."
+      }
+    },
+    "/api/export": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Data Management"],
+        "summary": "Export all data as JSON.",
+        "description": "Returns all budget data, net worth data (groups, categories, snapshots), and goals. Version 2 format."
+      }
+    },
+    "/api/import": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Data Management"],
+        "summary": "Import data from JSON.",
+        "description": "Replaces all existing data with imported data. Supports version 1 (budget only) and version 2 (full data with net worth and goals)."
+      }
+    },
+    "/api/budget/snapshot-prefill": {
+      "get": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": { "application/json": { "schema": {} } },
+            "description": "Successful response"
+          }
+        },
+        "tags": ["Data Management"],
+        "summary": "Get budget account balances for snapshot prefill.",
+        "description": "Returns accounts with their balances, suitable for pre-filling a net worth snapshot form. Credit cards are returned as liabilities."
       }
     }
   },
@@ -469,12 +739,8 @@
     "schemas": {
       "HTTPError": {
         "properties": {
-          "detail": {
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          }
+          "detail": { "type": "object" },
+          "message": { "type": "string" }
         },
         "type": "object"
       }

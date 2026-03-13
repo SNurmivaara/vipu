@@ -161,6 +161,7 @@
           <li><a href="#philosophy">The Balance-Based Approach</a></li>
           <li><a href="#weekly-budget">Weekly Budget</a></li>
           <li><a href="#net-worth">Net Worth Tracking</a></li>
+          <li><a href="#forecasting">Forecasting & FIRE Statistics</a></li>
           <li><a href="#goals">Financial Goals</a></li>
           <li><a href="#workflows">Recommended Workflows</a></li>
           <li><a href="#getting-started">Getting Started</a></li>
@@ -175,11 +176,13 @@
         Unlike apps that track every transaction, Vipu focuses on the big picture. You set up your recurring income and expenses once, then just update your account balances periodically. The app does the math to show your financial position.
       </p>
       <p>
-        Vipu has two main features:
+        Vipu has four main features:
       </p>
       <ul>
         <li><strong>Weekly Budget</strong> - Track if you can cover upcoming expenses</li>
-        <li><strong>Net Worth</strong> - Track your total wealth over time with monthly snapshots</li>
+        <li><strong>Net Worth</strong> - Track your total wealth over time</li>
+        <li><strong>Forecasting & FIRE</strong> - Project net worth growth and plan for financial independence</li>
+        <li><strong>Financial Goals</strong> - Set targets and track progress</li>
       </ul>
 
       <h2 id="philosophy">The Balance-Based Approach</h2>
@@ -242,14 +245,32 @@
       </p>
       <ul>
         <li>Expenses stay listed even after you've paid them this month</li>
-        <li>There are no due dates - every expense is "due" continuously</li>
         <li>Your goal is to maintain a positive "net position" at all times</li>
+        <li>Expenses are normalized to a monthly cost regardless of their actual frequency</li>
       </ul>
 
       <div class="example">
         <div class="example-title">Example</div>
         <p>Your rent is 1,200 EUR/month. Even after paying January's rent, the expense stays listed because you'll need to pay February's rent next month. If your balance drops below 1,200 EUR, Vipu shows you're not prepared for the upcoming rent.</p>
       </div>
+
+      <h3>Frequencies and Deadlines</h3>
+      <p>
+        Income and expenses support flexible schedules:
+      </p>
+      <ul>
+        <li><strong>Frequency</strong> - Every N days, weeks, months, or years</li>
+        <li><strong>Due day</strong> - Day of the month it's due</li>
+        <li><strong>Start/end dates</strong> - For temporary items</li>
+      </ul>
+      <p>
+        Vipu normalizes everything to a <strong>monthly equivalent</strong> for the budget overview. Weekly groceries of 100 EUR become ~433 EUR/month. Annual insurance of 1,200 EUR becomes 100 EUR/month.
+      </p>
+
+      <h3>One-Time Items</h3>
+      <p>
+        Items marked as <strong>ephemeral</strong> are temporary entries for things like a vacation booking or year-end bonus. They appear in your budget but are meant to be deleted once handled.
+      </p>
 
       <h3>Understanding the Summary Cards</h3>
       <p>The budget page shows three summary cards:</p>
@@ -280,16 +301,23 @@
         Both are included in your total balance. A checking account with 3,000 EUR and a credit card with -500 EUR means your total balance is 2,500 EUR.
       </p>
 
+      <p>
+        Credit cards can have a <strong>payment due day</strong> to track when each payment is due.
+      </p>
+
       <div class="tip">
         <strong>Tip:</strong> Vipu assumes you pay credit cards in full each month. If you carry a balance, the negative amount correctly reduces your available funds.
       </div>
 
       <h3>Income and Deductions</h3>
       <p>
-        Income items can be marked as taxed or untaxed. For taxed income, Vipu calculates net income using your tax percentage (set in settings).
+        Income items can be taxed or untaxed. For taxed income, Vipu calculates net income using your tax percentage (set in settings). Individual items can override the default tax rate.
       </p>
       <p>
-        <strong>Deductions</strong> are items that reduce your paycheck before it hits your bank account (like lunch benefits or pension contributions). These are separate from expenses because they never appear in your bank - they're handled by your employer.
+        <strong>Deductions</strong> reduce your paycheck before it hits your bank (lunch benefits, pension contributions, etc.). They're shown separately from income since your employer handles them.
+      </p>
+      <p>
+        You can set a <strong>payday</strong> in settings (e.g. the 25th) to anchor your budget cycle to when you actually get paid.
       </p>
 
       <h3>Expenses vs Savings Goals</h3>
@@ -348,26 +376,63 @@
         <li><strong>Summary cards</strong> - Current total, monthly change, year-to-date change</li>
       </ul>
 
-      <h2 id="goals">Financial Goals</h2>
+      <h2 id="forecasting">Forecasting & FIRE Statistics</h2>
+
+      <h3>Net Worth Forecasting</h3>
       <p>
-        Goals let you set targets and track progress. Each goal has:
+        The forecasting panel projects your future net worth from your snapshot history. Pick a <strong>lookback period</strong> to control how the growth trend is calculated:
       </p>
       <ul>
-        <li>A target amount</li>
-        <li>An optional target date</li>
-        <li>A tracking method (total net worth or specific category)</li>
+        <li><strong>Month</strong> - Last month's change (volatile but responsive)</li>
+        <li><strong>Quarter</strong> - Last 3 months (default)</li>
+        <li><strong>Half year</strong> - Last 6 months (smooths out seasonal variation)</li>
+        <li><strong>Year</strong> - Last 12 months (most stable)</li>
       </ul>
+
+      <h3>FIRE Calculator</h3>
+      <p>
+        The FIRE (Financial Independence, Retire Early) calculator shows:
+      </p>
+      <ul>
+        <li><strong>FIRE Number</strong> - Portfolio needed to retire (annual expenses / safe withdrawal rate)</li>
+        <li><strong>CoastFIRE</strong> - Amount needed today for investment growth alone to reach your FIRE number by retirement</li>
+        <li><strong>Years to FIRE</strong> - Time to financial independence given your savings rate and returns</li>
+      </ul>
+      <p>
+        You can configure annual return, inflation, safe withdrawal rate, current/target age, monthly savings, and annual expenses. Savings and expenses are auto-calculated from your budget but can be overridden. Settings persist in local storage.
+      </p>
+      <p>
+        A chart compares your projected growth against the required trajectory.
+      </p>
+
+      <div class="tip">
+        <strong>Tip:</strong> The FIRE calculator uses inflation-adjusted returns, so the numbers represent today's purchasing power.
+      </div>
+
+      <h2 id="goals">Financial Goals</h2>
+      <p>
+        Goals let you set targets and track progress. There are three goal types:
+      </p>
+      <ul>
+        <li><strong>Net Worth Target</strong> - Total net worth goal</li>
+        <li><strong>Savings Rate</strong> - Average monthly savings as % of net income (one allowed)</li>
+        <li><strong>Savings Goal</strong> - Target balance for a specific net worth category</li>
+      </ul>
+      <p>
+        Goals can have a <strong>target date</strong>. With 3+ months of data, Vipu shows whether you're <strong>on track</strong> or <strong>behind</strong> based on linear projection.
+      </p>
 
       <div class="example">
         <div class="example-title">Example Goals</div>
         <ul>
-          <li>"Reach 100,000 EUR net worth by December 2025" - tracks total net worth</li>
-          <li>"Build 10,000 EUR emergency fund" - tracks a specific savings category</li>
-          <li>"Pay off car loan" - tracks a loan category (goal is 0 EUR)</li>
+          <li>"Reach 100,000 EUR net worth by December 2026" - net worth target with deadline</li>
+          <li>"Save 20% of income" - savings rate goal, always ongoing</li>
+          <li>"Build 10,000 EUR emergency fund" - savings goal tracking a specific category</li>
+          <li>"Pay off car loan" - savings goal tracking a loan category (target is 0 EUR)</li>
         </ul>
       </div>
       <p>
-        Goals appear on the net worth chart as horizontal lines, making it easy to see your progress visually.
+        Goals appear as horizontal lines on the net worth chart. Each active goal also shows a progress bar and status indicator.
       </p>
 
       <h2 id="workflows">Recommended Workflows</h2>
@@ -390,19 +455,21 @@
         <li>Click "Add Snapshot" and select the month</li>
         <li>Optional: Prefill suitable accounts with data from the budget</li>
         <li>Enter current values for each category</li>
-        <li>Review the charts to see your progress</li>
+        <li>Review charts and forecasting projections</li>
+        <li>Check FIRE statistics</li>
         <li>Optional: update any income/expense changes for next month</li>
       </ol>
 
       <h3>Getting Set Up (30-60 minutes, one time)</h3>
       <ol>
-        <li>Add your bank accounts and credit cards</li>
-        <li>Set up your income sources (salary, side income)</li>
-        <li>Add your monthly expenses (rent, utilities, subscriptions)</li>
-        <li>Set your tax percentage in settings</li>
+        <li>Add your bank accounts and credit cards (with payment due days)</li>
+        <li>Set up your income sources with frequencies (salary, side income)</li>
+        <li>Add any payroll deductions (lunch benefits, pension, etc.)</li>
+        <li>Add your expenses with appropriate frequencies (rent monthly, groceries weekly, insurance yearly, etc.)</li>
+        <li>Set your tax percentage and payday in settings</li>
         <li>Create net worth categories that match your accounts</li>
         <li>Add your first net worth snapshot</li>
-        <li>Optionally: set up financial goals</li>
+        <li>Optionally: set up financial goals and configure FIRE calculator settings</li>
       </ol>
 
       <h2 id="getting-started">Getting Started</h2>
