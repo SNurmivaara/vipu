@@ -199,6 +199,19 @@ export interface GoalProgress {
   category_name?: string | null;
 }
 
+// FIRE / Forecasting settings (persisted to localStorage)
+export interface ForecastingSettings {
+  annualReturnPct: number;
+  inflationPct: number;
+  safeWithdrawalRate: number;
+  currentAge: number;
+  targetRetirementAge: number;
+  /** Override for monthly savings; null = derive from budget */
+  monthlySavingsOverride: number | null;
+  /** Override for annual expenses; null = derive from budget */
+  annualExpensesOverride: number | null;
+}
+
 // Forecast types
 export type ForecastPeriod = "month" | "quarter" | "half_year" | "year";
 
