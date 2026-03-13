@@ -80,7 +80,7 @@ def get_occurrences_in_window(
     window_start: date,
     window_end: date,
 ) -> list[date]:
-    """Get all dates this item occurs between window_start and window_end (inclusive).
+    """Get all dates this item occurs in [window_start, window_end) (end-exclusive).
 
     Handles:
     - "days": every N days from start_date (or due_day of current month)
@@ -124,7 +124,7 @@ def get_occurrences_in_window(
             year, month = window_start.year, window_start.month
             occurrence_day = normalize_day(due_day, year, month)
             occurrence = date(year, month, occurrence_day)
-        if window_start <= occurrence <= window_end:
+        if window_start <= occurrence < window_end:
             occurrences.append(occurrence)
         return occurrences
 
@@ -137,7 +137,7 @@ def get_occurrences_in_window(
             occurrence_day = normalize_day(due_day, current.year, current.month)
             occurrence = date(current.year, current.month, occurrence_day)
 
-            if window_start <= occurrence <= window_end:
+            if window_start <= occurrence < window_end:
                 if start_date is None or occurrence >= start_date:
                     if end_date is None or occurrence <= end_date:
                         occurrences.append(occurrence)
@@ -163,7 +163,7 @@ def get_occurrences_in_window(
             if occurrence > window_end:
                 break
 
-            if window_start <= occurrence <= window_end:
+            if window_start <= occurrence < window_end:
                 if start_date is None or occurrence >= start_date:
                     if end_date is None or occurrence <= end_date:
                         occurrences.append(occurrence)
@@ -189,8 +189,8 @@ def get_occurrences_in_window(
             reference = reference + timedelta(days=periods_to_skip * interval)
 
         current = reference
-        while current <= window_end:
-            if window_start <= current <= window_end:
+        while current < window_end:
+            if window_start <= current < window_end:
                 if start_date is None or current >= start_date:
                     if end_date is None or current <= end_date:
                         occurrences.append(current)
@@ -285,13 +285,16 @@ def calculate_cc_payments_before_payday(
     accounts: list["Account"],
     today: date,
     next_payday: date,
+    include_unscheduled: bool = True,
 ) -> Decimal:
     """Calculate credit card payments due before next payday.
 
     Args:
         accounts: List of accounts
-        today: Current date
-        next_payday: Next payday date
+        today: Current date (window start)
+        next_payday: Next payday date (window end, exclusive)
+        include_unscheduled: Include CCs without a payment_due_day.
+                             Set False for future periods to avoid double-counting.
 
     Returns:
         Total credit card payments due before next payday
@@ -302,9 +305,10 @@ def calculate_cc_payments_before_payday(
         if not account.is_credit:
             continue
 
-        # If no payment_due_day set, include full balance
+        # CCs without a due day: only count once (in the current period)
         if account.payment_due_day is None:
-            total += abs(account.balance)
+            if include_unscheduled:
+                total += abs(account.balance)
             continue
 
         # Check if payment_due_day falls in window
@@ -312,7 +316,7 @@ def calculate_cc_payments_before_payday(
         due_day = normalize_day(account.payment_due_day, today.year, today.month)
         due_date = date(today.year, today.month, due_day)
 
-        if today <= due_date <= next_payday:
+        if today <= due_date < next_payday:
             total += abs(account.balance)
             continue
 
@@ -325,7 +329,7 @@ def calculate_cc_payments_before_payday(
         due_day = normalize_day(account.payment_due_day, next_year, next_month)
         due_date = date(next_year, next_month, due_day)
 
-        if today <= due_date <= next_payday:
+        if today <= due_date < next_payday:
             total += abs(account.balance)
 
     return total

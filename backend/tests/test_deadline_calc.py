@@ -132,6 +132,7 @@ class TestGetOccurrencesInWindow:
 
     def test_weekly(self):
         # Weekly on Mondays (let's say 3rd is Monday), window 2 weeks
+        # window_end is exclusive, so use 18th to include the 17th
         occurrences = get_occurrences_in_window(
             due_day=3,
             frequency_value=1,
@@ -141,12 +142,13 @@ class TestGetOccurrencesInWindow:
             is_ephemeral=False,
             archived_at=None,
             window_start=date(2026, 3, 3),
-            window_end=date(2026, 3, 17),
+            window_end=date(2026, 3, 18),
         )
         assert occurrences == [date(2026, 3, 3), date(2026, 3, 10), date(2026, 3, 17)]
 
     def test_biweekly(self):
         # Every 2 weeks from March 3rd
+        # window_end is exclusive, so use April 1st to include March 31st
         occurrences = get_occurrences_in_window(
             due_day=3,
             frequency_value=2,
@@ -156,7 +158,7 @@ class TestGetOccurrencesInWindow:
             is_ephemeral=False,
             archived_at=None,
             window_start=date(2026, 3, 1),
-            window_end=date(2026, 3, 31),
+            window_end=date(2026, 4, 1),
         )
         assert occurrences == [date(2026, 3, 3), date(2026, 3, 17), date(2026, 3, 31)]
 
@@ -207,6 +209,7 @@ class TestGetOccurrencesInWindow:
 
     def test_ephemeral_no_start_date_uses_due_day(self):
         # One-time item without start_date should use due_day of current month
+        # window_end is exclusive, so use 14th to include the 13th
         occurrences = get_occurrences_in_window(
             due_day=13,
             frequency_value=1,
@@ -216,7 +219,7 @@ class TestGetOccurrencesInWindow:
             is_ephemeral=True,
             archived_at=None,
             window_start=date(2026, 3, 10),
-            window_end=date(2026, 3, 13),
+            window_end=date(2026, 3, 14),
         )
         assert occurrences == [date(2026, 3, 13)]
 
@@ -314,6 +317,7 @@ class TestGetOccurrencesInWindow:
 
     def test_daily(self):
         # Every 3 days from March 1st
+        # window_end is exclusive, so use 11th to include the 10th
         occurrences = get_occurrences_in_window(
             due_day=1,
             frequency_value=3,
@@ -323,7 +327,7 @@ class TestGetOccurrencesInWindow:
             is_ephemeral=False,
             archived_at=None,
             window_start=date(2026, 3, 1),
-            window_end=date(2026, 3, 10),
+            window_end=date(2026, 3, 11),
         )
         expected = [
             date(2026, 3, 1),
@@ -335,6 +339,7 @@ class TestGetOccurrencesInWindow:
 
     def test_monthly_31st_normalized(self):
         # Monthly on 31st, February only has 28 days
+        # window_end is exclusive, so use March 1st to include Feb 28th
         occurrences = get_occurrences_in_window(
             due_day=31,
             frequency_value=1,
@@ -344,7 +349,7 @@ class TestGetOccurrencesInWindow:
             is_ephemeral=False,
             archived_at=None,
             window_start=date(2026, 2, 1),
-            window_end=date(2026, 2, 28),
+            window_end=date(2026, 3, 1),
         )
         assert occurrences == [date(2026, 2, 28)]
 

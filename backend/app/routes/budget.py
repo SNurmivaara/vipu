@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -53,6 +53,21 @@ def get_current_budget() -> Response:
     accounts = session.query(Account).order_by(Account.name).all()
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
+    # Auto-archive past ephemeral items
+    today = date.today()
+    now = datetime.now()
+    for item in income_items:
+        if item.archived_at is None and item.is_ephemeral:
+            occurrence = item.start_date if item.start_date else None
+            if occurrence and occurrence < today:
+                item.archived_at = now
+    for item in expenses:
+        if item.archived_at is None and item.is_ephemeral:
+            occurrence = item.start_date if item.start_date else None
+            if occurrence and occurrence < today:
+                item.archived_at = now
+    session.commit()
+
     # Split active vs archived items
     active_income = [i for i in income_items if i.archived_at is None]
     archived_income = [i for i in income_items if i.archived_at is not None]
@@ -71,7 +86,6 @@ def get_current_budget() -> Response:
     net_position = current_balance - total_expenses
 
     # Calculate deadline-aware totals
-    today = date.today()
     next_payday = get_next_payday(today, settings.payday_day)
     next_period_end = get_payday_after(next_payday, settings.payday_day)
 
@@ -96,7 +110,7 @@ def get_current_budget() -> Response:
         active_expenses, next_payday, next_period_end, include_savings=True
     )
     cc_payments_next_period = calculate_cc_payments_before_payday(
-        accounts, next_payday, next_period_end
+        accounts, next_payday, next_period_end, include_unscheduled=False
     )
 
     return jsonify(
