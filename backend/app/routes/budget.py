@@ -94,7 +94,11 @@ def get_current_budget() -> Response:
         active_expenses, today, next_payday, include_savings=True
     )
     income_before_payday = calculate_income_before_payday(
-        active_income, today, next_payday, settings.tax_percentage
+        active_income,
+        today,
+        next_payday,
+        settings.tax_percentage,
+        payday_day=settings.payday_day,
     )
     cc_payments_before_payday = calculate_cc_payments_before_payday(
         accounts, today, next_payday
@@ -109,6 +113,13 @@ def get_current_budget() -> Response:
     )
     cc_payments_next_period = calculate_cc_payments_before_payday(
         accounts, next_payday, next_period_end, include_unscheduled=False
+    )
+    income_next_period = calculate_income_before_payday(
+        active_income,
+        next_payday,
+        next_period_end,
+        settings.tax_percentage,
+        payday_day=settings.payday_day,
     )
 
     return jsonify(
@@ -137,6 +148,7 @@ def get_current_budget() -> Response:
                 "expenses_next_period": float(expenses_next_period),
                 "savings_next_period": float(savings_next_period),
                 "cc_payments_next_period": float(cc_payments_next_period),
+                "income_next_period": float(income_next_period),
             },
         }
     )

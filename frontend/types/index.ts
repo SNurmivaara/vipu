@@ -63,6 +63,7 @@ export interface BudgetTotals {
   expenses_next_period: number;
   savings_next_period: number;
   cc_payments_next_period: number;
+  income_next_period: number;
 }
 
 export interface BudgetData {
