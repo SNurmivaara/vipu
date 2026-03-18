@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-**Vipu** (Finnish for "lever") is a personal finance tracker designed to answer one simple question: *"Do I have enough money to cover next month's expenses?"*
+**Vipu** (Finnish for "lever") is a personal finance tracker designed for simplicity.
 
 > **Note:** This app is built with Finnish personal finance in mind (tax percentages, payroll deductions, €). The core budgeting features work anywhere, but some features assume Finnish conventions.
 
@@ -12,19 +12,18 @@
 
 Vipu uses **balance-based budgeting** - a middle ground between micro-management and no tracking at all.
 
-| Approach | Examples | Vipu |
+| Style | Apps | Approach |
 |----------|----------|------|
-| **Micro** | YNAB, Mint | Tracks every transaction, allocates every euro | No |
-| **Balance-based** | Vipu | Tracks balances and recurring obligations | **Yes** |
-| **Macro** | Spreadsheets, net worth only | Just totals, no expense awareness | No |
+| **Micro** | YNAB, Mint | Tracks every transaction, allocates every euro |
+| **Balance-based** | Vipu | Tracks balances and recurring obligations |
+| **Macro** | Spreadsheets, net worth only | Just totals, no expense awareness |
 
 **The core idea:** Know your recurring obligations, maintain enough balance to cover them, check in weekly. Don't sweat individual transactions.
 
 This works well if you:
 - Have relatively stable income and expenses
 - Don't want to categorize every coffee purchase
-- Care more about "am I on track?" than "where did €47.50 go?"
-- Want the peace of mind of always being one month ahead
+- Care more about "am I on track?" than "where did 4,50€ go?"
 
 For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu/guide.html).
 
@@ -58,7 +57,7 @@ For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu
 - Goals shown as target lines on the net worth chart
 
 ### Data Management
-- JSON export/import (v2 format covers all data)
+- JSON export/import
 - Seed data for demos
 - Prefill snapshots from budget account balances
 
@@ -209,68 +208,6 @@ The project uses PostgreSQL. With Docker Compose, it runs on port 5433 (to avoid
 ```bash
 # Connect to the database (when using Docker)
 docker compose exec postgres psql -U vipu -d vipu
-```
-
-## Project Structure
-
-```
-vipu/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py        # Flask app factory
-│   │   ├── config.py          # Configuration
-│   │   ├── models.py          # SQLAlchemy models
-│   │   ├── forecasting.py     # Net worth forecasting & projections
-│   │   ├── deadline_calc.py   # Recurring payment & deadline logic
-│   │   └── routes/            # API endpoints
-│   │       ├── accounts.py    # Account management
-│   │       ├── budget.py      # Budget summary
-│   │       ├── expenses.py    # Expenses with frequencies
-│   │       ├── goals.py       # Financial goals & progress
-│   │       ├── income.py      # Income with deductions
-│   │       ├── networth.py    # Net worth, snapshots, forecast
-│   │       ├── seed.py        # Seed, reset, export, import
-│   │       └── settings.py    # Budget settings
-│   ├── tests/                 # pytest tests
-│   ├── Dockerfile
-│   └── pyproject.toml
-├── frontend/
-│   ├── app/                   # Next.js app router pages
-│   │   ├── page.tsx           # Budget dashboard
-│   │   └── networth/          # Net worth page
-│   ├── components/
-│   │   ├── budget/            # Budget components
-│   │   │   ├── IncomeSection.tsx
-│   │   │   ├── DeductionsSection.tsx
-│   │   │   ├── ExpensesSection.tsx
-│   │   │   ├── SavingsGoalsSection.tsx
-│   │   │   ├── AccountsSection.tsx
-│   │   │   ├── CreditCardsSection.tsx
-│   │   │   ├── FrequencyPicker.tsx
-│   │   │   └── ...
-│   │   ├── networth/          # Net worth components
-│   │   │   ├── NetWorthChart.tsx
-│   │   │   ├── AllocationChart.tsx
-│   │   │   ├── ForecastingPanel.tsx
-│   │   │   ├── CategoryManager.tsx
-│   │   │   ├── SnapshotForm.tsx
-│   │   │   └── ...
-│   │   └── ui/                # Shared UI components
-│   ├── hooks/                 # React Query hooks
-│   ├── lib/
-│   │   ├── api.ts             # API client
-│   │   ├── fire.ts            # FIRE calculations
-│   │   └── utils.ts           # Utilities
-│   ├── types/                 # TypeScript interfaces
-│   ├── Dockerfile
-│   └── package.json
-├── docs/                      # GitHub Pages documentation
-├── deploy/                    # Production deployment (GHCR images)
-│   ├── docker-compose.yml
-│   └── .env.example
-├── docker-compose.yml         # Local build from source
-├── docker-compose.dev.yml     # Development with hot reload
-└── .env.example
 ```
 
 ## Contributing
