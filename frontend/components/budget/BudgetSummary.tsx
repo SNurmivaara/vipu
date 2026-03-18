@@ -24,6 +24,7 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     expenses_next_period,
     savings_next_period,
     cc_payments_next_period,
+    income_next_period,
   } = data.totals;
 
   // Total obligations before next payday (expenses + savings + CC payments)
@@ -37,10 +38,10 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
   // 2. After Next Payday: Current position plus income arriving before payday
   const afterPayday = currentPosition + income_before_payday;
 
-  // 3. Next Month Preview: After payday minus next period obligations
+  // 3. Next Month Preview: After payday plus next period income minus next period obligations
   const nextPeriodObligations =
     expenses_next_period + savings_next_period + cc_payments_next_period;
-  const nextMonthPreview = afterPayday - nextPeriodObligations;
+  const nextMonthPreview = afterPayday + income_next_period - nextPeriodObligations;
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">

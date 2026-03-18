@@ -204,19 +204,36 @@ def calculate_income_before_payday(
     today: date,
     next_payday: date,
     default_tax_pct: Decimal,
+    payday_day: int | None = None,
 ) -> Decimal:
-    """Calculate total net income arriving before next payday.
+    """Calculate total net income arriving through next payday.
+
+    The window includes income arriving ON payday (inclusive end).
+    On payday itself, today's income is assumed already in the account balance,
+    so the window starts from tomorrow to avoid double-counting.
 
     Args:
         income_items: List of income items
         today: Current date
         next_payday: Next payday date
         default_tax_pct: Default tax percentage for taxed income
+        payday_day: Day of month for payday (used to detect if today is payday)
 
     Returns:
-        Total net income due before next payday
+        Total net income due through next payday
     """
     total = Decimal("0")
+
+    # Include income arriving ON payday (window_end is exclusive, so +1 day)
+    inclusive_end = next_payday + timedelta(days=1)
+
+    # If today is payday, that income is already reflected in the account
+    # balance — start from tomorrow to avoid double-counting
+    window_start = today
+    if payday_day is not None:
+        normalized = normalize_day(payday_day, today.year, today.month)
+        if today.day == normalized:
+            window_start = today + timedelta(days=1)
 
     for item in income_items:
         occurrences = get_occurrences_in_window(
@@ -227,8 +244,8 @@ def calculate_income_before_payday(
             end_date=item.end_date,
             is_ephemeral=item.is_ephemeral,
             archived_at=item.archived_at,
-            window_start=today,
-            window_end=next_payday,
+            window_start=window_start,
+            window_end=inclusive_end,
         )
 
         if occurrences:
