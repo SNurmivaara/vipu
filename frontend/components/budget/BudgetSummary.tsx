@@ -18,18 +18,17 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     expenses_before_payday,
     income_before_payday,
     savings_before_payday,
-    cc_payments_before_payday,
     next_payday,
     next_period_end,
     expenses_next_period,
     savings_next_period,
-    cc_payments_next_period,
     income_next_period,
   } = data.totals;
 
-  // Total obligations before next payday (expenses + savings + CC payments)
+  // Total obligations before next payday (expenses + savings)
+  // CC payments excluded: they are internal transfers already reflected in current_balance
   const obligationsBeforePayday =
-    expenses_before_payday + savings_before_payday + cc_payments_before_payday;
+    expenses_before_payday + savings_before_payday;
 
   // Three financial states (deadline-aware):
   // 1. Current Position: Balance minus ALL obligations due before next payday
@@ -40,7 +39,7 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
 
   // 3. Next Month Preview: After payday plus next period income minus next period obligations
   const nextPeriodObligations =
-    expenses_next_period + savings_next_period + cc_payments_next_period;
+    expenses_next_period + savings_next_period;
   const nextMonthPreview = afterPayday + income_next_period - nextPeriodObligations;
 
   return (
