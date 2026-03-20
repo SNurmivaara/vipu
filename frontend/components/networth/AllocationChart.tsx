@@ -108,7 +108,7 @@ export function AllocationChart({ snapshot }: AllocationChartProps) {
         {/* Pie Chart */}
         <div className="h-48 w-48 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+            <PieChart role="img" aria-label="Asset allocation pie chart">
               <Pie
                 data={chartData}
                 cx="50%"

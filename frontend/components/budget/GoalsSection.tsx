@@ -282,7 +282,7 @@ export function GoalsSection({
         </h2>
         <button
           onClick={openNew}
-          className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
           + Add
         </button>

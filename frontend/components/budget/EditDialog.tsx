@@ -290,7 +290,7 @@ export function EditDialog({
                       onDelete();
                       onOpenChange(false);
                     }}
-                    className="px-4 py-2 text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                    className="px-4 py-2 text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
                   >
                     Delete
                   </button>
@@ -300,7 +300,7 @@ export function EditDialog({
                 <Dialog.Close asChild>
                   <button
                     type="button"
-                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                    className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
                   >
                     Cancel
                   </button>

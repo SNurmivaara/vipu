@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import {
   Line,
   XAxis,
@@ -14,42 +14,49 @@ import {
 } from "recharts";
 import { NetWorthSnapshot, BudgetTotals, ForecastingSettings } from "@/types";
 import { formatCurrencyRounded, cn } from "@/lib/utils";
-import { calculateFire, FireInputs, FireResult, ProjectionPoint } from "@/lib/fire";
-
-// ---------------------------------------------------------------------------
-// localStorage persistence
-// ---------------------------------------------------------------------------
-
-const STORAGE_KEY = "vipu-forecasting-settings";
+import { calculateFire, FireInputs, FireResult } from "@/lib/fire";
+import { useForecastingSettings } from "@/hooks/useForecastingSettings";
 
 const DEFAULT_SETTINGS: ForecastingSettings = {
-  annualReturnPct: 7,
   inflationPct: 2,
   safeWithdrawalRate: 4,
   currentAge: 30,
   targetRetirementAge: 65,
   monthlySavingsOverride: null,
   annualExpensesOverride: null,
+  pensionAccruedMonthly: null,
+  pensionMonthlySalaryOverride: null,
+  pensionAccrualRate: 1.5,
+  pensionFullAge: 68,
+  lifeExpectancy: 95,
+  groupReturnRates: {},
 };
 
-function loadSettings(): ForecastingSettings {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    /* ignore */
-  }
-  return DEFAULT_SETTINGS;
+/** Default return assumptions by group name keyword matching. */
+function getDefaultReturnForGroup(groupName: string): number {
+  const lower = groupName.toLowerCase();
+  if (/invest|stock|equit|fund|etf/.test(lower)) return 7;
+  if (/real.?estate|property|home|house/.test(lower)) return 3;
+  if (/cash|saving|bank|deposit/.test(lower)) return 1;
+  if (/crypto|bitcoin|eth/.test(lower)) return 7;
+  if (/bond|fixed.?income/.test(lower)) return 3;
+  return 5;
 }
 
-function saveSettings(s: ForecastingSettings) {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  } catch {
-    /* ignore */
+/** Compute weighted annual return from group allocations. */
+function calcWeightedReturn(
+  byGroup: Record<string, number>,
+  returnRates: Record<string, number>
+): number {
+  let totalValue = 0;
+  let weightedSum = 0;
+  for (const [group, amount] of Object.entries(byGroup)) {
+    if (amount <= 0) continue; // only assets
+    const rate = returnRates[group] ?? getDefaultReturnForGroup(group);
+    weightedSum += amount * rate;
+    totalValue += amount;
   }
+  return totalValue > 0 ? weightedSum / totalValue : 7;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,27 +80,14 @@ export function ForecastingPanel({
   monthlyExpenses,
   monthlySavings,
 }: ForecastingPanelProps) {
-  const [settings, setSettings] = useState<ForecastingSettings>(DEFAULT_SETTINGS);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const {
+    settings: apiSettings,
+    isLoading: settingsLoading,
+    updateSetting,
+  } = useForecastingSettings();
   const [showSettings, setShowSettings] = useState(false);
 
-  // Hydrate from localStorage
-  useEffect(() => {
-    setSettings(loadSettings());
-    setIsHydrated(true);
-  }, []);
-
-  // Persist changes
-  useEffect(() => {
-    if (isHydrated) saveSettings(settings);
-  }, [settings, isHydrated]);
-
-  const updateSetting = useCallback(
-    <K extends keyof ForecastingSettings>(key: K, value: ForecastingSettings[K]) => {
-      setSettings((prev) => ({ ...prev, [key]: value }));
-    },
-    []
-  );
+  const settings = apiSettings ?? DEFAULT_SETTINGS;
 
   // Derive values from budget data where possible
   const derivedMonthlySavings =
@@ -107,26 +101,62 @@ export function ForecastingPanel({
 
   const currentNetWorth = snapshots.length > 0 ? snapshots[0].net_worth : 0;
 
+  const derivedPensionMonthlySalary =
+    settings.pensionMonthlySalaryOverride ?? budgetTotals?.gross_income ?? 0;
+
+  const pensionActive = settings.pensionAccruedMonthly !== null;
+
+  // Weighted return by asset allocation (from latest snapshot groups)
+  const latestByGroup = useMemo(
+    () => (snapshots.length > 0 ? snapshots[0].by_group : {}),
+    [snapshots]
+  );
+  const groupReturnRates = useMemo(() => {
+    const rates: Record<string, number> = {};
+    for (const group of Object.keys(latestByGroup)) {
+      rates[group] = settings.groupReturnRates[group] ?? getDefaultReturnForGroup(group);
+    }
+    return rates;
+  }, [latestByGroup, settings.groupReturnRates]);
+
+  const weightedReturnPct = useMemo(
+    () => calcWeightedReturn(latestByGroup, groupReturnRates),
+    [latestByGroup, groupReturnRates]
+  );
+
   const fireInputs: FireInputs = useMemo(
     () => ({
       currentNetWorth,
       monthlyContribution: derivedMonthlySavings,
       annualExpenses: derivedAnnualExpenses,
-      annualReturnPct: settings.annualReturnPct,
+      annualReturnPct: weightedReturnPct,
       inflationPct: settings.inflationPct,
       currentAge: settings.currentAge,
       targetRetirementAge: settings.targetRetirementAge,
       safeWithdrawalRate: settings.safeWithdrawalRate,
+      ...(pensionActive && {
+        pensionAccruedMonthly: settings.pensionAccruedMonthly!,
+        pensionMonthlySalary: derivedPensionMonthlySalary,
+        pensionAccrualRate: settings.pensionAccrualRate,
+        pensionFullAge: settings.pensionFullAge,
+        lifeExpectancy: settings.lifeExpectancy,
+      }),
     }),
     [
       currentNetWorth,
       derivedMonthlySavings,
       derivedAnnualExpenses,
-      settings.annualReturnPct,
+      weightedReturnPct,
       settings.inflationPct,
       settings.currentAge,
       settings.targetRetirementAge,
       settings.safeWithdrawalRate,
+      pensionActive,
+      settings.pensionAccruedMonthly,
+      derivedPensionMonthlySalary,
+      settings.pensionAccrualRate,
+      settings.pensionFullAge,
+      settings.lifeExpectancy,
     ]
   );
 
@@ -141,12 +171,20 @@ export function ForecastingPanel({
       coastNetWorth: p.coastNetWorth,
       fireNumber: result.fireNumber,
       coastFireNumber: result.coastFireNumber,
+      ...(p.netWorthEarly !== undefined && { netWorthEarly: p.netWorthEarly }),
+      ...(p.netWorthNormal !== undefined && { netWorthNormal: p.netWorthNormal }),
+      ...(p.netWorthLate !== undefined && { netWorthLate: p.netWorthLate }),
     }));
   }, [result]);
 
   // Y-axis domain
   const yDomain = useMemo(() => {
-    const vals = chartData.flatMap((d) => [d.netWorth, d.coastNetWorth, d.fireNumber]);
+    const vals = chartData.flatMap((d) => {
+      const v = [d.netWorth, d.coastNetWorth, d.fireNumber];
+      if ("netWorthEarly" in d) v.push(d.netWorthEarly as number);
+      if ("netWorthLate" in d) v.push(d.netWorthLate as number);
+      return v;
+    });
     const max = Math.max(...vals);
     const min = Math.min(0, ...vals);
     const pad = (max - min) * 0.05;
@@ -172,35 +210,52 @@ export function ForecastingPanel({
     payload,
   }: {
     active?: boolean;
-    payload?: Array<{
-      payload: {
-        age: number;
-        netWorth: number;
-        coastNetWorth: number;
-        fireNumber: number;
-        coastFireNumber: number;
-      };
-    }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    payload?: Array<{ payload: Record<string, any> }>;
   }) => {
     if (!active || !payload?.length) return null;
     const d = payload[0].payload;
+    const hasPensionLines = "netWorthEarly" in d;
     return (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-sm">
         <p className="font-medium text-gray-900 dark:text-gray-100 mb-1">
           Age {d.age}
         </p>
-        <p className="text-emerald-600 dark:text-emerald-400">
-          With savings: {formatCurrencyRounded(d.netWorth)}
-        </p>
-        <p className="text-blue-500 dark:text-blue-400">
-          Coast (no savings): {formatCurrencyRounded(d.coastNetWorth)}
-        </p>
-        <p className="text-amber-600 dark:text-amber-400">
-          FIRE target: {formatCurrencyRounded(d.fireNumber)}
-        </p>
+        {hasPensionLines ? (
+          <>
+            <p style={{ color: "#009E73" }}>
+              Portfolio: {formatCurrencyRounded(d.netWorthNormal)}
+            </p>
+            {d.netWorthEarly !== d.netWorthNormal && (
+              <>
+                <p style={{ color: "#E69F00" }}>
+                  If pension at {settings.pensionFullAge - 3}: {formatCurrencyRounded(d.netWorthEarly)}
+                </p>
+                <p style={{ color: "#56B4E9" }}>
+                  If pension at {settings.pensionFullAge + 3}: {formatCurrencyRounded(d.netWorthLate)}
+                </p>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <p style={{ color: "#009E73" }}>
+              Portfolio: {formatCurrencyRounded(d.netWorth)}
+            </p>
+            <p style={{ color: "#CC79A7" }}>
+              Coast (no savings): {formatCurrencyRounded(d.coastNetWorth)}
+            </p>
+          </>
+        )}
       </div>
     );
   };
+
+  if (settingsLoading) {
+    return (
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 h-32 animate-pulse" />
+    );
+  }
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-4">
@@ -210,12 +265,13 @@ export function ForecastingPanel({
           FIRE Forecast
         </div>
         <button
+          aria-label="Toggle FIRE forecast settings"
           onClick={() => setShowSettings((v) => !v)}
           className={cn(
-            "flex items-center gap-1.5 px-2 py-1 text-sm rounded transition-colors",
+            "flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
             showSettings
               ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-              : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
           )}
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -247,22 +303,16 @@ export function ForecastingPanel({
             max={120}
             step={1}
           />
-          <NumberInput
-            label="Retirement age"
-            value={settings.targetRetirementAge}
-            onChange={(v) => updateSetting("targetRetirementAge", v)}
-            min={settings.currentAge}
-            max={120}
-            step={1}
-          />
-          <NumberInput
-            label="Expected return %"
-            value={settings.annualReturnPct}
-            onChange={(v) => updateSetting("annualReturnPct", v)}
-            min={0}
-            max={30}
-            step={0.5}
-          />
+          {!pensionActive && (
+            <NumberInput
+              label="Retirement age"
+              value={settings.targetRetirementAge}
+              onChange={(v) => updateSetting("targetRetirementAge", v)}
+              min={settings.currentAge}
+              max={120}
+              step={1}
+            />
+          )}
           <NumberInput
             label="Inflation %"
             value={settings.inflationPct}
@@ -305,6 +355,90 @@ export function ForecastingPanel({
                 : undefined
             }
           />
+
+          {/* Expected returns per asset group */}
+          {Object.keys(latestByGroup).length > 0 && (
+            <>
+              <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Expected return % by asset group (weighted: {weightedReturnPct.toFixed(1)}%)
+                </div>
+              </div>
+              {Object.entries(latestByGroup)
+                .filter(([, amount]) => amount > 0)
+                .sort(([, a], [, b]) => b - a)
+                .map(([group]) => (
+                  <NumberInput
+                    key={group}
+                    label={group}
+                    value={groupReturnRates[group] ?? getDefaultReturnForGroup(group)}
+                    onChange={(v) => {
+                      const updated = { ...settings.groupReturnRates, [group]: v };
+                      updateSetting("groupReturnRates", updated);
+                    }}
+                    min={-10}
+                    max={30}
+                    step={0.5}
+                  />
+                ))}
+            </>
+          )}
+
+          {/* Pension (TyEL) section */}
+          <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+              Pension (TyEL)
+            </div>
+          </div>
+          <NumberInput
+            label="Accrued monthly pension"
+            value={settings.pensionAccruedMonthly ?? 0}
+            onChange={(v) => updateSetting("pensionAccruedMonthly", v || null)}
+            min={0}
+            step={50}
+            onClear={
+              settings.pensionAccruedMonthly !== null
+                ? () => updateSetting("pensionAccruedMonthly", null)
+                : undefined
+            }
+          />
+          <NumberInput
+            label="TyEL monthly salary"
+            value={settings.pensionMonthlySalaryOverride ?? derivedPensionMonthlySalary}
+            onChange={(v) => updateSetting("pensionMonthlySalaryOverride", v)}
+            min={0}
+            step={100}
+            placeholder={derivedPensionMonthlySalary.toString()}
+            onClear={
+              settings.pensionMonthlySalaryOverride !== null
+                ? () => updateSetting("pensionMonthlySalaryOverride", null)
+                : undefined
+            }
+          />
+          <NumberInput
+            label="Accrual rate %"
+            value={settings.pensionAccrualRate}
+            onChange={(v) => updateSetting("pensionAccrualRate", v)}
+            min={0}
+            max={10}
+            step={0.1}
+          />
+          <NumberInput
+            label="Full pension age"
+            value={settings.pensionFullAge}
+            onChange={(v) => updateSetting("pensionFullAge", v)}
+            min={60}
+            max={75}
+            step={1}
+          />
+          <NumberInput
+            label="Life expectancy"
+            value={settings.lifeExpectancy}
+            onChange={(v) => updateSetting("lifeExpectancy", v)}
+            min={settings.pensionFullAge + 3}
+            max={120}
+            step={1}
+          />
         </div>
       )}
 
@@ -313,46 +447,123 @@ export function ForecastingPanel({
         <MetricCard
           label="FIRE Number"
           value={formatCurrencyRounded(result.fireNumber)}
-          sublabel={`${settings.safeWithdrawalRate}% SWR`}
+          sublabel={result.pension ? "Die with zero (pension)" : `${settings.safeWithdrawalRate}% SWR`}
         />
         <MetricCard
           label="Years to FIRE"
           value={result.yearsToFire !== null ? `${result.yearsToFire}` : "N/A"}
           sublabel={
             result.fireAge !== null
-              ? `Age ${Math.round(result.fireAge)}`
+              ? result.onTrack
+                ? `Age ${Math.round(result.fireAge)} — on track`
+                : `Age ${Math.round(result.fireAge)} — target ${settings.targetRetirementAge}`
               : "Increase savings or return"
           }
-          highlight={result.yearsToFire !== null && result.yearsToFire <= 0}
+          highlight={result.onTrack}
         />
         <MetricCard
           label="Coast FIRE"
           value={formatCurrencyRounded(result.coastFireNumber)}
           sublabel={
             result.coastFireReached
-              ? "Reached!"
-              : result.coastFireAge !== null
-                ? `At age ${Math.round(result.coastFireAge)}`
-                : "Not yet reachable"
+              ? "Reached — can stop saving!"
+              : `${formatCurrencyRounded(result.coastFireNumber - currentNetWorth)} to go`
           }
           highlight={result.coastFireReached}
         />
         <MetricCard
           label="Real return"
-          value={`${(settings.annualReturnPct - settings.inflationPct).toFixed(1)}%`}
-          sublabel={`${settings.annualReturnPct}% - ${settings.inflationPct}% infl.`}
+          value={`${(weightedReturnPct - settings.inflationPct).toFixed(1)}%`}
+          sublabel={`${weightedReturnPct.toFixed(1)}% weighted - ${settings.inflationPct}% infl.`}
         />
       </div>
+
+      {/* Pension scenarios */}
+      {result.pension && (() => {
+        const pension = result.pension;
+        const labels: Record<string, string> = {
+          early: "Early pension",
+          normal: "Normal pension",
+          late: "Delayed pension",
+        };
+        const colors: Record<string, string> = {
+          early: "#E69F00",
+          normal: "#009E73",
+          late: "#56B4E9",
+        };
+        const normalScenario = pension.scenarios[1];
+        const coveragePct = derivedAnnualExpenses > 0
+          ? Math.round((normalScenario.annualPension / derivedAnnualExpenses) * 100)
+          : 0;
+        return (
+          <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+              Pension estimate: currently accrued {formatCurrencyRounded(settings.pensionAccruedMonthly ?? 0)}/mo will grow to {formatCurrencyRounded(pension.projectedMonthlyPension)}/mo if working until {settings.targetRetirementAge}, which would cover {coveragePct}% of expenses.
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-sm">
+              {pension.scenarios.map((s) => (
+                <div key={s.label}>
+                  <div className="font-bold" style={{ color: colors[s.label] }}>
+                    {formatCurrencyRounded(s.monthlyPension)}/mo
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {labels[s.label]} at {s.pensionStartAge}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Portfolio depletion warning */}
+      {result.portfolioDepletedAge !== null && result.pension && (() => {
+        const normalPension = result.pension.scenarios[1];
+        const monthlyExpenses = derivedAnnualExpenses / 12;
+        const shortfall = monthlyExpenses - normalPension.monthlyPension;
+        const pensionStarted = result.portfolioDepletedAge >= normalPension.pensionStartAge;
+        return (
+          <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm">
+            {pensionStarted ? (
+              <span className="text-amber-700 dark:text-amber-300">
+                Portfolio runs out at age {result.portfolioDepletedAge}. Pension of {formatCurrencyRounded(normalPension.monthlyPension)}/mo
+                {shortfall > 0
+                  ? ` leaves a ${formatCurrencyRounded(shortfall)}/mo shortfall.`
+                  : ` covers all expenses.`}
+              </span>
+            ) : (
+              <span className="text-red-600 dark:text-red-400">
+                Portfolio runs out at age {result.portfolioDepletedAge}, before pension starts at {normalPension.pensionStartAge}. No income until then.
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Retirement age slider (pension mode) */}
+      {pensionActive && (
+        <div className="space-y-1">
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            Retire at age
+          </div>
+          <RetirementSlider
+            value={settings.targetRetirementAge}
+            min={settings.currentAge + 1}
+            max={settings.pensionFullAge + 3}
+            onChange={(v) => updateSetting("targetRetirementAge", v)}
+          />
+        </div>
+      )}
 
       {/* Projection chart */}
       {chartData.length > 1 && (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} role="img" aria-label="FIRE projection chart">
               <defs>
                 <linearGradient id="fireProjectionGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#009E73" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#009E73" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -383,7 +594,7 @@ export function ForecastingPanel({
               {/* FIRE number line */}
               <ReferenceLine
                 y={result.fireNumber}
-                stroke="#f59e0b"
+                stroke="#D55E00"
                 strokeWidth={2}
                 strokeDasharray="8 4"
               />
@@ -391,7 +602,7 @@ export function ForecastingPanel({
               {/* Coast FIRE number line */}
               <ReferenceLine
                 y={result.coastFireNumber}
-                stroke="#6366f1"
+                stroke={result.pension ? "#CC79A7" : "#56B4E9"}
                 strokeWidth={1.5}
                 strokeDasharray="4 4"
               />
@@ -406,43 +617,76 @@ export function ForecastingPanel({
                 />
               )}
 
+              {/* Zero line for pension drawdown */}
+              {result.pension && (
+                <ReferenceLine y={0} stroke="#9ca3af" strokeWidth={1} />
+              )}
+
               {/* Net worth with savings */}
               <Area
                 type="monotone"
-                dataKey="netWorth"
-                stroke="#10b981"
+                dataKey={result.pension ? "netWorthNormal" : "netWorth"}
+                stroke="#009E73"
                 strokeWidth={2}
                 fill="url(#fireProjectionGrad)"
               />
 
-              {/* Coast scenario (no more savings) */}
-              <Line
-                type="monotone"
-                dataKey="coastNetWorth"
-                stroke="#6366f1"
-                strokeWidth={1.5}
-                strokeDasharray="5 5"
-                dot={false}
-              />
+              {/* Coast scenario (no more savings) — hide when pension active */}
+              {!result.pension && (
+                <Line
+                  type="monotone"
+                  dataKey="coastNetWorth"
+                  stroke="#CC79A7"
+                  strokeWidth={1.5}
+                  strokeDasharray="5 5"
+                  dot={false}
+                />
+              )}
+
+              {/* Pension scenario lines */}
+              {result.pension && (
+                <>
+                  <Line
+                    type="monotone"
+                    dataKey="netWorthEarly"
+                    stroke="#E69F00"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="netWorthLate"
+                    stroke="#56B4E9"
+                    strokeWidth={1.5}
+                    strokeDasharray="5 5"
+                    dot={false}
+                  />
+                </>
+              )}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
       )}
 
       {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-emerald-500 inline-block" /> With savings
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-indigo-500 inline-block" style={{ borderTop: "2px dashed" }} /> Coast (no savings)
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-amber-500 inline-block" style={{ borderTop: "2px dashed" }} /> FIRE target
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-indigo-500 inline-block" style={{ borderTop: "1.5px dashed" }} /> Coast FIRE
-        </span>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+        {result.pension ? (
+          <>
+            <LegendItem color="#009E73" label="Normal pension" />
+            <LegendItem color="#E69F00" label="Early pension" dashed />
+            <LegendItem color="#56B4E9" label="Delayed pension" dashed />
+            <LegendItem color="#D55E00" label="FIRE target" dashed />
+            <LegendItem color="#CC79A7" label="Coast FIRE" dashed />
+          </>
+        ) : (
+          <>
+            <LegendItem color="#009E73" label="With savings" />
+            <LegendItem color="#CC79A7" label="Coast (no savings)" dashed />
+            <LegendItem color="#D55E00" label="FIRE target" dashed />
+            <LegendItem color="#56B4E9" label="Coast FIRE" dashed />
+          </>
+        )}
       </div>
     </div>
   );
@@ -472,12 +716,12 @@ function MetricCard({
           : "border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900"
       )}
     >
-      <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</div>
+      <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">{label}</div>
       <div className="text-lg font-bold text-gray-900 dark:text-gray-100">{value}</div>
       {sublabel && (
         <div
           className={cn(
-            "text-xs mt-0.5",
+            "text-sm mt-0.5",
             highlight
               ? "text-emerald-600 dark:text-emerald-400"
               : "text-gray-500 dark:text-gray-400"
@@ -511,7 +755,7 @@ function NumberInput({
 }) {
   return (
     <div>
-      <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+      <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{label}</label>
       <div className="flex items-center gap-1">
         <input
           type="number"
@@ -526,12 +770,119 @@ function NumberInput({
         {onClear && (
           <button
             onClick={onClear}
-            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 px-1"
+            className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 px-1"
             title="Reset to auto"
           >
             Auto
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+function LegendItem({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <svg width="16" height="4" className="inline-block">
+        <line
+          x1="0" y1="2" x2="16" y2="2"
+          stroke={color}
+          strokeWidth={2}
+          strokeDasharray={dashed ? "4 2" : undefined}
+        />
+      </svg>
+      {label}
+    </span>
+  );
+}
+
+function RetirementSlider({
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  const thumbSize = dragging ? 40 : 28;
+  const halfThumb = thumbSize / 2;
+
+  const getValueFromEvent = useCallback(
+    (clientX: number) => {
+      const track = trackRef.current;
+      if (!track) return value;
+      const rect = track.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      return Math.round(min + ratio * (max - min));
+    },
+    [min, max, value]
+  );
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      setDragging(true);
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      onChange(getValueFromEvent(e.clientX));
+    },
+    [onChange, getValueFromEvent]
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging) return;
+      onChange(getValueFromEvent(e.clientX));
+    },
+    [dragging, onChange, getValueFromEvent]
+  );
+
+  const handlePointerUp = useCallback(() => {
+    setDragging(false);
+  }, []);
+
+  return (
+    <div className="pt-2 pb-1">
+      <div
+        ref={trackRef}
+        className="relative h-2 rounded-full bg-gray-200 dark:bg-gray-700 cursor-pointer select-none touch-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+      >
+        {/* Filled portion */}
+        <div
+          className="absolute top-0 left-0 h-full rounded-full bg-emerald-500"
+          style={{ width: `${pct}%` }}
+        />
+        {/* Thumb with number */}
+        <div
+          className={cn(
+            "absolute top-1/2 flex items-center justify-center rounded-full",
+            "bg-emerald-500 text-white font-bold shadow-md",
+            "transition-all duration-150 ease-out",
+            dragging ? "scale-110" : ""
+          )}
+          style={{
+            width: thumbSize,
+            height: thumbSize,
+            left: `calc(${pct}% - ${halfThumb}px)`,
+            transform: "translateY(-50%)",
+            fontSize: dragging ? 14 : 12,
+          }}
+        >
+          {value}
+        </div>
+      </div>
+      <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400 mt-2">
+        <span>{min}</span>
+        <span>{max}</span>
       </div>
     </div>
   );

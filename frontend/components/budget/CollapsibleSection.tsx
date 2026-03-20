@@ -24,12 +24,12 @@ export function CollapsibleSection({
 
   return (
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors rounded-t-lg"
-      >
-        <div className="flex items-center gap-3">
+      <div className="w-full px-4 py-3 flex items-center justify-between rounded-t-lg">
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+        >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             width="16"
@@ -40,8 +40,9 @@ export function CollapsibleSection({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
             className={cn(
-              "text-gray-400 transition-transform",
+              "text-gray-500 transition-transform",
               isOpen && "rotate-90"
             )}
           >
@@ -50,25 +51,23 @@ export function CollapsibleSection({
           <span className="font-semibold text-gray-900 dark:text-gray-100">
             {title}
           </span>
-        </div>
+        </button>
         <div className="flex items-center gap-3">
           {total && (
             <span className={cn("font-medium", totalClassName)}>{total}</span>
           )}
           {onAdd && (
-            <span
-              role="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onAdd();
-              }}
-              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 -my-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
+            <button
+              type="button"
+              aria-label={`Add ${title}`}
+              onClick={onAdd}
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-3 py-2 -my-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
               + Add
-            </span>
+            </button>
           )}
         </div>
-      </button>
+      </div>
       {isOpen && (
         <div className="border-t border-gray-200 dark:border-gray-800">
           {children}

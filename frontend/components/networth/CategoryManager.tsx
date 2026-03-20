@@ -344,9 +344,10 @@ export function CategoryManager({ open, onOpenChange, categories }: CategoryMana
                               <button
                                 key={color}
                                 type="button"
+                                aria-label={`Select color ${color}`}
                                 onClick={() => setGroupFormState((s) => ({ ...s, color }))}
                                 className={cn(
-                                  "w-6 h-6 rounded border-2 transition-all",
+                                  "w-8 h-8 rounded border-2 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
                                   groupFormState.color === color
                                     ? "border-gray-800 dark:border-white scale-110"
                                     : "border-transparent"
