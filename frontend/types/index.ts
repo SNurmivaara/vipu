@@ -200,17 +200,40 @@ export interface GoalProgress {
   category_name?: string | null;
 }
 
-// FIRE / Forecasting settings (persisted to localStorage)
+// FIRE / Forecasting settings (frontend camelCase)
 export interface ForecastingSettings {
-  annualReturnPct: number;
   inflationPct: number;
   safeWithdrawalRate: number;
   currentAge: number;
   targetRetirementAge: number;
-  /** Override for monthly savings; null = derive from budget */
   monthlySavingsOverride: number | null;
-  /** Override for annual expenses; null = derive from budget */
   annualExpensesOverride: number | null;
+  // Pension (TyEL) — null values = pension features disabled
+  pensionAccruedMonthly: number | null;
+  pensionMonthlySalaryOverride: number | null;
+  pensionAccrualRate: number;
+  pensionFullAge: number;
+  lifeExpectancy: number;
+  /** Expected annual return % per net worth group name */
+  groupReturnRates: Record<string, number>;
+}
+
+// API response shape (snake_case from backend)
+export interface ForecastingSettingsAPI {
+  id: number;
+  inflation_pct: number;
+  safe_withdrawal_rate: number;
+  current_age: number;
+  target_retirement_age: number;
+  monthly_savings_override: number | null;
+  annual_expenses_override: number | null;
+  pension_accrued_monthly: number | null;
+  pension_monthly_salary_override: number | null;
+  pension_accrual_rate: number;
+  pension_full_age: number;
+  life_expectancy: number;
+  group_return_rates: Record<string, number>;
+  updated_at: string;
 }
 
 // Forecast types

@@ -55,6 +55,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
         accounts,
         budget,
         expenses,
+        forecasting,
         goals,
         health,
         income,
@@ -72,6 +73,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
     app.register_blueprint(seed.bp)
     app.register_blueprint(networth.bp)
     app.register_blueprint(goals.bp)
+    app.register_blueprint(forecasting.bp)
 
     @app.teardown_appcontext
     def shutdown_session(exception: BaseException | None = None) -> None:

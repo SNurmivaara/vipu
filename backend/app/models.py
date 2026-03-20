@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -192,6 +193,80 @@ class BudgetSettings(Base):
             "tax_percentage": float(self.tax_percentage),
             "updated_at": self.updated_at.isoformat(),
             "payday_day": self.payday_day,
+        }
+
+
+class ForecastingSettings(Base):
+    """FIRE forecasting settings (singleton row)."""
+
+    __tablename__ = "forecasting_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    inflation_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("2.0")
+    )
+    safe_withdrawal_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("4.0")
+    )
+    current_age: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    target_retirement_age: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=65
+    )
+    monthly_savings_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True, default=None
+    )
+    annual_expenses_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True, default=None
+    )
+    # Pension (TyEL)
+    pension_accrued_monthly: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True, default=None
+    )
+    pension_monthly_salary_override: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True, default=None
+    )
+    pension_accrual_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("1.5")
+    )
+    pension_full_age: Mapped[int] = mapped_column(Integer, nullable=False, default=68)
+    life_expectancy: Mapped[int] = mapped_column(Integer, nullable=False, default=95)
+    group_return_rates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "inflation_pct": float(self.inflation_pct),
+            "safe_withdrawal_rate": float(self.safe_withdrawal_rate),
+            "current_age": self.current_age,
+            "target_retirement_age": self.target_retirement_age,
+            "monthly_savings_override": (
+                float(self.monthly_savings_override)
+                if self.monthly_savings_override is not None
+                else None
+            ),
+            "annual_expenses_override": (
+                float(self.annual_expenses_override)
+                if self.annual_expenses_override is not None
+                else None
+            ),
+            "pension_accrued_monthly": (
+                float(self.pension_accrued_monthly)
+                if self.pension_accrued_monthly is not None
+                else None
+            ),
+            "pension_monthly_salary_override": (
+                float(self.pension_monthly_salary_override)
+                if self.pension_monthly_salary_override is not None
+                else None
+            ),
+            "pension_accrual_rate": float(self.pension_accrual_rate),
+            "pension_full_age": self.pension_full_age,
+            "life_expectancy": self.life_expectancy,
+            "group_return_rates": self.group_return_rates or {},
+            "updated_at": self.updated_at.isoformat(),
         }
 
 

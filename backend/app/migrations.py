@@ -87,6 +87,28 @@ MIGRATIONS: list[dict] = [
                 ADD COLUMN IF NOT EXISTS payment_due_day INTEGER;
         """,
     },
+    {
+        "id": "006_forecasting_settings",
+        "name": "Create forecasting_settings table for FIRE calculations",
+        "sql": """
+            CREATE TABLE IF NOT EXISTS forecasting_settings (
+                id SERIAL PRIMARY KEY,
+                inflation_pct NUMERIC(5,2) NOT NULL DEFAULT 2.0,
+                safe_withdrawal_rate NUMERIC(5,2) NOT NULL DEFAULT 4.0,
+                current_age INTEGER NOT NULL DEFAULT 30,
+                target_retirement_age INTEGER NOT NULL DEFAULT 65,
+                monthly_savings_override NUMERIC(12,2),
+                annual_expenses_override NUMERIC(12,2),
+                pension_accrued_monthly NUMERIC(12,2),
+                pension_monthly_salary_override NUMERIC(12,2),
+                pension_accrual_rate NUMERIC(5,2) NOT NULL DEFAULT 1.5,
+                pension_full_age INTEGER NOT NULL DEFAULT 68,
+                life_expectancy INTEGER NOT NULL DEFAULT 95,
+                group_return_rates JSONB NOT NULL DEFAULT '{}',
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            );
+        """,
+    },
 ]
 
 

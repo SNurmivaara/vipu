@@ -397,10 +397,10 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
               <button
                 key={scale}
                 onClick={() => handleTimeScaleChange(scale)}
-                className={`px-2 py-1 text-sm rounded ${
+                className={`px-2.5 py-1.5 text-sm rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                   timeScale === scale
                     ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
-                    : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                 }`}
               >
                 {TIME_SCALE_LABELS[scale]}
@@ -409,10 +409,11 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
           </div>
           <button
             onClick={handleToggleForecast}
-            className={`flex items-center gap-1.5 px-2 py-1 text-sm rounded transition-colors ${
+            aria-label="Toggle forecast"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               showForecast
                 ? "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             }`}
           >
             <svg
@@ -450,7 +451,7 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
         </div>
       )}
 
-      <div className="h-64">
+      <div className="h-64" role="img" aria-label="Net worth trend chart">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}

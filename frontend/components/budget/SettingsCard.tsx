@@ -58,9 +58,11 @@ export function SettingsCard({ settings }: SettingsCardProps) {
 
   return (
     <>
-      <div
+      <button
+        type="button"
+        aria-label="Edit budget settings"
         onClick={() => setIsEditing(true)}
-        className="inline-flex items-center gap-4 px-3 py-1.5 bg-gray-200 dark:bg-gray-800 rounded-full cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-700"
+        className="inline-flex items-center gap-4 px-3 py-1.5 bg-gray-200 dark:bg-gray-800 rounded-full cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
         <span className="inline-flex items-center gap-1">
           <span className="text-sm text-gray-600 dark:text-gray-400">Tax:</span>
@@ -76,7 +78,7 @@ export function SettingsCard({ settings }: SettingsCardProps) {
             {settings.payday_day}
           </span>
         </span>
-      </div>
+      </button>
 
       <EditDialog
         open={isEditing}

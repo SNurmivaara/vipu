@@ -21,6 +21,7 @@ import {
   GoalProgress,
   NetWorthForecast,
   ForecastPeriod,
+  ForecastingSettingsAPI,
 } from "@/types";
 
 export const api = axios.create({
@@ -320,6 +321,22 @@ export const updateGoal = async (
 
 export const deleteGoal = async (id: number): Promise<void> => {
   await api.delete(`/goals/${id}`);
+};
+
+// Forecasting Settings
+export const fetchForecastingSettings = async (): Promise<ForecastingSettingsAPI> => {
+  const { data } = await api.get<ForecastingSettingsAPI>("/forecasting/settings");
+  return data;
+};
+
+export const updateForecastingSettings = async (
+  settings: Partial<Omit<ForecastingSettingsAPI, "id" | "updated_at">>
+): Promise<ForecastingSettingsAPI> => {
+  const { data } = await api.put<ForecastingSettingsAPI>(
+    "/forecasting/settings",
+    settings
+  );
+  return data;
 };
 
 // Forecast
