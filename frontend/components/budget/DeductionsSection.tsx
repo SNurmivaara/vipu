@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IncomeItem, DeductionFormData } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
-import { formatCurrency, formatPercentage } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -201,54 +201,26 @@ export function DeductionsSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-4 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        <span>Name</span>
-        <span className="text-right">Gross</span>
-        <span className="text-right">Rate</span>
-        <span className="text-right">Net</span>
-      </div>
       {deductions.map((item) => {
         const netAmount = calculateNetAmount(item);
         return (
           <div
             key={item.id}
             onClick={() => openEdit(item)}
-            className="grid grid-cols-4 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+            className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
           >
-            <span className="text-gray-900 dark:text-gray-100">
+            <span className="text-gray-900 dark:text-gray-100 text-sm">
               {item.name}
             </span>
-            <span className="text-right text-gray-700 dark:text-gray-300">
-              {formatCurrency(item.gross_amount)}
-            </span>
-            <span className="text-right text-gray-500 dark:text-gray-400">
-              {formatPercentage(item.tax_percentage ?? 0)}
-            </span>
-            <span className="text-right font-medium text-red-600 dark:text-red-400">
+            <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
               {formatCurrency(netAmount)}
             </span>
           </div>
         );
       })}
       {deductions.length === 0 && (
-        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
           No deductions yet
-        </div>
-      )}
-      {deductions.length > 0 && (
-        <div className="grid grid-cols-4 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
-            Total
-          </span>
-          <span className="text-right text-gray-700 dark:text-gray-300">
-            —
-          </span>
-          <span className="text-right text-gray-500 dark:text-gray-400">
-            —
-          </span>
-          <span className="text-right font-semibold text-red-600 dark:text-red-400">
-            {formatCurrency(totalDeduction)}
-          </span>
         </div>
       )}
     </div>

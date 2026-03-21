@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExpenseItem, ExpenseFormData } from "@/types";
+import { ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
@@ -14,10 +14,10 @@ import { EditDialog } from "./EditDialog";
 import { useToast } from "@/components/ui/Toast";
 
 interface ExpensesGroupSectionProps {
-  expensesBeforePayday: ExpenseItem[];
-  expensesAfterPayday: ExpenseItem[];
+  expensesBeforePayday: ExpenseWithOccurrence[];
+  expensesAfterPayday: ExpenseWithOccurrence[];
   /** Expenses that don't fall in either period (future scheduled) */
-  expensesFuture?: ExpenseItem[];
+  expensesFuture?: ExpenseWithOccurrence[];
   defaultOpen?: boolean;
 }
 
@@ -93,8 +93,8 @@ export function ExpensesGroupSection({
           </span>
         </button>
         <div className="flex items-center gap-3">
-          <span className="font-medium text-gray-900 dark:text-gray-100">
-            {formatCurrency(totalExpenses)}
+          <span className="font-medium text-red-600 dark:text-red-400">
+            {formatCurrency(-totalExpenses)}
           </span>
           <button
             type="button"

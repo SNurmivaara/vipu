@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExpenseItem, ExpenseFormData } from "@/types";
+import { ExpenseItem, ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -15,7 +15,7 @@ import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
 
 interface ExpensesSectionProps {
-  expenses: ExpenseItem[];
+  expenses: ExpenseItem[] | ExpenseWithOccurrence[];
   title?: string;
   collapsible?: boolean;
   defaultOpen?: boolean;
@@ -181,20 +181,69 @@ export function ExpensesSection({
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
+  // Helper to check if expense has occurrence date
+  const hasOccurrence = (e: ExpenseItem | ExpenseWithOccurrence): e is ExpenseWithOccurrence =>
+    "next_occurrence_date" in e && e.next_occurrence_date !== null;
+
+  // Sort by occurrence date, then by name
+  const sortedExpenses = [...expenses].sort((a, b) => {
+    const aDate = hasOccurrence(a) ? a.next_occurrence_date : null;
+    const bDate = hasOccurrence(b) ? b.next_occurrence_date : null;
+
+    if (aDate && bDate) {
+      const cmp = aDate.localeCompare(bDate);
+      if (cmp !== 0) return cmp;
+    } else if (aDate) {
+      return -1;
+    } else if (bDate) {
+      return 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  // Format due date for display: "dd.mm." or "dd.mm.yyyy" if not current year
+  const formatDueDate = (expense: ExpenseItem | ExpenseWithOccurrence) => {
+    const occurrenceDate = hasOccurrence(expense) ? expense.next_occurrence_date : null;
+
+    if (occurrenceDate) {
+      const date = new Date(occurrenceDate);
+      const day = date.getDate();
+      const month = date.getMonth() + 1;
+      const year = date.getFullYear();
+      const currentYear = new Date().getFullYear();
+
+      if (year !== currentYear) {
+        return `${day}.${month}.${year}`;
+      }
+      return `${day}.${month}.`;
+    }
+    // Fallback for expenses without occurrence date
+    return `${expense.due_day}.`;
+  };
+
+  // Generate unique key for expense (handles multiple occurrences of same expense)
+  const getExpenseKey = (expense: ExpenseItem | ExpenseWithOccurrence) => {
+    const occurrenceDate = hasOccurrence(expense) ? expense.next_occurrence_date : null;
+    return occurrenceDate ? `${expense.id}-${occurrenceDate}` : `${expense.id}`;
+  };
+
   // Simplified content for subsections (no header row, no total row)
   const subsectionContent = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      {expenses.map((expense) => (
+      {sortedExpenses.map((expense) => (
         <div
-          key={expense.id}
+          key={getExpenseKey(expense)}
           onClick={() => openEdit(expense)}
-          className="grid grid-cols-2 px-4 py-2 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+          className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
         >
           <span className="text-gray-900 dark:text-gray-100 text-sm">
             {expense.name}
+            <span className="text-gray-400 dark:text-gray-500 ml-1.5">
+              ({formatDueDate(expense)})
+            </span>
           </span>
           <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
-            {formatCurrency(expense.amount)}
+            {formatCurrency(-expense.amount)}
           </span>
         </div>
       ))}
@@ -212,9 +261,9 @@ export function ExpensesSection({
         <span>Expense</span>
         <span className="text-right">Monthly</span>
       </div>
-      {expenses.map((expense) => (
+      {sortedExpenses.map((expense) => (
         <div
-          key={expense.id}
+          key={getExpenseKey(expense)}
           onClick={() => openEdit(expense)}
           className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
         >
@@ -274,7 +323,7 @@ export function ExpensesSection({
       <>
         <SubsectionCollapsible
           title={title}
-          total={formatCurrency(totalExpenses)}
+          total={formatCurrency(-totalExpenses)}
           defaultOpen={defaultOpen}
         >
           {subsectionContent}
@@ -290,7 +339,7 @@ export function ExpensesSection({
         <CollapsibleSection
           title={title}
           total={formatCurrency(totalExpenses)}
-          totalClassName="text-gray-900 dark:text-gray-100"
+          totalClassName="text-red-600 dark:text-red-400"
           defaultOpen={defaultOpen}
           onAdd={openNew}
         >

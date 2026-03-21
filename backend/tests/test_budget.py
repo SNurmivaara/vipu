@@ -307,10 +307,10 @@ class TestBudget:
         assert response.status_code == 200
         data = response.json
 
-        # Check counts (5 income, 4 accounts, 10 expenses)
+        # Check counts (5 income, 4 accounts, 12 expenses)
         assert len(data["income"]) == 5
         assert len(data["accounts"]) == 4
-        assert len(data["expenses"]) == 10
+        assert len(data["expenses"]) == 12
 
         # Check settings
         assert data["settings"]["tax_percentage"] == 25.0
@@ -334,11 +334,11 @@ class TestBudget:
         # Current balance: 3500 + 8000 + (-750) + (-200) = 10550
         assert totals["current_balance"] == 10550.0
 
-        # Total expenses: 1200+100+150+50+1200+50+800+300+100+500 = 4450
-        assert totals["total_expenses"] == 4450.0
+        # Total expenses: 1200+100+150+50+500+1200+50+150+2000+300+100+500 = 6300
+        assert totals["total_expenses"] == 6300.0
 
-        # Net position: 10550 - 4450 = 6100
-        assert totals["net_position"] == 6100.0
+        # Net position: 10550 - 6300 = 4250
+        assert totals["net_position"] == 4250.0
 
 
 class TestSeed:
@@ -354,7 +354,7 @@ class TestSeed:
         assert data["counts"]["settings"] == 1
         assert data["counts"]["income_items"] == 5
         assert data["counts"]["accounts"] == 4
-        assert data["counts"]["expenses"] == 10
+        assert data["counts"]["expenses"] == 12
 
     def test_seed_is_idempotent(self, client):
         """POST /api/seed clears and recreates data."""
@@ -368,7 +368,7 @@ class TestSeed:
         data = budget_response.json
         assert len(data["income"]) == 5
         assert len(data["accounts"]) == 4
-        assert len(data["expenses"]) == 10
+        assert len(data["expenses"]) == 12
 
 
 class TestNetIncomeCalculation:
