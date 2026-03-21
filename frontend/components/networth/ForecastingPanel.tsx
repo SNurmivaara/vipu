@@ -476,7 +476,7 @@ export function ForecastingPanel({
         <MetricCard
           label="FIRE Number"
           value={formatCurrencyRounded(result.fireNumber)}
-          sublabel={result.pension ? "Die with zero (pension)" : `${settings.safeWithdrawalRate}% SWR`}
+          sublabel={result.pension ? `${settings.safeWithdrawalRate}% SWR + pension` : `${settings.safeWithdrawalRate}% SWR`}
         />
         <MetricCard
           label="Years to FIRE"

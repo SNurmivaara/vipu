@@ -221,31 +221,34 @@ export function pvAnnuity(
 }
 
 /**
- * Pension-adjusted FIRE number using two-phase die-with-zero model.
+ * Pension-adjusted FIRE number using two-phase SWR + pension model.
  *
- * Phase 1 (FIRE age → pension start): portfolio covers ALL expenses.
- * Phase 2 (pension start → life expectancy): portfolio covers (expenses - pension).
+ * Phase 1 (FIRE age → pension start): portfolio covers ALL expenses via annuity drawdown.
+ * Phase 2 (pension start → ∞): portfolio sustains (expenses - pension) indefinitely via SWR.
+ *
+ * FIRE number = PV of phase 1 expenses + PV of phase 2 portfolio needed at pension start.
  */
 export function calcPensionFireNumber(
   annualExpenses: number,
   annualPension: number,
   fireAge: number,
   pensionStartAge: number,
-  lifeExpectancy: number,
+  swrPct: number,
   realAnnualReturn: number
 ): number {
   const r = realAnnualReturn;
   const phase1Years = Math.max(0, pensionStartAge - fireAge);
-  const phase2Years = Math.max(0, lifeExpectancy - pensionStartAge);
-  const phase2Gap = Math.max(0, annualExpenses - annualPension);
+
+  // Portfolio needed at pension start to sustain the gap indefinitely via SWR
+  const phase2AnnualGap = Math.max(0, annualExpenses - annualPension);
+  const phase2Portfolio = swrPct > 0 ? phase2AnnualGap / (swrPct / 100) : Infinity;
 
   const phase1PV = pvAnnuity(annualExpenses, phase1Years, r);
-  const phase2PVatPensionAge = pvAnnuity(phase2Gap, phase2Years, r);
 
-  // Discount phase 2 back to FIRE age
+  // Discount phase 2 portfolio back to FIRE age
   const discountFactor =
     phase1Years > 0 ? Math.pow(1 + r, -phase1Years) : 1;
-  const phase2PV = phase2PVatPensionAge * discountFactor;
+  const phase2PV = phase2Portfolio * discountFactor;
 
   return phase1PV + phase2PV;
 }
@@ -278,7 +281,7 @@ export function generatePensionScenarios(
   pensionFullAge: number,
   fireAge: number,
   annualExpenses: number,
-  lifeExpectancy: number,
+  swrPct: number,
   realAnnualReturn: number
 ): [PensionScenario, PensionScenario, PensionScenario] {
   const configs: Array<{ label: "early" | "normal" | "late"; offset: number }> = [
@@ -300,7 +303,7 @@ export function generatePensionScenarios(
       annualPension,
       fireAge,
       pensionStartAge,
-      lifeExpectancy,
+      swrPct,
       realAnnualReturn
     );
     return { label, pensionStartAge, monthlyPension, annualPension, pensionFireNumber };
@@ -446,7 +449,6 @@ export function calculateFire(inputs: FireInputs): FireResult {
   if (hasPension) {
     const accrualRate = inputs.pensionAccrualRate ?? 1.5;
     const pensionFullAge = inputs.pensionFullAge ?? 68;
-    const lifeExpectancy = inputs.lifeExpectancy ?? 95;
     const monthlySalary = inputs.pensionMonthlySalary ?? 0;
 
     // Use target retirement age directly as the FIRE age.
@@ -471,7 +473,7 @@ export function calculateFire(inputs: FireInputs): FireResult {
       pensionFullAge,
       retirementAge,
       inputs.annualExpenses,
-      lifeExpectancy,
+      inputs.safeWithdrawalRate,
       realReturn
     );
 
@@ -486,7 +488,7 @@ export function calculateFire(inputs: FireInputs): FireResult {
             scenario.annualPension,
             retirementAge,
             scenario.pensionStartAge,
-            lifeExpectancy,
+            inputs.safeWithdrawalRate,
             realReturn
           );
         }
