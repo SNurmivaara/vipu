@@ -287,17 +287,11 @@ export default function BudgetPage() {
         </div>
         <div className="space-y-4">
           <ExpensesGroupSection
-            expensesBeforePayday={data.expenses.filter(
-              (e) => !e.is_savings_goal && data.totals.expenses_before_payday_ids.includes(e.id)
-            )}
-            expensesAfterPayday={data.expenses.filter(
-              (e) => !e.is_savings_goal && data.totals.expenses_next_period_ids.includes(e.id)
-            )}
+            expensesBeforePayday={data.totals.expenses_before_payday_list}
+            expensesAfterPayday={data.totals.expenses_next_period_list}
             expensesFuture={[
-              ...data.expenses.filter(
-                (e) => !e.is_savings_goal && data.totals.expenses_future_ids.includes(e.id)
-              ),
-              ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal) : []),
+              ...data.totals.expenses_future_list,
+              ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal).map(e => ({ ...e, next_occurrence_date: null })) : []),
             ]}
           />
           <SavingsGoalsSection

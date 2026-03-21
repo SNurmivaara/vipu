@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -123,6 +123,11 @@ def seed_data() -> Response:
     for account in accounts:
         session.add(account)
 
+    # Calculate some future dates for variety
+    today = date.today()
+    next_week = today + timedelta(days=7)
+    in_3_months = today + timedelta(days=90)
+
     # Create expenses with various frequencies
     expenses = [
         # Monthly rent on 1st
@@ -133,11 +138,11 @@ def seed_data() -> Response:
             frequency_value=1,
             frequency_unit="months",
         ),
-        # Weekly groceries
+        # Weekly groceries (shows multiple occurrences per period)
         ExpenseItem(
             name="Groceries",
             amount=Decimal("100.00"),
-            due_day=1,
+            due_day=today.day,  # Use today's day so first occurrence is soon
             frequency_value=1,
             frequency_unit="weeks",
         ),
@@ -153,17 +158,27 @@ def seed_data() -> Response:
         ExpenseItem(
             name="Transport",
             amount=Decimal("50.00"),
-            due_day=1,
+            due_day=today.day,
             frequency_value=2,
             frequency_unit="weeks",
         ),
-        # Yearly insurance (spread monthly)
+        # Quarterly tax payment (shows in "Future" if not due soon)
         ExpenseItem(
-            name="Insurance",
+            name="Quarterly taxes",
+            amount=Decimal("500.00"),
+            due_day=15,
+            frequency_value=3,
+            frequency_unit="months",
+            start_date=in_3_months,  # Starts 3 months from now
+        ),
+        # Yearly insurance - starts 3 months out to show in "Future"
+        ExpenseItem(
+            name="Home insurance",
             amount=Decimal("1200.00"),
             due_day=10,
             frequency_value=1,
             frequency_unit="years",
+            start_date=in_3_months,
         ),
         # Monthly subscriptions
         ExpenseItem(
@@ -173,15 +188,25 @@ def seed_data() -> Response:
             frequency_value=1,
             frequency_unit="months",
         ),
-        # One-time expense (ephemeral) - vacation booking
+        # One-time expense coming up next week
         ExpenseItem(
-            name="Vacation booking",
-            amount=Decimal("800.00"),
-            due_day=10,
+            name="Concert tickets",
+            amount=Decimal("150.00"),
+            due_day=next_week.day,
             frequency_value=1,
             frequency_unit="months",
             is_ephemeral=True,
-            start_date=date.today(),
+            start_date=next_week,
+        ),
+        # One-time expense in the future (shows in "Future" section)
+        ExpenseItem(
+            name="Vacation booking",
+            amount=Decimal("2000.00"),
+            due_day=in_3_months.day,
+            frequency_value=1,
+            frequency_unit="months",
+            is_ephemeral=True,
+            start_date=in_3_months,
         ),
         # Savings goal - monthly
         ExpenseItem(
@@ -201,7 +226,7 @@ def seed_data() -> Response:
             frequency_value=2,
             frequency_unit="weeks",
         ),
-        # One-time savings goal (ephemeral)
+        # One-time savings goal for next month
         ExpenseItem(
             name="New laptop fund",
             amount=Decimal("500.00"),
@@ -210,7 +235,7 @@ def seed_data() -> Response:
             frequency_value=1,
             frequency_unit="months",
             is_ephemeral=True,
-            start_date=date.today(),
+            start_date=today + timedelta(days=30),
         ),
     ]
     for expense in expenses:

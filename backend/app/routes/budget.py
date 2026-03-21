@@ -123,52 +123,87 @@ def get_current_budget() -> Response:
         payday_day=settings.payday_day,
     )
 
-    # Calculate expense IDs for each period (for frontend filtering)
-    # Single sweep: check both periods for each expense at once
+    # Calculate expense occurrences for each period (for frontend display)
+    # Returns expense dicts with next_occurrence_date for each period
+    expenses_before_payday_list: list[dict] = []
+    expenses_next_period_list: list[dict] = []
+    expenses_future_list: list[dict] = []
+
+    # Also keep ID lists for backward compatibility
     expenses_before_payday_ids: list[int] = []
     expenses_next_period_ids: list[int] = []
     expenses_future_ids: list[int] = []
+
+    # Look further ahead for "future" expenses (6 months)
+    future_window_end = get_payday_after(next_period_end, settings.payday_day)
+    for _ in range(5):  # 6 months total
+        future_window_end = get_payday_after(future_window_end, settings.payday_day)
 
     for expense in active_expenses:
         if expense.is_savings_goal:
             continue
 
         # Check both periods in single iteration
-        in_before_payday = bool(
-            get_occurrences_in_window(
-                due_day=expense.due_day,
-                frequency_value=expense.frequency_value,
-                frequency_unit=expense.frequency_unit,
-                start_date=expense.start_date,
-                end_date=expense.end_date,
-                is_ephemeral=expense.is_ephemeral,
-                archived_at=expense.archived_at,
-                window_start=today,
-                window_end=next_payday,
-            )
+        occurrences_before_payday = get_occurrences_in_window(
+            due_day=expense.due_day,
+            frequency_value=expense.frequency_value,
+            frequency_unit=expense.frequency_unit,
+            start_date=expense.start_date,
+            end_date=expense.end_date,
+            is_ephemeral=expense.is_ephemeral,
+            archived_at=expense.archived_at,
+            window_start=today,
+            window_end=next_payday,
         )
 
-        in_next_period = bool(
-            get_occurrences_in_window(
-                due_day=expense.due_day,
-                frequency_value=expense.frequency_value,
-                frequency_unit=expense.frequency_unit,
-                start_date=expense.start_date,
-                end_date=expense.end_date,
-                is_ephemeral=expense.is_ephemeral,
-                archived_at=expense.archived_at,
-                window_start=next_payday,
-                window_end=next_period_end,
-            )
+        occurrences_next_period = get_occurrences_in_window(
+            due_day=expense.due_day,
+            frequency_value=expense.frequency_value,
+            frequency_unit=expense.frequency_unit,
+            start_date=expense.start_date,
+            end_date=expense.end_date,
+            is_ephemeral=expense.is_ephemeral,
+            archived_at=expense.archived_at,
+            window_start=next_payday,
+            window_end=next_period_end,
         )
 
-        if in_before_payday:
+        # Add one entry per occurrence in "this month" and "next month"
+        if occurrences_before_payday:
             expenses_before_payday_ids.append(expense.id)
-        if in_next_period:
+            for occurrence in occurrences_before_payday:
+                expense_dict = expense.to_dict()
+                expense_dict["next_occurrence_date"] = occurrence.isoformat()
+                expenses_before_payday_list.append(expense_dict)
+
+        if occurrences_next_period:
             expenses_next_period_ids.append(expense.id)
-        if not in_before_payday and not in_next_period:
-            # Expense doesn't occur in either period (future scheduled)
+            for occurrence in occurrences_next_period:
+                expense_dict = expense.to_dict()
+                expense_dict["next_occurrence_date"] = occurrence.isoformat()
+                expenses_next_period_list.append(expense_dict)
+
+        if not occurrences_before_payday and not occurrences_next_period:
+            # Expense doesn't occur in either period - show only first future occurrence
             expenses_future_ids.append(expense.id)
+            occurrences_future = get_occurrences_in_window(
+                due_day=expense.due_day,
+                frequency_value=expense.frequency_value,
+                frequency_unit=expense.frequency_unit,
+                start_date=expense.start_date,
+                end_date=expense.end_date,
+                is_ephemeral=expense.is_ephemeral,
+                archived_at=expense.archived_at,
+                window_start=next_period_end,
+                window_end=future_window_end,
+            )
+            expense_dict = expense.to_dict()
+            if occurrences_future:
+                # Only first occurrence for "future" (open-ended window)
+                expense_dict["next_occurrence_date"] = occurrences_future[0].isoformat()
+            else:
+                expense_dict["next_occurrence_date"] = None
+            expenses_future_list.append(expense_dict)
 
     return jsonify(
         {
@@ -197,10 +232,14 @@ def get_current_budget() -> Response:
                 "savings_next_period": float(savings_next_period),
                 "cc_payments_next_period": float(cc_payments_next_period),
                 "income_next_period": float(income_next_period),
-                # Expense IDs for each period (for frontend filtering)
+                # Expense IDs for each period (for frontend filtering) - backward compat
                 "expenses_before_payday_ids": expenses_before_payday_ids,
                 "expenses_next_period_ids": expenses_next_period_ids,
                 "expenses_future_ids": expenses_future_ids,
+                # Expenses with occurrence dates for each period
+                "expenses_before_payday_list": expenses_before_payday_list,
+                "expenses_next_period_list": expenses_next_period_list,
+                "expenses_future_list": expenses_future_list,
             },
         }
     )

@@ -39,6 +39,11 @@ export interface ExpenseItem {
   archived_at: string | null;
 }
 
+/** ExpenseItem with computed next occurrence date for period display */
+export interface ExpenseWithOccurrence extends ExpenseItem {
+  next_occurrence_date: string | null;
+}
+
 export interface BudgetSettings {
   id: number;
   tax_percentage: number;
@@ -64,10 +69,14 @@ export interface BudgetTotals {
   savings_next_period: number;
   cc_payments_next_period: number;
   income_next_period: number;
-  // Expense IDs for each period (for frontend filtering)
+  // Expense IDs for each period (for frontend filtering) - backward compat
   expenses_before_payday_ids: number[];
   expenses_next_period_ids: number[];
   expenses_future_ids: number[];
+  // Expenses with occurrence dates for each period
+  expenses_before_payday_list: ExpenseWithOccurrence[];
+  expenses_next_period_list: ExpenseWithOccurrence[];
+  expenses_future_list: ExpenseWithOccurrence[];
 }
 
 export interface BudgetData {
