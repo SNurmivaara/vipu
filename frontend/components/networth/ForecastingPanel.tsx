@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { NetWorthSnapshot, BudgetTotals, ForecastingSettings } from "@/types";
 import { formatCurrencyRounded, cn } from "@/lib/utils";
-import { calculateFire, FireInputs, FireResult } from "@/lib/fire";
+import { useFireCalculation, FireInputs } from "@/hooks/useFireCalculation";
 import { useForecastingSettings } from "@/hooks/useForecastingSettings";
 
 const DEFAULT_SETTINGS: ForecastingSettings = {
@@ -166,7 +166,7 @@ export function ForecastingPanel({
     ]
   );
 
-  const result: FireResult = useMemo(() => calculateFire(fireInputs), [fireInputs]);
+  const { result, isLoading: fireLoading, isFetching } = useFireCalculation(fireInputs);
 
   // Build chart data
   const chartData = useMemo(() => {
@@ -257,7 +257,8 @@ export function ForecastingPanel({
     );
   };
 
-  if (settingsLoading) {
+  // Only show full loading skeleton on initial load, not during refetches
+  if (settingsLoading || (fireLoading && result.projections.length === 0)) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 h-32 animate-pulse" />
     );
@@ -267,8 +268,13 @@ export function ForecastingPanel({
     <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          FIRE Forecast
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+            FIRE Forecast
+          </span>
+          {isFetching && (
+            <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          )}
         </div>
         <button
           aria-label="Toggle FIRE forecast settings"
