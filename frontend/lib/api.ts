@@ -22,6 +22,8 @@ import {
   NetWorthForecast,
   ForecastPeriod,
   ForecastingSettingsAPI,
+  FireCalculateInput,
+  FireResultAPI,
 } from "@/types";
 
 export const api = axios.create({
@@ -358,5 +360,13 @@ export const fetchForecast = async (
   const queryString = searchParams.toString();
   const url = queryString ? `/networth/forecast?${queryString}` : "/networth/forecast";
   const { data } = await api.get<NetWorthForecast>(url);
+  return data;
+};
+
+// FIRE calculation
+export const calculateFire = async (
+  input: FireCalculateInput
+): Promise<FireResultAPI> => {
+  const { data } = await api.post<FireResultAPI>("/forecasting/calculate", input);
   return data;
 };
