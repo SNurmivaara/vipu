@@ -124,42 +124,51 @@ def get_current_budget() -> Response:
     )
 
     # Calculate expense IDs for each period (for frontend filtering)
+    # Single sweep: check both periods for each expense at once
     expenses_before_payday_ids: list[int] = []
     expenses_next_period_ids: list[int] = []
+    expenses_future_ids: list[int] = []
 
     for expense in active_expenses:
         if expense.is_savings_goal:
             continue
 
-        # Check if expense occurs before payday
-        occurrences_before = get_occurrences_in_window(
-            due_day=expense.due_day,
-            frequency_value=expense.frequency_value,
-            frequency_unit=expense.frequency_unit,
-            start_date=expense.start_date,
-            end_date=expense.end_date,
-            is_ephemeral=expense.is_ephemeral,
-            archived_at=expense.archived_at,
-            window_start=today,
-            window_end=next_payday,
+        # Check both periods in single iteration
+        in_before_payday = bool(
+            get_occurrences_in_window(
+                due_day=expense.due_day,
+                frequency_value=expense.frequency_value,
+                frequency_unit=expense.frequency_unit,
+                start_date=expense.start_date,
+                end_date=expense.end_date,
+                is_ephemeral=expense.is_ephemeral,
+                archived_at=expense.archived_at,
+                window_start=today,
+                window_end=next_payday,
+            )
         )
-        if occurrences_before:
-            expenses_before_payday_ids.append(expense.id)
 
-        # Check if expense occurs in next period
-        occurrences_next = get_occurrences_in_window(
-            due_day=expense.due_day,
-            frequency_value=expense.frequency_value,
-            frequency_unit=expense.frequency_unit,
-            start_date=expense.start_date,
-            end_date=expense.end_date,
-            is_ephemeral=expense.is_ephemeral,
-            archived_at=expense.archived_at,
-            window_start=next_payday,
-            window_end=next_period_end,
+        in_next_period = bool(
+            get_occurrences_in_window(
+                due_day=expense.due_day,
+                frequency_value=expense.frequency_value,
+                frequency_unit=expense.frequency_unit,
+                start_date=expense.start_date,
+                end_date=expense.end_date,
+                is_ephemeral=expense.is_ephemeral,
+                archived_at=expense.archived_at,
+                window_start=next_payday,
+                window_end=next_period_end,
+            )
         )
-        if occurrences_next:
+
+        if in_before_payday:
+            expenses_before_payday_ids.append(expense.id)
+        if in_next_period:
             expenses_next_period_ids.append(expense.id)
+        if not in_before_payday and not in_next_period:
+            # Expense doesn't occur in either period (future scheduled)
+            expenses_future_ids.append(expense.id)
 
     return jsonify(
         {
@@ -191,6 +200,7 @@ def get_current_budget() -> Response:
                 # Expense IDs for each period (for frontend filtering)
                 "expenses_before_payday_ids": expenses_before_payday_ids,
                 "expenses_next_period_ids": expenses_next_period_ids,
+                "expenses_future_ids": expenses_future_ids,
             },
         }
     )

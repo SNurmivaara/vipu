@@ -290,9 +290,12 @@ export default function BudgetPage() {
             expensesBeforePayday={data.expenses.filter(
               (e) => !e.is_savings_goal && data.totals.expenses_before_payday_ids.includes(e.id)
             )}
-            expensesAfterPayday={[
+            expensesAfterPayday={data.expenses.filter(
+              (e) => !e.is_savings_goal && data.totals.expenses_next_period_ids.includes(e.id)
+            )}
+            expensesFuture={[
               ...data.expenses.filter(
-                (e) => !e.is_savings_goal && data.totals.expenses_next_period_ids.includes(e.id)
+                (e) => !e.is_savings_goal && data.totals.expenses_future_ids.includes(e.id)
               ),
               ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal) : []),
             ]}

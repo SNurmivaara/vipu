@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExpenseItem, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import {
+  parseSchedulingFormValues,
+  getSchedulingInitialValues,
+  getSchedulingDefaultValues,
+} from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -19,7 +24,7 @@ interface ExpensesSectionProps {
 }
 
 // expense_mode: "monthly" (default), "one_time", "custom"
-const expenseFields = [
+export const expenseFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
     name: "amount",
@@ -136,46 +141,13 @@ export function ExpensesSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const mode = (values.expense_mode as string) || "monthly";
-    const oneTimeDate = values.one_time_date as string;
-
-    let dueDay: number;
-    let startDate: string | null = null;
-    let endDate: string | null = null;
-    let frequencyValue = 1;
-    let frequencyUnit: "days" | "weeks" | "months" | "years" = "months";
-    let isEphemeral = false;
-
-    if (mode === "monthly") {
-      dueDay = (values.due_day as number) || 1;
-    } else if (mode === "one_time") {
-      isEphemeral = true;
-      if (oneTimeDate) {
-        const date = new Date(oneTimeDate);
-        dueDay = date.getDate();
-        startDate = oneTimeDate;
-      } else {
-        dueDay = 1;
-      }
-    } else {
-      // custom mode
-      dueDay = (values.custom_due_day as number) || 1;
-      frequencyValue = (values.frequency_value as number) || 1;
-      frequencyUnit = (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months";
-      startDate = (values.start_date as string) || null;
-      endDate = (values.end_date as string) || null;
-    }
+    const scheduling = parseSchedulingFormValues(values, "expense_mode");
 
     const data: ExpenseFormData = {
       name: values.name as string,
       amount: values.amount as number,
       is_savings_goal: false,
-      due_day: dueDay,
-      frequency_value: frequencyValue,
-      frequency_unit: frequencyUnit,
-      start_date: startDate,
-      end_date: endDate,
-      is_ephemeral: isEphemeral,
+      ...scheduling,
       archived_at: null,
     };
 
@@ -272,16 +244,6 @@ export function ExpensesSection({
     </div>
   );
 
-  // Determine expense mode from existing item
-  const getExpenseMode = (item: ExpenseItem): string => {
-    if (item.is_ephemeral) return "one_time";
-    // If non-monthly frequency or has start/end date, it's custom
-    if (item.frequency_value !== 1 || item.frequency_unit !== "months" || item.start_date || item.end_date) {
-      return "custom";
-    }
-    return "monthly";
-  };
-
   const dialog = (
     <EditDialog
       open={editItem !== null || isNew}
@@ -293,26 +255,12 @@ export function ExpensesSection({
           ? {
               name: editItem.name,
               amount: editItem.amount,
-              expense_mode: getExpenseMode(editItem),
-              due_day: editItem.due_day,
-              custom_due_day: editItem.due_day,
-              frequency_value: editItem.frequency_value,
-              frequency_unit: editItem.frequency_unit,
-              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.start_date || "",
-              end_date: editItem.end_date || "",
+              ...getSchedulingInitialValues(editItem, "expense_mode"),
             }
           : {
               name: "",
               amount: 0,
-              expense_mode: "monthly",
-              due_day: 1,
-              custom_due_day: 1,
-              frequency_value: 1,
-              frequency_unit: "months",
-              one_time_date: "",
-              start_date: "",
-              end_date: "",
+              ...getSchedulingDefaultValues("expense_mode"),
             }
       }
       onSave={handleSave}
@@ -377,13 +325,11 @@ function SubsectionCollapsible({
   title,
   total,
   defaultOpen = false,
-  onAdd,
   children,
 }: {
   title: string;
   total: string;
   defaultOpen?: boolean;
-  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -415,20 +361,9 @@ function SubsectionCollapsible({
             {title}
           </span>
         </button>
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
-            {total}
-          </span>
-          {onAdd && (
-            <button
-              type="button"
-              onClick={onAdd}
-              className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20"
-            >
-              + Add
-            </button>
-          )}
-        </div>
+        <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          {total}
+        </span>
       </div>
       {isOpen && (
         <div className="bg-gray-50 dark:bg-gray-800/50">

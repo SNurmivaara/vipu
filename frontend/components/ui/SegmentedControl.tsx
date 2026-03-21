@@ -12,6 +12,8 @@ interface SegmentedControlProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  /** Accessible label for the control group */
+  ariaLabel?: string;
 }
 
 export function SegmentedControl({
@@ -19,9 +21,12 @@ export function SegmentedControl({
   value,
   onChange,
   className,
+  ariaLabel = "Options",
 }: SegmentedControlProps) {
   return (
     <div
+      role="radiogroup"
+      aria-label={ariaLabel}
       className={cn(
         "inline-flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1",
         className
@@ -31,6 +36,8 @@ export function SegmentedControl({
         <button
           key={option.value}
           type="button"
+          role="radio"
+          aria-checked={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
             "px-3 py-1.5 text-sm font-medium rounded-md transition-all",

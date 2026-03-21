@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExpenseItem, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import {
+  parseSchedulingFormValues,
+  getSchedulingInitialValues,
+  getSchedulingDefaultValues,
+} from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -132,46 +137,13 @@ export function SavingsGoalsSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const mode = (values.savings_mode as string) || "monthly";
-    const oneTimeDate = values.one_time_date as string;
-
-    let dueDay: number;
-    let startDate: string | null = null;
-    let endDate: string | null = null;
-    let frequencyValue = 1;
-    let frequencyUnit: "days" | "weeks" | "months" | "years" = "months";
-    let isEphemeral = false;
-
-    if (mode === "monthly") {
-      dueDay = (values.due_day as number) || 1;
-    } else if (mode === "one_time") {
-      isEphemeral = true;
-      if (oneTimeDate) {
-        const date = new Date(oneTimeDate);
-        dueDay = date.getDate();
-        startDate = oneTimeDate;
-      } else {
-        dueDay = 1;
-      }
-    } else {
-      // custom mode
-      dueDay = (values.custom_due_day as number) || 1;
-      frequencyValue = (values.frequency_value as number) || 1;
-      frequencyUnit = (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months";
-      startDate = (values.start_date as string) || null;
-      endDate = (values.end_date as string) || null;
-    }
+    const scheduling = parseSchedulingFormValues(values, "savings_mode");
 
     const data: ExpenseFormData = {
       name: values.name as string,
       amount: values.amount as number,
       is_savings_goal: true,
-      due_day: dueDay,
-      frequency_value: frequencyValue,
-      frequency_unit: frequencyUnit,
-      start_date: startDate,
-      end_date: endDate,
-      is_ephemeral: isEphemeral,
+      ...scheduling,
       archived_at: null,
     };
 
@@ -241,16 +213,6 @@ export function SavingsGoalsSection({
     </div>
   );
 
-  // Determine savings mode from existing item
-  const getSavingsMode = (item: ExpenseItem): string => {
-    if (item.is_ephemeral) return "one_time";
-    // If non-monthly frequency or has start/end date, it's custom
-    if (item.frequency_value !== 1 || item.frequency_unit !== "months" || item.start_date || item.end_date) {
-      return "custom";
-    }
-    return "monthly";
-  };
-
   const dialog = (
     <EditDialog
       open={editItem !== null || isNew}
@@ -262,26 +224,12 @@ export function SavingsGoalsSection({
           ? {
               name: editItem.name,
               amount: editItem.amount,
-              savings_mode: getSavingsMode(editItem),
-              due_day: editItem.due_day,
-              custom_due_day: editItem.due_day,
-              frequency_value: editItem.frequency_value,
-              frequency_unit: editItem.frequency_unit,
-              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.start_date || "",
-              end_date: editItem.end_date || "",
+              ...getSchedulingInitialValues(editItem, "savings_mode"),
             }
           : {
               name: "",
               amount: 0,
-              savings_mode: "monthly",
-              due_day: 1,
-              custom_due_day: 1,
-              frequency_value: 1,
-              frequency_unit: "months",
-              one_time_date: "",
-              start_date: "",
-              end_date: "",
+              ...getSchedulingDefaultValues("savings_mode"),
             }
       }
       onSave={handleSave}

@@ -67,6 +67,7 @@ export interface BudgetTotals {
   // Expense IDs for each period (for frontend filtering)
   expenses_before_payday_ids: number[];
   expenses_next_period_ids: number[];
+  expenses_future_ids: number[];
 }
 
 export interface BudgetData {

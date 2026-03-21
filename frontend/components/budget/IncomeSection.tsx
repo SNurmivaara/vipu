@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IncomeItem, IncomeFormData, BudgetSettings } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import {
+  parseSchedulingFormValues,
+  getSchedulingInitialValues,
+  getSchedulingDefaultValues,
+} from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -149,35 +154,7 @@ export function IncomeSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const mode = (values.income_mode as string) || "monthly";
-    const oneTimeDate = values.one_time_date as string;
-
-    let dueDay: number;
-    let startDate: string | null = null;
-    let endDate: string | null = null;
-    let frequencyValue = 1;
-    let frequencyUnit: "days" | "weeks" | "months" | "years" = "months";
-    let isEphemeral = false;
-
-    if (mode === "monthly") {
-      dueDay = (values.due_day as number) || 1;
-    } else if (mode === "one_time") {
-      isEphemeral = true;
-      if (oneTimeDate) {
-        const date = new Date(oneTimeDate);
-        dueDay = date.getDate();
-        startDate = oneTimeDate;
-      } else {
-        dueDay = 1;
-      }
-    } else {
-      // custom mode
-      dueDay = (values.custom_due_day as number) || 1;
-      frequencyValue = (values.frequency_value as number) || 1;
-      frequencyUnit = (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months";
-      startDate = (values.start_date as string) || null;
-      endDate = (values.end_date as string) || null;
-    }
+    const scheduling = parseSchedulingFormValues(values, "income_mode");
 
     const data: IncomeFormData = {
       name: values.name as string,
@@ -185,12 +162,7 @@ export function IncomeSection({
       is_taxed: values.is_taxed as boolean,
       tax_percentage: undefined,
       is_deduction: false,
-      due_day: dueDay,
-      frequency_value: frequencyValue,
-      frequency_unit: frequencyUnit,
-      start_date: startDate,
-      end_date: endDate,
-      is_ephemeral: isEphemeral,
+      ...scheduling,
       archived_at: null,
     };
 
@@ -282,16 +254,6 @@ export function IncomeSection({
     </div>
   );
 
-  // Determine income mode from existing item
-  const getIncomeMode = (item: IncomeItem): string => {
-    if (item.is_ephemeral) return "one_time";
-    // If non-monthly frequency or has start/end date, it's custom
-    if (item.frequency_value !== 1 || item.frequency_unit !== "months" || item.start_date || item.end_date) {
-      return "custom";
-    }
-    return "monthly";
-  };
-
   const dialog = (
     <EditDialog
       open={editItem !== null || isNew}
@@ -304,27 +266,13 @@ export function IncomeSection({
               name: editItem.name,
               gross_amount: editItem.gross_amount,
               is_taxed: editItem.is_taxed,
-              income_mode: getIncomeMode(editItem),
-              due_day: editItem.due_day,
-              custom_due_day: editItem.due_day,
-              frequency_value: editItem.frequency_value,
-              frequency_unit: editItem.frequency_unit,
-              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.start_date || "",
-              end_date: editItem.end_date || "",
+              ...getSchedulingInitialValues(editItem, "income_mode"),
             }
           : {
               name: "",
               gross_amount: 0,
               is_taxed: true,
-              income_mode: "monthly",
-              due_day: 1,
-              custom_due_day: 1,
-              frequency_value: 1,
-              frequency_unit: "months",
-              one_time_date: "",
-              start_date: "",
-              end_date: "",
+              ...getSchedulingDefaultValues("income_mode"),
             }
       }
       onSave={handleSave}
