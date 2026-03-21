@@ -213,6 +213,8 @@ export interface ForecastingSettings {
   pensionMonthlySalaryOverride: number | null;
   pensionAccrualRate: number;
   pensionFullAge: number;
+  pensionGuaranteeEnabled: boolean;
+  pensionGuaranteeAmount: number;
   lifeExpectancy: number;
   /** Expected annual return % per net worth group name */
   groupReturnRates: Record<string, number>;
@@ -231,6 +233,8 @@ export interface ForecastingSettingsAPI {
   pension_monthly_salary_override: number | null;
   pension_accrual_rate: number;
   pension_full_age: number;
+  pension_guarantee_enabled: boolean;
+  pension_guarantee_amount: number;
   life_expectancy: number;
   group_return_rates: Record<string, number>;
   updated_at: string;

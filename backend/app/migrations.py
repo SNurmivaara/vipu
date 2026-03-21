@@ -109,6 +109,20 @@ MIGRATIONS: list[dict] = [
             );
         """,
     },
+    {
+        "id": "007_pension_guarantee",
+        "name": "Add pension guarantee (takuuelake) fields to forecasting_settings",
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS
+                pension_guarantee_enabled
+                BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS
+                pension_guarantee_amount
+                NUMERIC(12,2) NOT NULL DEFAULT 990.0;
+        """,
+    },
 ]
 
 

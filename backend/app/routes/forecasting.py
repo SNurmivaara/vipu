@@ -51,6 +51,7 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
         "inflation_pct": (0, 20),
         "safe_withdrawal_rate": (1, 10),
         "pension_accrual_rate": (0, 10),
+        "pension_guarantee_amount": (0, 5000),
     }
     for field, (lo, hi) in numeric_fields.items():
         if field in data:
@@ -89,6 +90,16 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
                 setattr(settings, field, Decimal(str(val)))
             else:
                 return jsonify({"error": f"{field} must be a number or null"}), 400
+
+    # Boolean fields
+    if "pension_guarantee_enabled" in data:
+        val = data["pension_guarantee_enabled"]
+        if not isinstance(val, bool):
+            return (
+                jsonify({"error": "pension_guarantee_enabled must be a boolean"}),
+                400,
+            )
+        settings.pension_guarantee_enabled = val
 
     # Group return rates (JSON object: group_name -> return %)
     if "group_return_rates" in data:
