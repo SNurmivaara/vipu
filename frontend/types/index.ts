@@ -269,3 +269,63 @@ export interface NetWorthForecast {
   data_points_used: number;
   projections: ForecastPoint[];
 }
+
+// FIRE calculation API types (snake_case from backend)
+export interface FireCalculateInput {
+  current_net_worth: number;
+  monthly_contribution: number;
+  annual_expenses: number;
+  annual_return_pct: number;
+  inflation_pct: number;
+  current_age: number;
+  target_retirement_age: number;
+  safe_withdrawal_rate: number;
+  pension_accrued_monthly?: number | null;
+  pension_monthly_salary?: number | null;
+  pension_accrual_rate?: number;
+  pension_full_age?: number;
+  pension_guarantee_enabled?: boolean;
+  pension_guarantee_amount?: number;
+  life_expectancy?: number;
+}
+
+export interface FirePensionScenarioAPI {
+  label: "early" | "normal" | "late";
+  pension_start_age: number;
+  monthly_pension: number;
+  annual_pension: number;
+  pension_fire_number: number;
+}
+
+export interface FirePensionResultAPI {
+  projected_monthly_pension: number;
+  scenarios: FirePensionScenarioAPI[];
+  pension_coast_fire_number: number;
+  guarantee_active: boolean;
+  guarantee_amount: number;
+  crossover_age: number | null;
+}
+
+export interface FireProjectionPointAPI {
+  age: number;
+  year: number;
+  month: number;
+  net_worth: number;
+  coast_net_worth: number;
+  net_worth_early?: number | null;
+  net_worth_normal?: number | null;
+  net_worth_late?: number | null;
+}
+
+export interface FireResultAPI {
+  fire_number: number;
+  coast_fire_number: number;
+  coast_fire_reached: boolean;
+  years_to_fire: number | null;
+  fire_age: number | null;
+  coast_fire_age: number | null;
+  on_track: boolean;
+  portfolio_depleted_age: number | null;
+  projections: FireProjectionPointAPI[];
+  pension: FirePensionResultAPI | null;
+}
