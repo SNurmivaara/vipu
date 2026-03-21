@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IncomeItem, IncomeFormData, BudgetSettings } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import {
+  parseSchedulingFormValues,
+  getSchedulingInitialValues,
+  getSchedulingDefaultValues,
+} from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -16,6 +21,7 @@ interface IncomeSectionProps {
   defaultOpen?: boolean;
 }
 
+// income_mode: "monthly" (default), "one_time", "custom"
 const incomeFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
@@ -26,16 +32,18 @@ const incomeFields = [
     min: 0,
     step: 0.01,
   },
-  { name: "is_taxed", label: "Is Taxed", type: "checkbox" as const },
-  { name: "is_ephemeral", label: "One-time income", type: "checkbox" as const },
-  // For one-time: show date picker
+  { name: "is_taxed", label: "Subject to tax", type: "checkbox" as const },
   {
-    name: "one_time_date",
-    label: "Date",
-    type: "date" as const,
-    showWhen: { field: "is_ephemeral", value: true },
+    name: "income_mode",
+    label: "",
+    type: "segment" as const,
+    options: [
+      { value: "monthly", label: "Monthly" },
+      { value: "one_time", label: "One-time" },
+      { value: "custom", label: "Custom" },
+    ],
   },
-  // For recurring: show due day, frequency, and optional date range
+  // Monthly mode: just due day
   {
     name: "due_day",
     label: "Due Day (of month)",
@@ -44,26 +52,44 @@ const incomeFields = [
     min: 1,
     max: 31,
     step: 1,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "income_mode", value: "monthly" },
+  },
+  // One-time mode: date picker
+  {
+    name: "one_time_date",
+    label: "Date",
+    type: "date" as const,
+    showWhen: { field: "income_mode", value: "one_time" },
+  },
+  // Custom mode: due day, frequency, start/end dates
+  {
+    name: "custom_due_day",
+    label: "Due Day (of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
+    showWhen: { field: "income_mode", value: "custom" },
   },
   {
     name: "frequency_value",
     label: "Frequency",
     type: "frequency" as const,
     unitFieldName: "frequency_unit",
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "income_mode", value: "custom" },
   },
   {
     name: "start_date",
     label: "Start Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "income_mode", value: "custom" },
   },
   {
     name: "end_date",
     label: "End Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "income_mode", value: "custom" },
   },
 ];
 
@@ -128,18 +154,7 @@ export function IncomeSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const isEphemeral = values.is_ephemeral as boolean;
-    const oneTimeDate = values.one_time_date as string;
-
-    // For one-time income, extract due_day from the date and set start_date
-    let dueDay = (values.due_day as number) || 1;
-    let startDate = (values.start_date as string) || null;
-
-    if (isEphemeral && oneTimeDate) {
-      const date = new Date(oneTimeDate);
-      dueDay = date.getDate();
-      startDate = oneTimeDate;
-    }
+    const scheduling = parseSchedulingFormValues(values, "income_mode");
 
     const data: IncomeFormData = {
       name: values.name as string,
@@ -147,12 +162,7 @@ export function IncomeSection({
       is_taxed: values.is_taxed as boolean,
       tax_percentage: undefined,
       is_deduction: false,
-      due_day: dueDay,
-      frequency_value: (values.frequency_value as number) || 1,
-      frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
-      start_date: startDate,
-      end_date: isEphemeral ? null : ((values.end_date as string) || null),
-      is_ephemeral: isEphemeral,
+      ...scheduling,
       archived_at: null,
     };
 
@@ -256,25 +266,13 @@ export function IncomeSection({
               name: editItem.name,
               gross_amount: editItem.gross_amount,
               is_taxed: editItem.is_taxed,
-              due_day: editItem.due_day,
-              frequency_value: editItem.frequency_value,
-              frequency_unit: editItem.frequency_unit,
-              is_ephemeral: editItem.is_ephemeral,
-              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.is_ephemeral ? "" : (editItem.start_date || ""),
-              end_date: editItem.end_date || "",
+              ...getSchedulingInitialValues(editItem, "income_mode"),
             }
           : {
               name: "",
               gross_amount: 0,
               is_taxed: true,
-              due_day: 1,
-              frequency_value: 1,
-              frequency_unit: "months",
-              is_ephemeral: false,
-              one_time_date: "",
-              start_date: "",
-              end_date: "",
+              ...getSchedulingDefaultValues("income_mode"),
             }
       }
       onSave={handleSave}

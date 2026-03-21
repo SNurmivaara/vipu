@@ -5,6 +5,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExpenseItem, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import {
+  parseSchedulingFormValues,
+  getSchedulingInitialValues,
+  getSchedulingDefaultValues,
+} from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -15,6 +20,7 @@ interface SavingsGoalsSectionProps {
   defaultOpen?: boolean;
 }
 
+// savings_mode: "monthly" (default), "one_time", "custom"
 const savingsGoalFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
@@ -25,15 +31,17 @@ const savingsGoalFields = [
     min: 0,
     step: 0.01,
   },
-  { name: "is_ephemeral", label: "One-time goal", type: "checkbox" as const },
-  // For one-time: show date picker
   {
-    name: "one_time_date",
-    label: "Date",
-    type: "date" as const,
-    showWhen: { field: "is_ephemeral", value: true },
+    name: "savings_mode",
+    label: "",
+    type: "segment" as const,
+    options: [
+      { value: "monthly", label: "Monthly" },
+      { value: "one_time", label: "One-time" },
+      { value: "custom", label: "Custom" },
+    ],
   },
-  // For recurring: show due day, frequency, and optional date range
+  // Monthly mode: just due day
   {
     name: "due_day",
     label: "Due Day (of month)",
@@ -42,26 +50,44 @@ const savingsGoalFields = [
     min: 1,
     max: 31,
     step: 1,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "savings_mode", value: "monthly" },
+  },
+  // One-time mode: date picker
+  {
+    name: "one_time_date",
+    label: "Date",
+    type: "date" as const,
+    showWhen: { field: "savings_mode", value: "one_time" },
+  },
+  // Custom mode: due day, frequency, start/end dates
+  {
+    name: "custom_due_day",
+    label: "Due Day (of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
+    showWhen: { field: "savings_mode", value: "custom" },
   },
   {
     name: "frequency_value",
     label: "Frequency",
     type: "frequency" as const,
     unitFieldName: "frequency_unit",
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "savings_mode", value: "custom" },
   },
   {
     name: "start_date",
     label: "Start Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "savings_mode", value: "custom" },
   },
   {
     name: "end_date",
     label: "End Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "savings_mode", value: "custom" },
   },
 ];
 
@@ -111,29 +137,13 @@ export function SavingsGoalsSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const isEphemeral = values.is_ephemeral as boolean;
-    const oneTimeDate = values.one_time_date as string;
-
-    // For one-time goals, extract due_day from the date and set start_date
-    let dueDay = (values.due_day as number) || 1;
-    let startDate = (values.start_date as string) || null;
-
-    if (isEphemeral && oneTimeDate) {
-      const date = new Date(oneTimeDate);
-      dueDay = date.getDate();
-      startDate = oneTimeDate;
-    }
+    const scheduling = parseSchedulingFormValues(values, "savings_mode");
 
     const data: ExpenseFormData = {
       name: values.name as string,
       amount: values.amount as number,
       is_savings_goal: true,
-      due_day: dueDay,
-      frequency_value: (values.frequency_value as number) || 1,
-      frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
-      start_date: startDate,
-      end_date: isEphemeral ? null : ((values.end_date as string) || null),
-      is_ephemeral: isEphemeral,
+      ...scheduling,
       archived_at: null,
     };
 
@@ -214,24 +224,12 @@ export function SavingsGoalsSection({
           ? {
               name: editItem.name,
               amount: editItem.amount,
-              due_day: editItem.due_day,
-              frequency_value: editItem.frequency_value,
-              frequency_unit: editItem.frequency_unit,
-              is_ephemeral: editItem.is_ephemeral,
-              one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.is_ephemeral ? "" : (editItem.start_date || ""),
-              end_date: editItem.end_date || "",
+              ...getSchedulingInitialValues(editItem, "savings_mode"),
             }
           : {
               name: "",
               amount: 0,
-              due_day: 1,
-              frequency_value: 1,
-              frequency_unit: "months",
-              is_ephemeral: false,
-              one_time_date: "",
-              start_date: "",
-              end_date: "",
+              ...getSchedulingDefaultValues("savings_mode"),
             }
       }
       onSave={handleSave}

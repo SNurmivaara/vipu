@@ -6,11 +6,17 @@ import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { FrequencyUnit } from "@/types";
 import { FrequencyPicker } from "./FrequencyPicker";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+
+interface SelectOption {
+  value: string;
+  label: string;
+}
 
 interface Field {
   name: string;
   label: string;
-  type: "text" | "number" | "checkbox" | "signed_number" | "frequency" | "date" | "due_day";
+  type: "text" | "number" | "checkbox" | "signed_number" | "frequency" | "date" | "due_day" | "select" | "segment";
   required?: boolean;
   min?: number;
   max?: number;
@@ -19,9 +25,11 @@ interface Field {
   defaultSign?: "positive" | "negative";
   // For frequency fields, specify the unit field name
   unitFieldName?: string;
+  // For select fields
+  options?: SelectOption[];
   // Conditional visibility: show field only when condition is met
-  showWhen?: { field: string; value: boolean };
-  hideWhen?: { field: string; value: boolean };
+  showWhen?: { field: string; value: string | boolean };
+  hideWhen?: { field: string; value: string | boolean };
 }
 
 interface EditDialogProps {
@@ -242,6 +250,57 @@ export function EditDialog({
                         "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
                         "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       )}
+                    />
+                  </>
+                ) : field.type === "select" ? (
+                  <>
+                    <Label.Root
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {field.label}
+                    </Label.Root>
+                    <select
+                      id={field.name}
+                      value={(values[field.name] as string) || ""}
+                      onChange={(e) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [field.name]: e.target.value,
+                        }))
+                      }
+                      className={cn(
+                        "w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md",
+                        "bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100",
+                        "focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      )}
+                    >
+                      {field.options?.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                ) : field.type === "segment" ? (
+                  <>
+                    {field.label && (
+                      <Label.Root
+                        htmlFor={field.name}
+                        className="text-sm font-medium text-gray-700 dark:text-gray-300"
+                      >
+                        {field.label}
+                      </Label.Root>
+                    )}
+                    <SegmentedControl
+                      options={field.options || []}
+                      value={(values[field.name] as string) || ""}
+                      onChange={(v) =>
+                        setValues((prev) => ({
+                          ...prev,
+                          [field.name]: v,
+                        }))
+                      }
                     />
                   </>
                 ) : (

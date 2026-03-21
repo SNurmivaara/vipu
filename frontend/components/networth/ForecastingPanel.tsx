@@ -585,7 +585,7 @@ export function ForecastingPanel({
         );
       })()}
 
-      {/* Retirement age slider (pension mode) */}
+      {/* Retirement age slider (pension mode only - in simple FIRE mode, retirement age doesn't affect the calculation) */}
       {pensionActive && (
         <div className="space-y-1">
           <div className="text-sm text-gray-500 dark:text-gray-400">

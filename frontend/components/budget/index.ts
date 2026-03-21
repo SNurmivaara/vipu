@@ -5,6 +5,7 @@ export { DeductionsSection } from "./DeductionsSection";
 export { AccountsSection } from "./AccountsSection";
 export { CreditCardsSection } from "./CreditCardsSection";
 export { ExpensesSection } from "./ExpensesSection";
+export { ExpensesGroupSection } from "./ExpensesGroupSection";
 export { SavingsGoalsSection } from "./SavingsGoalsSection";
 export { GoalsSection } from "./GoalsSection";
 export { TotalsCard } from "./TotalsCard";
