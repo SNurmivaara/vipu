@@ -3,12 +3,97 @@ from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
+from marshmallow import Schema, ValidationError, fields, post_load, validate
 
 from app import get_session
 from app.fire import FireInputs, calculate_fire
 from app.models import ForecastingSettings
 
 bp = APIBlueprint("forecasting", __name__, tag="Forecasting")
+
+
+# ---------------------------------------------------------------------------
+# Input validation schema
+# ---------------------------------------------------------------------------
+
+
+class FireCalculateInputSchema(Schema):
+    """Schema for FIRE calculation input validation."""
+
+    current_net_worth = fields.Float(required=True)
+    monthly_contribution = fields.Float(required=True)
+    annual_expenses = fields.Float(required=True, validate=validate.Range(min=0))
+    annual_return_pct = fields.Float(
+        required=True, validate=validate.Range(min=-50, max=100)
+    )
+    inflation_pct = fields.Float(
+        required=True, validate=validate.Range(min=-10, max=50)
+    )
+    current_age = fields.Integer(required=True, validate=validate.Range(min=0, max=120))
+    target_retirement_age = fields.Integer(
+        required=True, validate=validate.Range(min=0, max=120)
+    )
+    safe_withdrawal_rate = fields.Float(
+        required=True, validate=validate.Range(min=0.1, max=20)
+    )
+
+    # Optional pension fields
+    pension_accrued_monthly = fields.Float(
+        allow_none=True, load_default=None, validate=validate.Range(min=0)
+    )
+    pension_monthly_salary = fields.Float(
+        allow_none=True, load_default=None, validate=validate.Range(min=0)
+    )
+    pension_accrual_rate = fields.Float(
+        load_default=1.5, validate=validate.Range(min=0, max=10)
+    )
+    pension_full_age = fields.Integer(
+        load_default=68, validate=validate.Range(min=50, max=80)
+    )
+    pension_guarantee_enabled = fields.Boolean(load_default=False)
+    pension_guarantee_amount = fields.Float(
+        load_default=990.0, validate=validate.Range(min=0, max=5000)
+    )
+    life_expectancy = fields.Integer(
+        load_default=95, validate=validate.Range(min=60, max=120)
+    )
+
+    @post_load
+    def make_fire_inputs(self, data: dict, **kwargs: object) -> FireInputs:
+        """Convert validated data to FireInputs dataclass."""
+        return FireInputs(
+            current_net_worth=Decimal(str(data["current_net_worth"])),
+            monthly_contribution=Decimal(str(data["monthly_contribution"])),
+            annual_expenses=Decimal(str(data["annual_expenses"])),
+            annual_return_pct=Decimal(str(data["annual_return_pct"])),
+            inflation_pct=Decimal(str(data["inflation_pct"])),
+            current_age=data["current_age"],
+            target_retirement_age=data["target_retirement_age"],
+            safe_withdrawal_rate=Decimal(str(data["safe_withdrawal_rate"])),
+            pension_accrued_monthly=(
+                Decimal(str(data["pension_accrued_monthly"]))
+                if data["pension_accrued_monthly"] is not None
+                else None
+            ),
+            pension_monthly_salary=(
+                Decimal(str(data["pension_monthly_salary"]))
+                if data["pension_monthly_salary"] is not None
+                else None
+            ),
+            pension_accrual_rate=Decimal(str(data["pension_accrual_rate"])),
+            pension_full_age=data["pension_full_age"],
+            pension_guarantee_enabled=data["pension_guarantee_enabled"],
+            pension_guarantee_amount=Decimal(str(data["pension_guarantee_amount"])),
+            life_expectancy=data["life_expectancy"],
+        )
+
+
+fire_calculate_schema = FireCalculateInputSchema()
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
 
 
 def get_or_create_forecasting_settings() -> ForecastingSettings:
@@ -28,6 +113,22 @@ def get_or_create_forecasting_settings() -> ForecastingSettings:
         existing = session.query(ForecastingSettings).first()
         assert existing is not None
         return existing
+
+
+def decimal_to_float(obj: object) -> object:
+    """Recursively convert Decimal values to float for JSON serialization."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: decimal_to_float(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [decimal_to_float(item) for item in obj]
+    return obj
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 
 @bp.get("/api/forecasting/settings")
@@ -126,73 +227,32 @@ def calculate_fire_projection() -> Response | tuple[Response, int]:
     Expects JSON body with:
     - current_net_worth: float
     - monthly_contribution: float
-    - annual_expenses: float
-    - annual_return_pct: float (weighted return, e.g. 7 for 7%)
-    - inflation_pct: float (e.g. 2 for 2%)
-    - current_age: int
-    - target_retirement_age: int
-    - safe_withdrawal_rate: float (e.g. 4 for 4%)
+    - annual_expenses: float (>= 0)
+    - annual_return_pct: float (-50 to 100, weighted return, e.g. 7 for 7%)
+    - inflation_pct: float (-10 to 50, e.g. 2 for 2%)
+    - current_age: int (0-120)
+    - target_retirement_age: int (0-120)
+    - safe_withdrawal_rate: float (0.1-20, e.g. 4 for 4%)
     - pension_accrued_monthly: float | null (activates pension mode if provided)
     - pension_monthly_salary: float | null
-    - pension_accrual_rate: float (default 1.5)
-    - pension_full_age: int (default 68)
+    - pension_accrual_rate: float (default 1.5, range 0-10)
+    - pension_full_age: int (default 68, range 50-80)
     - pension_guarantee_enabled: bool (default false)
-    - pension_guarantee_amount: float (default 990)
-    - life_expectancy: int (default 95)
+    - pension_guarantee_amount: float (default 990, range 0-5000)
+    - life_expectancy: int (default 95, range 60-120)
     """
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    # Required fields
-    required = [
-        "current_net_worth",
-        "monthly_contribution",
-        "annual_expenses",
-        "annual_return_pct",
-        "inflation_pct",
-        "current_age",
-        "target_retirement_age",
-        "safe_withdrawal_rate",
-    ]
-    for field in required:
-        if field not in data:
-            return jsonify({"error": f"Missing required field: {field}"}), 400
-
     try:
-        inputs = FireInputs(
-            current_net_worth=float(data["current_net_worth"]),
-            monthly_contribution=float(data["monthly_contribution"]),
-            annual_expenses=float(data["annual_expenses"]),
-            annual_return_pct=float(data["annual_return_pct"]),
-            inflation_pct=float(data["inflation_pct"]),
-            current_age=int(data["current_age"]),
-            target_retirement_age=int(data["target_retirement_age"]),
-            safe_withdrawal_rate=float(data["safe_withdrawal_rate"]),
-            pension_accrued_monthly=(
-                float(data["pension_accrued_monthly"])
-                if data.get("pension_accrued_monthly") is not None
-                else None
-            ),
-            pension_monthly_salary=(
-                float(data["pension_monthly_salary"])
-                if data.get("pension_monthly_salary") is not None
-                else None
-            ),
-            pension_accrual_rate=float(data.get("pension_accrual_rate", 1.5)),
-            pension_full_age=int(data.get("pension_full_age", 68)),
-            pension_guarantee_enabled=bool(
-                data.get("pension_guarantee_enabled", False)
-            ),
-            pension_guarantee_amount=float(data.get("pension_guarantee_amount", 990)),
-            life_expectancy=int(data.get("life_expectancy", 95)),
-        )
-    except (ValueError, TypeError) as e:
-        return jsonify({"error": f"Invalid input: {e}"}), 400
+        inputs: FireInputs = fire_calculate_schema.load(data)
+    except ValidationError as err:
+        return jsonify({"error": "Validation error", "details": err.messages}), 400
 
     result = calculate_fire(inputs)
 
-    # Convert dataclass to dict for JSON serialization
-    result_dict = asdict(result)
+    # Convert dataclass to dict and handle Decimal serialization
+    result_dict = decimal_to_float(asdict(result))
 
     return jsonify(result_dict)

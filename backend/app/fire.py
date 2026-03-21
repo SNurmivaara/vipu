@@ -1,34 +1,41 @@
 """Financial Independence / Retire Early (FIRE) calculation utilities.
 
-All monetary values are in EUR.
+All monetary values are in EUR using Decimal for precision.
 Return rates are annual percentages (e.g., 7 for 7%).
 Inflation is an annual percentage (e.g., 2 for 2%).
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
+
+# Type alias for pension scenario labels
+PensionLabel = Literal["early", "normal", "late"]
+
+# Early/late pension adjustment rate per month (Finnish TyEL)
+PENSION_ADJUSTMENT_PER_MONTH = Decimal("0.004")
 
 
 @dataclass
 class FireInputs:
     """Inputs for FIRE calculations."""
 
-    current_net_worth: float
-    monthly_contribution: float  # monthly savings/investment
-    annual_expenses: float
-    annual_return_pct: float  # e.g. 7 for 7%
-    inflation_pct: float  # e.g. 2 for 2%
+    current_net_worth: Decimal
+    monthly_contribution: Decimal  # monthly savings/investment
+    annual_expenses: Decimal
+    annual_return_pct: Decimal  # e.g. 7 for 7%
+    inflation_pct: Decimal  # e.g. 2 for 2%
     current_age: int
     target_retirement_age: int
-    safe_withdrawal_rate: float  # e.g. 4 for 4%
+    safe_withdrawal_rate: Decimal  # e.g. 4 for 4%
     # Optional pension inputs (presence activates pension mode)
-    pension_accrued_monthly: float | None = None
-    pension_monthly_salary: float | None = None
-    pension_accrual_rate: float = 1.5
+    pension_accrued_monthly: Decimal | None = None
+    pension_monthly_salary: Decimal | None = None
+    pension_accrual_rate: Decimal = Decimal("1.5")
     pension_full_age: int = 68
     pension_guarantee_enabled: bool = False
-    pension_guarantee_amount: float = 990.0
+    pension_guarantee_amount: Decimal = Decimal("990.0")
     life_expectancy: int = 95
 
 
@@ -36,23 +43,23 @@ class FireInputs:
 class PensionScenario:
     """A single pension scenario (early/normal/late)."""
 
-    label: Literal["early", "normal", "late"]
+    label: PensionLabel
     pension_start_age: int
-    monthly_pension: float
-    annual_pension: float
-    pension_fire_number: float
+    monthly_pension: Decimal
+    annual_pension: Decimal
+    pension_fire_number: Decimal
 
 
 @dataclass
 class PensionResult:
     """Pension calculation results."""
 
-    projected_monthly_pension: float
+    projected_monthly_pension: Decimal
     scenarios: list[PensionScenario]
-    pension_coast_fire_number: float
+    pension_coast_fire_number: Decimal
     guarantee_active: bool
-    guarantee_amount: float
-    crossover_age: float | None
+    guarantee_amount: Decimal
+    crossover_age: Decimal | None
 
 
 @dataclass
@@ -62,28 +69,46 @@ class ProjectionPoint:
     age: int
     year: int
     month: int
-    net_worth: float
-    coast_net_worth: float
+    net_worth: Decimal
+    coast_net_worth: Decimal
     # Pension drawdown projections (present when pension is active)
-    net_worth_early: float | None = None
-    net_worth_normal: float | None = None
-    net_worth_late: float | None = None
+    net_worth_early: Decimal | None = None
+    net_worth_normal: Decimal | None = None
+    net_worth_late: Decimal | None = None
 
 
 @dataclass
 class FireResult:
     """Complete FIRE calculation results."""
 
-    fire_number: float
-    coast_fire_number: float
+    fire_number: Decimal
+    coast_fire_number: Decimal
     coast_fire_reached: bool
-    years_to_fire: float | None  # None if unreachable
-    fire_age: float | None
-    coast_fire_age: float | None
+    years_to_fire: Decimal | None  # None if unreachable
+    fire_age: Decimal | None
+    coast_fire_age: Decimal | None
     on_track: bool
-    portfolio_depleted_age: float | None
+    portfolio_depleted_age: Decimal | None
     projections: list[ProjectionPoint] = field(default_factory=list)
     pension: PensionResult | None = None
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def _decimal_round(value: Decimal, places: int = 2) -> Decimal:
+    """Round a Decimal to specified decimal places."""
+    return value.quantize(Decimal(10) ** -places)
+
+
+def _decimal_power(base: Decimal, exponent: Decimal) -> Decimal:
+    """Calculate base ** exponent for Decimals using float conversion.
+
+    Note: For financial projections, float precision is acceptable.
+    """
+    return Decimal(str(float(base) ** float(exponent)))
 
 
 # ---------------------------------------------------------------------------
@@ -91,21 +116,21 @@ class FireResult:
 # ---------------------------------------------------------------------------
 
 
-def calc_fire_number(annual_expenses: float, swr_pct: float) -> float:
+def calc_fire_number(annual_expenses: Decimal, swr_pct: Decimal) -> Decimal:
     """Calculate the FIRE number based on annual expenses and safe withdrawal rate.
 
     FIRE Number = Annual Expenses / (SWR / 100)
     """
     if swr_pct <= 0:
-        return float("inf")
+        return Decimal("Infinity")
     return annual_expenses / (swr_pct / 100)
 
 
 def calc_coast_fire_number(
-    fire_number: float,
-    real_annual_return_pct: float,
-    years_to_retirement: float,
-) -> float:
+    fire_number: Decimal,
+    real_annual_return_pct: Decimal,
+    years_to_retirement: Decimal,
+) -> Decimal:
     """Calculate Coast FIRE number.
 
     This is how much you need RIGHT NOW so that compound growth alone
@@ -116,43 +141,46 @@ def calc_coast_fire_number(
     if years_to_retirement <= 0:
         return fire_number
     r = real_annual_return_pct / 100
-    return float(fire_number / ((1 + r) ** years_to_retirement))
+    growth_factor = _decimal_power(1 + r, years_to_retirement)
+    return fire_number / growth_factor
 
 
 def calc_years_to_fire(
-    current_net_worth: float,
-    monthly_contribution: float,
-    fire_number: float,
-    real_annual_return_pct: float,
-) -> float | None:
+    current_net_worth: Decimal,
+    monthly_contribution: Decimal,
+    fire_number: Decimal,
+    real_annual_return_pct: Decimal,
+) -> Decimal | None:
     """Calculate years to reach FIRE using iterative month-by-month simulation.
 
     Uses real (inflation-adjusted) returns.
     Returns None if FIRE is unreachable within 100 years.
     """
     if current_net_worth >= fire_number:
-        return 0.0
+        return Decimal("0")
 
-    monthly_return = (1 + real_annual_return_pct / 100) ** (1 / 12) - 1
+    monthly_return = (
+        _decimal_power(1 + real_annual_return_pct / 100, Decimal("1") / 12) - 1
+    )
     nw = current_net_worth
     max_months = 100 * 12
 
     for m in range(1, max_months + 1):
         nw = nw * (1 + monthly_return) + monthly_contribution
         if nw >= fire_number:
-            return m / 12
+            return Decimal(m) / 12
 
     return None
 
 
 def calc_coast_fire_age(
-    current_net_worth: float,
-    monthly_contribution: float,
-    fire_number: float,
-    real_annual_return_pct: float,
+    current_net_worth: Decimal,
+    monthly_contribution: Decimal,
+    fire_number: Decimal,
+    real_annual_return_pct: Decimal,
     current_age: int,
     target_retirement_age: int,
-) -> float | None:
+) -> Decimal | None:
     """Calculate the age at which you reach Coast FIRE.
 
     At each month, checks: can current NW (with contributions) compound to
@@ -160,28 +188,29 @@ def calc_coast_fire_age(
     Returns None if unreachable before target retirement age.
     """
     r = real_annual_return_pct / 100
-    monthly_return = (1 + r) ** (1 / 12) - 1
+    monthly_return = _decimal_power(1 + r, Decimal("1") / 12) - 1
     total_months = round((target_retirement_age - current_age) * 12)
 
     if total_months <= 0:
         return None
 
     # Check starting point
-    coast_needed_now = fire_number / ((1 + r) ** (target_retirement_age - current_age))
+    years_to_retire = Decimal(target_retirement_age - current_age)
+    coast_needed_now = fire_number / _decimal_power(1 + r, years_to_retire)
     if current_net_worth >= coast_needed_now:
-        return float(current_age)
+        return Decimal(current_age)
 
     nw = current_net_worth
 
     for m in range(1, total_months + 1):
         nw = nw * (1 + monthly_return) + monthly_contribution
-        age = current_age + m / 12
-        years_remaining = target_retirement_age - age
+        age = Decimal(current_age) + Decimal(m) / 12
+        years_remaining = Decimal(target_retirement_age) - age
         if years_remaining <= 0:
             break
-        coast_needed = fire_number / ((1 + r) ** years_remaining)
+        coast_needed = fire_number / _decimal_power(1 + r, years_remaining)
         if nw >= coast_needed:
-            return round(age * 10) / 10
+            return _decimal_round(age, 1)
 
     return None
 
@@ -190,22 +219,19 @@ def calc_coast_fire_age(
 # Pension calculation functions
 # ---------------------------------------------------------------------------
 
-# Early/late pension adjustment rate per month (Finnish TyEL)
-PENSION_ADJUSTMENT_PER_MONTH = 0.004
-
 
 def calc_projected_monthly_pension(
-    accrued_monthly: float,
+    accrued_monthly: Decimal,
     current_age: int,
-    fire_age: float,
-    monthly_salary: float,
-    accrual_rate_pct: float,
-) -> float:
+    fire_age: Decimal,
+    monthly_salary: Decimal,
+    accrual_rate_pct: Decimal,
+) -> Decimal:
     """Project monthly pension at FIRE age based on current accrual and future work.
 
     Accrual stops when you FIRE (stop working).
     """
-    years_of_accrual = max(0, fire_age - current_age)
+    years_of_accrual = max(Decimal("0"), fire_age - current_age)
     additional_monthly_pension = (
         years_of_accrual * monthly_salary * (accrual_rate_pct / 100)
     )
@@ -213,40 +239,43 @@ def calc_projected_monthly_pension(
 
 
 def calc_pension_adjustment(
-    projected_monthly: float,
+    projected_monthly: Decimal,
     pension_full_age: int,
     pension_start_age: int,
-) -> float:
+) -> Decimal:
     """Apply early/late pension adjustment (0.4%/month from full pension age).
 
     Early = reduction, late = bonus.
     """
     months_delta = (pension_start_age - pension_full_age) * 12
     adjustment_factor = 1 + months_delta * PENSION_ADJUSTMENT_PER_MONTH
-    return max(0, projected_monthly * adjustment_factor)
+    return max(Decimal("0"), projected_monthly * adjustment_factor)
 
 
-def pv_annuity(annual_payment: float, years: float, real_annual_return: float) -> float:
+def pv_annuity(
+    annual_payment: Decimal, years: Decimal, real_annual_return: Decimal
+) -> Decimal:
     """Present value of an annuity: fixed annual payment for N years at real return r.
 
     Used for die-with-zero calculations.
     """
     if years <= 0 or annual_payment <= 0:
-        return 0.0
-    if abs(real_annual_return) < 1e-10:
+        return Decimal("0")
+    if abs(real_annual_return) < Decimal("0.0000000001"):
         return annual_payment * years
     r = real_annual_return
-    return float(annual_payment * (1 - (1 + r) ** (-years)) / r)
+    discount_factor = _decimal_power(1 + r, -years)
+    return annual_payment * (1 - discount_factor) / r
 
 
 def calc_pension_fire_number(
-    annual_expenses: float,
-    annual_pension: float,
-    fire_age: float,
+    annual_expenses: Decimal,
+    annual_pension: Decimal,
+    fire_age: Decimal,
     pension_start_age: int,
-    swr_pct: float,
-    real_annual_return: float,
-) -> float:
+    swr_pct: Decimal,
+    real_annual_return: Decimal,
+) -> Decimal:
     """Pension-adjusted FIRE number using two-phase SWR + pension model.
 
     Phase 1 (FIRE age → pension start): portfolio covers ALL expenses via
@@ -258,62 +287,65 @@ def calc_pension_fire_number(
     at pension start.
     """
     r = real_annual_return
-    phase1_years = max(0, pension_start_age - fire_age)
+    phase1_years = max(Decimal("0"), Decimal(pension_start_age) - fire_age)
 
     # Portfolio needed at pension start to sustain the gap indefinitely via SWR
-    phase2_annual_gap = max(0, annual_expenses - annual_pension)
+    phase2_annual_gap = max(Decimal("0"), annual_expenses - annual_pension)
     phase2_portfolio = (
-        phase2_annual_gap / (swr_pct / 100) if swr_pct > 0 else float("inf")
+        phase2_annual_gap / (swr_pct / 100) if swr_pct > 0 else Decimal("Infinity")
     )
 
     phase1_pv = pv_annuity(annual_expenses, phase1_years, r)
 
     # Discount phase 2 portfolio back to FIRE age
-    discount_factor = (1 + r) ** (-phase1_years) if phase1_years > 0 else 1
+    if phase1_years > 0:
+        discount_factor = _decimal_power(1 + r, -phase1_years)
+    else:
+        discount_factor = Decimal("1")
     phase2_pv = phase2_portfolio * discount_factor
 
     return phase1_pv + phase2_pv
 
 
 def calc_guarantee_crossover_age(
-    accrued_monthly: float,
+    accrued_monthly: Decimal,
     current_age: int,
-    monthly_salary: float,
-    accrual_rate_pct: float,
-    guarantee_amount: float,
+    monthly_salary: Decimal,
+    accrual_rate_pct: Decimal,
+    guarantee_amount: Decimal,
     max_age: int,
-) -> float | None:
+) -> Decimal | None:
     """Calculate the age at which projected TyEL pension >= guarantee amount.
 
     Returns None if already exceeded or if it never crosses within reasonable
     timeframe.
     """
     if accrued_monthly >= guarantee_amount:
-        return float(current_age)
+        return Decimal(current_age)
     annual_accrual = monthly_salary * (accrual_rate_pct / 100)
     if annual_accrual <= 0:
         return None
     years_needed = (guarantee_amount - accrued_monthly) / annual_accrual
-    crossover_age = current_age + years_needed
-    return round(crossover_age * 10) / 10 if crossover_age <= max_age else None
+    crossover_age = Decimal(current_age) + years_needed
+    return _decimal_round(crossover_age, 1) if crossover_age <= max_age else None
 
 
 def generate_pension_scenarios(
-    projected_monthly_pension: float,
+    projected_monthly_pension: Decimal,
     pension_full_age: int,
-    fire_age: float,
-    annual_expenses: float,
-    swr_pct: float,
-    real_annual_return: float,
+    fire_age: Decimal,
+    annual_expenses: Decimal,
+    swr_pct: Decimal,
+    real_annual_return: Decimal,
 ) -> list[PensionScenario]:
     """Generate the 3 pension scenarios (early / normal / late)."""
-    configs = [
+    configs: list[tuple[PensionLabel, int]] = [
         ("early", -3),
         ("normal", 0),
         ("late", 3),
     ]
 
-    scenarios = []
+    scenarios: list[PensionScenario] = []
     for label, offset in configs:
         pension_start_age = pension_full_age + offset
         monthly_pension = calc_pension_adjustment(
@@ -332,11 +364,11 @@ def generate_pension_scenarios(
         )
         scenarios.append(
             PensionScenario(
-                label=label,  # type: ignore
+                label=label,
                 pension_start_age=pension_start_age,
-                monthly_pension=round(monthly_pension, 2),
-                annual_pension=round(annual_pension, 2),
-                pension_fire_number=round(pension_fire_number, 2),
+                monthly_pension=_decimal_round(monthly_pension, 2),
+                annual_pension=_decimal_round(annual_pension, 2),
+                pension_fire_number=_decimal_round(pension_fire_number, 2),
             )
         )
 
@@ -349,18 +381,18 @@ def generate_pension_scenarios(
 
 
 def calc_fire_number_for_age(
-    retirement_age: float,
-    annual_expenses: float,
-    safe_withdrawal_rate: float,
-    real_return: float,
-    pension_accrued_monthly: float,
+    retirement_age: Decimal,
+    annual_expenses: Decimal,
+    safe_withdrawal_rate: Decimal,
+    real_return: Decimal,
+    pension_accrued_monthly: Decimal,
     current_age: int,
-    pension_monthly_salary: float,
-    pension_accrual_rate: float,
+    pension_monthly_salary: Decimal,
+    pension_accrual_rate: Decimal,
     pension_full_age: int,
     pension_guarantee_enabled: bool = False,
-    pension_guarantee_amount: float = 990.0,
-) -> float:
+    pension_guarantee_amount: Decimal = Decimal("990.0"),
+) -> Decimal:
     """Calculate the FIRE number for a specific retirement age.
 
     Accounts for pension accrued up to that age.
@@ -401,19 +433,19 @@ def calc_fire_number_for_age(
 
 
 def calc_pension_aware_years_to_fire(
-    current_net_worth: float,
-    monthly_contribution: float,
-    annual_expenses: float,
-    real_annual_return_pct: float,
+    current_net_worth: Decimal,
+    monthly_contribution: Decimal,
+    annual_expenses: Decimal,
+    real_annual_return_pct: Decimal,
     current_age: int,
-    safe_withdrawal_rate: float,
-    pension_accrued_monthly: float,
-    pension_monthly_salary: float,
-    pension_accrual_rate: float,
+    safe_withdrawal_rate: Decimal,
+    pension_accrued_monthly: Decimal,
+    pension_monthly_salary: Decimal,
+    pension_accrual_rate: Decimal,
     pension_full_age: int,
     pension_guarantee_enabled: bool = False,
-    pension_guarantee_amount: float = 990.0,
-) -> tuple[float, float] | None:
+    pension_guarantee_amount: Decimal = Decimal("990.0"),
+) -> tuple[Decimal, Decimal] | None:
     """Calculate earliest FIRE age with pension awareness.
 
     At each simulated month, calculates what the FIRE number would be
@@ -422,12 +454,12 @@ def calc_pension_aware_years_to_fire(
     Returns tuple of (years_to_fire, fire_number_at_that_age) or None if unreachable.
     """
     real_return = real_annual_return_pct / 100
-    monthly_return = (1 + real_return) ** (1 / 12) - 1
+    monthly_return = _decimal_power(1 + real_return, Decimal("1") / 12) - 1
     max_months = 100 * 12
 
     # Check if already FIRE'd at current age
     current_fire_number = calc_fire_number_for_age(
-        float(current_age),
+        Decimal(current_age),
         annual_expenses,
         safe_withdrawal_rate,
         real_return,
@@ -440,13 +472,13 @@ def calc_pension_aware_years_to_fire(
         pension_guarantee_amount,
     )
     if current_net_worth >= current_fire_number:
-        return (0.0, current_fire_number)
+        return (Decimal("0"), current_fire_number)
 
     nw = current_net_worth
 
     for m in range(1, max_months + 1):
         nw = nw * (1 + monthly_return) + monthly_contribution
-        age = current_age + m / 12
+        age = Decimal(current_age) + Decimal(m) / 12
 
         fire_number_at_age = calc_fire_number_for_age(
             age,
@@ -463,7 +495,7 @@ def calc_pension_aware_years_to_fire(
         )
 
         if nw >= fire_number_at_age:
-            return (m / 12, fire_number_at_age)
+            return (Decimal(m) / 12, fire_number_at_age)
 
     return None
 
@@ -483,7 +515,7 @@ def generate_projections(
     When pension inputs are present, extends past FIRE age with drawdown projections.
     """
     real_return_pct = inputs.annual_return_pct - inputs.inflation_pct
-    monthly_return = (1 + real_return_pct / 100) ** (1 / 12) - 1
+    monthly_return = _decimal_power(1 + real_return_pct / 100, Decimal("1") / 12) - 1
     total_months = years_ahead * 12
     current_year = datetime.now().year
     current_month = datetime.now().month
@@ -492,23 +524,26 @@ def generate_projections(
     has_pension = pension_result is not None
 
     # Fire age for drawdown transition
-    fire_age = float(inputs.target_retirement_age) if has_pension else float("inf")
+    if has_pension:
+        fire_age = Decimal(inputs.target_retirement_age)
+    else:
+        fire_age = Decimal("Infinity")
 
     monthly_expenses = inputs.annual_expenses / 12
     early_pension_monthly = (
         pension_result.scenarios[0].monthly_pension
         if has_pension and pension_result
-        else 0
+        else Decimal("0")
     )
     normal_pension_monthly = (
         pension_result.scenarios[1].monthly_pension
         if has_pension and pension_result
-        else 0
+        else Decimal("0")
     )
     late_pension_monthly = (
         pension_result.scenarios[2].monthly_pension
         if has_pension and pension_result
-        else 0
+        else Decimal("0")
     )
     early_start_age = (
         pension_result.scenarios[0].pension_start_age
@@ -537,43 +572,40 @@ def generate_projections(
         age=inputs.current_age,
         year=current_year,
         month=current_month,
-        net_worth=round(nw),
-        coast_net_worth=round(coast_nw),
+        net_worth=_decimal_round(nw, 0),
+        coast_net_worth=_decimal_round(coast_nw, 0),
     )
     if has_pension:
-        start_point.net_worth_early = round(nw)
-        start_point.net_worth_normal = round(nw)
-        start_point.net_worth_late = round(nw)
+        start_point.net_worth_early = _decimal_round(nw, 0)
+        start_point.net_worth_normal = _decimal_round(nw, 0)
+        start_point.net_worth_late = _decimal_round(nw, 0)
     points.append(start_point)
 
+    def apply_drawdown(
+        current_nw: Decimal,
+        pension_monthly: Decimal,
+        pension_start_age: int,
+        age: Decimal,
+    ) -> Decimal:
+        if current_nw <= 0:
+            return Decimal("0")
+        val = current_nw * (1 + monthly_return) - monthly_expenses
+        if age >= pension_start_age:
+            val += pension_monthly
+        return max(Decimal("0"), val)
+
     for m in range(1, total_months + 1):
-        age = inputs.current_age + m / 12
+        age = Decimal(inputs.current_age) + Decimal(m) / 12
         in_drawdown = has_pension and age >= fire_age
 
         if in_drawdown:
-
-            def apply_drawdown(
-                current_nw: float,
-                pension_monthly: float,
-                pension_start_age: int,
-                current_age: float,
-            ) -> float:
-                if current_nw <= 0:
-                    return 0.0
-                val = current_nw * (1 + monthly_return) - monthly_expenses
-                if current_age >= pension_start_age:
-                    val += pension_monthly
-                return float(max(0, val))
-
             nw_early = apply_drawdown(
                 nw_early, early_pension_monthly, early_start_age, age
             )
             nw_normal = apply_drawdown(
                 nw_normal, normal_pension_monthly, normal_start_age, age
             )
-            nw_late = apply_drawdown(
-                nw_late, late_pension_monthly, late_start_age, age
-            )
+            nw_late = apply_drawdown(nw_late, late_pension_monthly, late_start_age, age)
             nw = nw_normal
         else:
             nw = nw * (1 + monthly_return) + inputs.monthly_contribution
@@ -596,13 +628,13 @@ def generate_projections(
                 age=inputs.current_age + years_out,
                 year=proj_year,
                 month=proj_month,
-                net_worth=round(nw),
-                coast_net_worth=round(coast_nw),
+                net_worth=_decimal_round(nw, 0),
+                coast_net_worth=_decimal_round(coast_nw, 0),
             )
             if has_pension:
-                point.net_worth_early = round(nw_early)
-                point.net_worth_normal = round(nw_normal)
-                point.net_worth_late = round(nw_late)
+                point.net_worth_early = _decimal_round(nw_early, 0)
+                point.net_worth_normal = _decimal_round(nw_normal, 0)
+                point.net_worth_late = _decimal_round(nw_late, 0)
             points.append(point)
 
     return points
@@ -621,19 +653,20 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
     # Check if pension mode is active
     has_pension = inputs.pension_accrued_monthly is not None
 
-    fire_number: float
+    fire_number: Decimal
     pension_result: PensionResult | None = None
 
     if has_pension:
-        assert inputs.pension_accrued_monthly is not None  # checked by has_pension
+        pension_accrued = inputs.pension_accrued_monthly
+        assert pension_accrued is not None  # checked by has_pension
         accrual_rate = inputs.pension_accrual_rate
         pension_full_age = inputs.pension_full_age
-        monthly_salary = inputs.pension_monthly_salary or 0
+        monthly_salary = inputs.pension_monthly_salary or Decimal("0")
 
-        retirement_age = inputs.target_retirement_age
+        retirement_age = Decimal(inputs.target_retirement_age)
 
         projected_monthly = calc_projected_monthly_pension(
-            inputs.pension_accrued_monthly,
+            pension_accrued,
             inputs.current_age,
             retirement_age,
             monthly_salary,
@@ -658,26 +691,29 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
                 if scenario.monthly_pension < guarantee_amount:
                     scenario.monthly_pension = guarantee_amount
                     scenario.annual_pension = guarantee_amount * 12
-                    scenario.pension_fire_number = calc_pension_fire_number(
-                        inputs.annual_expenses,
-                        scenario.annual_pension,
-                        retirement_age,
-                        scenario.pension_start_age,
-                        inputs.safe_withdrawal_rate,
-                        real_return,
+                    scenario.pension_fire_number = _decimal_round(
+                        calc_pension_fire_number(
+                            inputs.annual_expenses,
+                            scenario.annual_pension,
+                            retirement_age,
+                            scenario.pension_start_age,
+                            inputs.safe_withdrawal_rate,
+                            real_return,
+                        ),
+                        2,
                     )
 
-        fire_number = round(scenarios[1].pension_fire_number)
+        fire_number = _decimal_round(scenarios[1].pension_fire_number, 0)
 
         pension_coast_fire_number = calc_coast_fire_number(
             fire_number,
             real_return_pct,
-            max(0, retirement_age - inputs.current_age),
+            max(Decimal("0"), retirement_age - inputs.current_age),
         )
 
         crossover_age = (
             calc_guarantee_crossover_age(
-                inputs.pension_accrued_monthly,
+                pension_accrued,
                 inputs.current_age,
                 monthly_salary,
                 accrual_rate,
@@ -689,33 +725,36 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         )
 
         pension_result = PensionResult(
-            projected_monthly_pension=round(projected_monthly, 2),
+            projected_monthly_pension=_decimal_round(projected_monthly, 2),
             scenarios=scenarios,
-            pension_coast_fire_number=round(pension_coast_fire_number),
+            pension_coast_fire_number=_decimal_round(pension_coast_fire_number, 0),
             guarantee_active=guarantee_enabled and projected_monthly < guarantee_amount,
             guarantee_amount=guarantee_amount,
             crossover_age=crossover_age,
         )
     else:
-        fire_number = round(
-            calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate)
+        fire_number = _decimal_round(
+            calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate), 0
         )
 
     years_to_retirement = max(0, inputs.target_retirement_age - inputs.current_age)
-    coast_fire_number = (
-        pension_result.pension_coast_fire_number
-        if has_pension and pension_result
-        else round(
-            calc_coast_fire_number(fire_number, real_return_pct, years_to_retirement)
+    if has_pension and pension_result:
+        coast_fire_number = pension_result.pension_coast_fire_number
+    else:
+        coast_fire_number = _decimal_round(
+            calc_coast_fire_number(
+                fire_number, real_return_pct, Decimal(years_to_retirement)
+            ),
+            0,
         )
-    )
     coast_fire_reached = inputs.current_net_worth >= coast_fire_number
 
     # Calculate years to FIRE - use pension-aware calculation when pension is active
-    years_to_fire: float | None
+    years_to_fire: Decimal | None
 
     if has_pension:
-        assert inputs.pension_accrued_monthly is not None
+        pension_accrued = inputs.pension_accrued_monthly
+        assert pension_accrued is not None
         pension_aware_result = calc_pension_aware_years_to_fire(
             inputs.current_net_worth,
             inputs.monthly_contribution,
@@ -723,8 +762,8 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
             real_return_pct,
             inputs.current_age,
             inputs.safe_withdrawal_rate,
-            inputs.pension_accrued_monthly,
-            inputs.pension_monthly_salary or 0,
+            pension_accrued,
+            inputs.pension_monthly_salary or Decimal("0"),
             inputs.pension_accrual_rate,
             inputs.pension_full_age,
             inputs.pension_guarantee_enabled,
@@ -740,13 +779,15 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         )
 
     fire_age = (
-        round((inputs.current_age + years_to_fire) * 10) / 10
+        _decimal_round(Decimal(inputs.current_age) + years_to_fire, 1)
         if years_to_fire is not None
         else None
     )
 
+    # Calculate Coast FIRE age: the age at which your NW (with contributions)
+    # can compound to the FIRE number without further savings by retirement.
     coast_fire_age = (
-        float(inputs.current_age)
+        Decimal(inputs.current_age)
         if coast_fire_reached
         else calc_coast_fire_age(
             inputs.current_net_worth,
@@ -772,7 +813,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
     projections = generate_projections(inputs, projection_years, pension_result)
 
     # Find when portfolio depletes (normal scenario hits 0)
-    portfolio_depleted_age: float | None = None
+    portfolio_depleted_age: Decimal | None = None
     if has_pension:
         for p in projections:
             if (
@@ -780,7 +821,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
                 and p.net_worth_normal is not None
                 and p.net_worth_normal <= 0
             ):
-                portfolio_depleted_age = float(p.age)
+                portfolio_depleted_age = Decimal(p.age)
                 break
 
     return FireResult(
@@ -788,7 +829,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         coast_fire_number=coast_fire_number,
         coast_fire_reached=coast_fire_reached,
         years_to_fire=(
-            round(years_to_fire * 10) / 10 if years_to_fire is not None else None
+            _decimal_round(years_to_fire, 1) if years_to_fire is not None else None
         ),
         fire_age=fire_age,
         coast_fire_age=coast_fire_age,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { calculateFire } from "@/lib/api";
 import {
@@ -154,7 +154,8 @@ interface UseFireCalculationOptions {
   debounceMs?: number;
 }
 
-const DEFAULT_DEBOUNCE_MS = 500;
+// Shorter debounce for more responsive feel
+const DEFAULT_DEBOUNCE_MS = 200;
 
 export function useFireCalculation(
   inputs: FireInputs,
@@ -165,23 +166,15 @@ export function useFireCalculation(
   // Serialize inputs for stable comparison
   const inputsKey = JSON.stringify(inputs);
 
-  // Debounce the inputs to avoid excessive API calls during slider dragging
+  // Debounce the inputs using idiomatic useEffect pattern
   const [debouncedInputsKey, setDebouncedInputsKey] = useState(inputsKey);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-    debounceRef.current = setTimeout(() => {
+    const timeout = setTimeout(() => {
       setDebouncedInputsKey(inputsKey);
     }, debounceMs);
 
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
-    };
+    return () => clearTimeout(timeout);
   }, [inputsKey, debounceMs]);
 
   // Parse the debounced inputs
@@ -195,9 +188,13 @@ export function useFireCalculation(
       return fromApiResult(apiResult);
     },
     enabled,
-    staleTime: 30000, // Consider data fresh for 30 seconds
-    gcTime: 60000, // Keep in cache for 1 minute
-    placeholderData: (previousData) => previousData, // Keep showing old data while loading new
+    // FIRE calculations are deterministic - same inputs always produce same outputs
+    // Use infinite staleTime to avoid refetching unless inputs change
+    staleTime: Infinity,
+    // Keep in cache for 5 minutes for when user switches tabs/views
+    gcTime: 5 * 60 * 1000,
+    // Keep showing previous data while fetching new results for smooth transitions
+    placeholderData: (previousData) => previousData,
   });
 
   return {
