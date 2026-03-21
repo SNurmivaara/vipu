@@ -304,6 +304,12 @@ export default function NetWorthPage() {
       {/* Summary Cards */}
       <SummaryCards snapshots={snapshotList} />
 
+      {/* Financial Goals */}
+      <GoalsSection
+        goals={goalsProgress}
+        categories={categoryList}
+      />
+
       {/* Charts Row */}
       {hasSnapshots && (
         <div className="grid gap-4 md:grid-cols-2">
@@ -326,13 +332,7 @@ export default function NetWorthPage() {
         />
       )}
 
-      {/* Financial Goals */}
-      <GoalsSection
-        goals={goalsProgress}
-        categories={categoryList}
-      />
-
-      {/* Snapshot List */}
+      {/* Snapshot History */}
       {hasCategories && (
         <SnapshotList snapshots={snapshotList} categories={categoryList} />
       )}

@@ -15,6 +15,7 @@ interface DeductionsSectionProps {
   defaultOpen?: boolean;
 }
 
+// deduction_mode: "monthly" (default), "one_time", "custom"
 const deductionFields = [
   { name: "name", label: "Name", type: "text" as const, required: true },
   {
@@ -34,15 +35,17 @@ const deductionFields = [
     max: 100,
     step: 0.1,
   },
-  { name: "is_ephemeral", label: "One-time deduction", type: "checkbox" as const },
-  // For one-time: show date picker
   {
-    name: "one_time_date",
-    label: "Date",
-    type: "date" as const,
-    showWhen: { field: "is_ephemeral", value: true },
+    name: "deduction_mode",
+    label: "",
+    type: "segment" as const,
+    options: [
+      { value: "monthly", label: "Monthly" },
+      { value: "one_time", label: "One-time" },
+      { value: "custom", label: "Custom" },
+    ],
   },
-  // For recurring: show due day, frequency, and optional date range
+  // Monthly mode: just due day
   {
     name: "due_day",
     label: "Due Day (of month)",
@@ -51,26 +54,44 @@ const deductionFields = [
     min: 1,
     max: 31,
     step: 1,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "deduction_mode", value: "monthly" },
+  },
+  // One-time mode: date picker
+  {
+    name: "one_time_date",
+    label: "Date",
+    type: "date" as const,
+    showWhen: { field: "deduction_mode", value: "one_time" },
+  },
+  // Custom mode: due day, frequency, start/end dates
+  {
+    name: "custom_due_day",
+    label: "Due Day (of month)",
+    type: "number" as const,
+    required: true,
+    min: 1,
+    max: 31,
+    step: 1,
+    showWhen: { field: "deduction_mode", value: "custom" },
   },
   {
     name: "frequency_value",
     label: "Frequency",
     type: "frequency" as const,
     unitFieldName: "frequency_unit",
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "deduction_mode", value: "custom" },
   },
   {
     name: "start_date",
     label: "Start Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "deduction_mode", value: "custom" },
   },
   {
     name: "end_date",
     label: "End Date (optional)",
     type: "date" as const,
-    hideWhen: { field: "is_ephemeral", value: true },
+    showWhen: { field: "deduction_mode", value: "custom" },
   },
 ];
 
@@ -128,17 +149,34 @@ export function DeductionsSection({
   });
 
   const handleSave = (values: Record<string, string | number | boolean>) => {
-    const isEphemeral = values.is_ephemeral as boolean;
+    const mode = (values.deduction_mode as string) || "monthly";
     const oneTimeDate = values.one_time_date as string;
 
-    // For one-time deductions, extract due_day from the date and set start_date
-    let dueDay = (values.due_day as number) || 1;
-    let startDate = (values.start_date as string) || null;
+    let dueDay: number;
+    let startDate: string | null = null;
+    let endDate: string | null = null;
+    let frequencyValue = 1;
+    let frequencyUnit: "days" | "weeks" | "months" | "years" = "months";
+    let isEphemeral = false;
 
-    if (isEphemeral && oneTimeDate) {
-      const date = new Date(oneTimeDate);
-      dueDay = date.getDate();
-      startDate = oneTimeDate;
+    if (mode === "monthly") {
+      dueDay = (values.due_day as number) || 1;
+    } else if (mode === "one_time") {
+      isEphemeral = true;
+      if (oneTimeDate) {
+        const date = new Date(oneTimeDate);
+        dueDay = date.getDate();
+        startDate = oneTimeDate;
+      } else {
+        dueDay = 1;
+      }
+    } else {
+      // custom mode
+      dueDay = (values.custom_due_day as number) || 1;
+      frequencyValue = (values.frequency_value as number) || 1;
+      frequencyUnit = (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months";
+      startDate = (values.start_date as string) || null;
+      endDate = (values.end_date as string) || null;
     }
 
     const data: DeductionFormData = {
@@ -148,10 +186,10 @@ export function DeductionsSection({
       tax_percentage: values.tax_percentage as number,
       is_deduction: true,
       due_day: dueDay,
-      frequency_value: (values.frequency_value as number) || 1,
-      frequency_unit: (values.frequency_unit as "days" | "weeks" | "months" | "years") || "months",
+      frequency_value: frequencyValue,
+      frequency_unit: frequencyUnit,
       start_date: startDate,
-      end_date: isEphemeral ? null : ((values.end_date as string) || null),
+      end_date: endDate,
       is_ephemeral: isEphemeral,
       archived_at: null,
     };
@@ -244,6 +282,16 @@ export function DeductionsSection({
     </div>
   );
 
+  // Determine deduction mode from existing item
+  const getDeductionMode = (item: IncomeItem): string => {
+    if (item.is_ephemeral) return "one_time";
+    // If non-monthly frequency or has start/end date, it's custom
+    if (item.frequency_value !== 1 || item.frequency_unit !== "months" || item.start_date || item.end_date) {
+      return "custom";
+    }
+    return "monthly";
+  };
+
   const dialog = (
     <EditDialog
       open={editItem !== null || isNew}
@@ -256,22 +304,24 @@ export function DeductionsSection({
               name: editItem.name,
               gross_amount: editItem.gross_amount,
               tax_percentage: editItem.tax_percentage ?? 0,
+              deduction_mode: getDeductionMode(editItem),
               due_day: editItem.due_day,
+              custom_due_day: editItem.due_day,
               frequency_value: editItem.frequency_value,
               frequency_unit: editItem.frequency_unit,
-              is_ephemeral: editItem.is_ephemeral,
               one_time_date: editItem.is_ephemeral ? (editItem.start_date || "") : "",
-              start_date: editItem.is_ephemeral ? "" : (editItem.start_date || ""),
+              start_date: editItem.start_date || "",
               end_date: editItem.end_date || "",
             }
           : {
               name: "",
               gross_amount: 0,
               tax_percentage: 75,
+              deduction_mode: "monthly",
               due_day: 1,
+              custom_due_day: 1,
               frequency_value: 1,
               frequency_unit: "months",
-              is_ephemeral: false,
               one_time_date: "",
               start_date: "",
               end_date: "",

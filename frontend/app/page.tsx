@@ -9,7 +9,7 @@ import {
   DeductionsSection,
   AccountsSection,
   CreditCardsSection,
-  ExpensesSection,
+  ExpensesGroupSection,
   SavingsGoalsSection,
   SettingsCard,
   BudgetSummary,
@@ -279,7 +279,6 @@ export default function BudgetPage() {
           <AccountsSection
             accounts={data.accounts.filter((a) => !a.is_credit)}
             collapsible
-            defaultOpen
           />
           <CreditCardsSection
             creditCards={data.accounts.filter((a) => a.is_credit)}
@@ -287,12 +286,16 @@ export default function BudgetPage() {
           />
         </div>
         <div className="space-y-4">
-          <ExpensesSection
-            expenses={[
-              ...data.expenses.filter((e) => !e.is_savings_goal),
+          <ExpensesGroupSection
+            expensesBeforePayday={data.expenses.filter(
+              (e) => !e.is_savings_goal && data.totals.expenses_before_payday_ids.includes(e.id)
+            )}
+            expensesAfterPayday={[
+              ...data.expenses.filter(
+                (e) => !e.is_savings_goal && data.totals.expenses_next_period_ids.includes(e.id)
+              ),
               ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal) : []),
             ]}
-            collapsible
           />
           <SavingsGoalsSection
             savingsGoals={[

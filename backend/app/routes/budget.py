@@ -10,6 +10,7 @@ from app.deadline_calc import (
     calculate_expenses_before_payday,
     calculate_income_before_payday,
     get_next_payday,
+    get_occurrences_in_window,
     get_payday_after,
 )
 from app.models import (
@@ -122,6 +123,44 @@ def get_current_budget() -> Response:
         payday_day=settings.payday_day,
     )
 
+    # Calculate expense IDs for each period (for frontend filtering)
+    expenses_before_payday_ids: list[int] = []
+    expenses_next_period_ids: list[int] = []
+
+    for expense in active_expenses:
+        if expense.is_savings_goal:
+            continue
+
+        # Check if expense occurs before payday
+        occurrences_before = get_occurrences_in_window(
+            due_day=expense.due_day,
+            frequency_value=expense.frequency_value,
+            frequency_unit=expense.frequency_unit,
+            start_date=expense.start_date,
+            end_date=expense.end_date,
+            is_ephemeral=expense.is_ephemeral,
+            archived_at=expense.archived_at,
+            window_start=today,
+            window_end=next_payday,
+        )
+        if occurrences_before:
+            expenses_before_payday_ids.append(expense.id)
+
+        # Check if expense occurs in next period
+        occurrences_next = get_occurrences_in_window(
+            due_day=expense.due_day,
+            frequency_value=expense.frequency_value,
+            frequency_unit=expense.frequency_unit,
+            start_date=expense.start_date,
+            end_date=expense.end_date,
+            is_ephemeral=expense.is_ephemeral,
+            archived_at=expense.archived_at,
+            window_start=next_payday,
+            window_end=next_period_end,
+        )
+        if occurrences_next:
+            expenses_next_period_ids.append(expense.id)
+
     return jsonify(
         {
             "settings": settings.to_dict(),
@@ -149,6 +188,9 @@ def get_current_budget() -> Response:
                 "savings_next_period": float(savings_next_period),
                 "cc_payments_next_period": float(cc_payments_next_period),
                 "income_next_period": float(income_next_period),
+                # Expense IDs for each period (for frontend filtering)
+                "expenses_before_payday_ids": expenses_before_payday_ids,
+                "expenses_next_period_ids": expenses_next_period_ids,
             },
         }
     )
