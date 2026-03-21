@@ -179,35 +179,21 @@ export function SavingsGoalsSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        <span>Goal</span>
-        <span className="text-right">Target</span>
-      </div>
       {savingsGoals.map((goal) => (
         <div
           key={goal.id}
           onClick={() => openEdit(goal)}
-          className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+          className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
         >
-          <span className="text-gray-900 dark:text-gray-100">{goal.name}</span>
-          <span className="text-right text-gray-900 dark:text-gray-100 font-medium">
+          <span className="text-gray-900 dark:text-gray-100 text-sm">{goal.name}</span>
+          <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
             {formatCurrency(goal.amount)}
           </span>
         </div>
       ))}
       {savingsGoals.length === 0 && (
-        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
           No savings goals yet
-        </div>
-      )}
-      {savingsGoals.length > 0 && (
-        <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
-            Total
-          </span>
-          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-            {formatCurrency(totalGoals)}
-          </span>
         </div>
       )}
     </div>

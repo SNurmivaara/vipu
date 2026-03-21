@@ -93,8 +93,8 @@ export function ExpensesGroupSection({
           </span>
         </button>
         <div className="flex items-center gap-3">
-          <span className="font-medium text-gray-900 dark:text-gray-100">
-            {formatCurrency(totalExpenses)}
+          <span className="font-medium text-red-600 dark:text-red-400">
+            {formatCurrency(-totalExpenses)}
           </span>
           <button
             type="button"

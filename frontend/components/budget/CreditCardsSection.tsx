@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Account, AccountFormData } from "@/types";
 import { createAccount, updateAccount, deleteAccount } from "@/lib/api";
-import { formatCurrency, getBalanceColor, cn } from "@/lib/utils";
+import { formatCurrency, getBalanceColor } from "@/lib/utils";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { useToast } from "@/components/ui/Toast";
@@ -120,45 +120,21 @@ export function CreditCardsSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-2 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        <span>Card</span>
-        <span className="text-right">Balance</span>
-      </div>
       {creditCards.map((card) => (
         <div
           key={card.id}
           onClick={() => openEdit(card)}
-          className="grid grid-cols-2 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+          className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
         >
-          <span className="text-gray-900 dark:text-gray-100">{card.name}</span>
-          <span
-            className={cn(
-              "text-right font-medium",
-              getBalanceColor(card.balance)
-            )}
-          >
+          <span className="text-gray-900 dark:text-gray-100 text-sm">{card.name}</span>
+          <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
             {formatCurrency(card.balance)}
           </span>
         </div>
       ))}
       {creditCards.length === 0 && (
-        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
           No credit cards yet
-        </div>
-      )}
-      {creditCards.length > 0 && (
-        <div className="grid grid-cols-2 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
-            Total
-          </span>
-          <span
-            className={cn(
-              "text-right font-semibold",
-              getBalanceColor(totalBalance)
-            )}
-          >
-            {formatCurrency(totalBalance)}
-          </span>
         </div>
       )}
     </div>

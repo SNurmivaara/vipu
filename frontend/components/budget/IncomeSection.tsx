@@ -201,54 +201,34 @@ export function IncomeSection({
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      <div className="grid grid-cols-3 px-4 py-2 text-sm text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-        <span>Name</span>
-        <span className="text-right">Gross</span>
-        <span className="text-right">Net</span>
-      </div>
       {income.map((item) => {
         const netAmount = calculateNetAmount(item, settings.tax_percentage);
         return (
           <div
             key={item.id}
             onClick={() => openEdit(item)}
-            className="grid grid-cols-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+            className="grid grid-cols-[1fr_5.5rem_5.5rem] px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
           >
-            <span className="text-gray-900 dark:text-gray-100">
+            <span className="text-gray-900 dark:text-gray-100 text-sm">
               {item.name}
               {item.is_taxed && (
-                <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
+                <span className="text-gray-400 dark:text-gray-500 ml-1.5">
                   (taxed)
                 </span>
               )}
             </span>
-            <span className="text-right text-gray-700 dark:text-gray-300">
+            <span className="text-right text-gray-400 dark:text-gray-500 text-sm">
               {formatCurrency(item.gross_amount)}
             </span>
-            <span className="text-right font-medium text-gray-900 dark:text-gray-100">
+            <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
               {formatCurrency(netAmount)}
             </span>
           </div>
         );
       })}
       {income.length === 0 && (
-        <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+        <div className="px-4 py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
           No income items yet
-        </div>
-      )}
-      {income.length > 0 && (
-        <div className="grid grid-cols-3 px-4 py-3 bg-gray-50 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
-          <span className="font-semibold text-gray-900 dark:text-gray-100">
-            Total
-          </span>
-          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-            {formatCurrency(
-              income.reduce((sum, item) => sum + item.gross_amount, 0)
-            )}
-          </span>
-          <span className="text-right font-semibold text-gray-900 dark:text-gray-100">
-            {formatCurrency(totalNet)}
-          </span>
         </div>
       )}
     </div>

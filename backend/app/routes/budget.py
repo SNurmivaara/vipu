@@ -134,9 +134,9 @@ def get_current_budget() -> Response:
     expenses_next_period_ids: list[int] = []
     expenses_future_ids: list[int] = []
 
-    # Look further ahead for "future" expenses (6 months)
+    # Look further ahead for "future" expenses (13 months to catch yearly expenses)
     future_window_end = get_payday_after(next_period_end, settings.payday_day)
-    for _ in range(5):  # 6 months total
+    for _ in range(12):  # 13 months total
         future_window_end = get_payday_after(future_window_end, settings.payday_day)
 
     for expense in active_expenses:
