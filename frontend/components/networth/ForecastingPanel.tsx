@@ -28,6 +28,8 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   pensionMonthlySalaryOverride: null,
   pensionAccrualRate: 1.5,
   pensionFullAge: 68,
+  pensionGuaranteeEnabled: false,
+  pensionGuaranteeAmount: 990,
   lifeExpectancy: 95,
   groupReturnRates: {},
 };
@@ -139,6 +141,8 @@ export function ForecastingPanel({
         pensionMonthlySalary: derivedPensionMonthlySalary,
         pensionAccrualRate: settings.pensionAccrualRate,
         pensionFullAge: settings.pensionFullAge,
+        pensionGuaranteeEnabled: settings.pensionGuaranteeEnabled,
+        pensionGuaranteeAmount: settings.pensionGuaranteeAmount,
         lifeExpectancy: settings.lifeExpectancy,
       }),
     }),
@@ -156,6 +160,8 @@ export function ForecastingPanel({
       derivedPensionMonthlySalary,
       settings.pensionAccrualRate,
       settings.pensionFullAge,
+      settings.pensionGuaranteeEnabled,
+      settings.pensionGuaranteeAmount,
       settings.lifeExpectancy,
     ]
   );
@@ -431,6 +437,29 @@ export function ForecastingPanel({
             max={75}
             step={1}
           />
+          {/* Guarantee pension (takuueläke) */}
+          <div className="col-span-full flex items-center gap-2 mt-1">
+            <input
+              type="checkbox"
+              id="pension-guarantee"
+              checked={settings.pensionGuaranteeEnabled}
+              onChange={(e) => updateSetting("pensionGuaranteeEnabled", e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600 text-emerald-600 focus:ring-emerald-500"
+            />
+            <label htmlFor="pension-guarantee" className="text-xs text-gray-600 dark:text-gray-400">
+              Include takuueläke (guarantee pension)
+            </label>
+          </div>
+          {settings.pensionGuaranteeEnabled && (
+            <NumberInput
+              label="Guarantee amount (€/mo)"
+              value={settings.pensionGuaranteeAmount}
+              onChange={(v) => updateSetting("pensionGuaranteeAmount", v)}
+              min={0}
+              max={5000}
+              step={10}
+            />
+          )}
           <NumberInput
             label="Life expectancy"
             value={settings.lifeExpectancy}
@@ -512,6 +541,22 @@ export function ForecastingPanel({
                 </div>
               ))}
             </div>
+          </div>
+        );
+      })()}
+
+      {/* Guarantee pension (takuueläke) crossover milestone */}
+      {result.pension?.guaranteeActive && (() => {
+        const crossover = result.pension.crossoverAge;
+        return (
+          <div className="rounded-lg border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20 p-3 text-sm">
+            <span className="text-blue-700 dark:text-blue-300">
+              Takuueläke active: projected TyEL ({formatCurrencyRounded(result.pension.projectedMonthlyPension)}/mo)
+              is below the guarantee ({formatCurrencyRounded(result.pension.guaranteeAmount)}/mo).
+              {crossover !== null
+                ? ` Your TyEL will exceed the guarantee at age ${crossover}, after which your pension is portable abroad.`
+                : " Your TyEL may not reach the guarantee level before retirement."}
+            </span>
           </div>
         );
       })()}

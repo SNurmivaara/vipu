@@ -229,6 +229,12 @@ class ForecastingSettings(Base):
         Numeric(5, 2), nullable=False, default=Decimal("1.5")
     )
     pension_full_age: Mapped[int] = mapped_column(Integer, nullable=False, default=68)
+    pension_guarantee_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    pension_guarantee_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("990.0")
+    )
     life_expectancy: Mapped[int] = mapped_column(Integer, nullable=False, default=95)
     group_return_rates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(
@@ -264,6 +270,8 @@ class ForecastingSettings(Base):
             ),
             "pension_accrual_rate": float(self.pension_accrual_rate),
             "pension_full_age": self.pension_full_age,
+            "pension_guarantee_enabled": self.pension_guarantee_enabled,
+            "pension_guarantee_amount": float(self.pension_guarantee_amount),
             "life_expectancy": self.life_expectancy,
             "group_return_rates": self.group_return_rates or {},
             "updated_at": self.updated_at.isoformat(),

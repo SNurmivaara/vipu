@@ -22,6 +22,8 @@ const CAMEL_TO_SNAKE: Record<keyof ForecastingSettings, keyof Omit<ForecastingSe
   pensionMonthlySalaryOverride: "pension_monthly_salary_override",
   pensionAccrualRate: "pension_accrual_rate",
   pensionFullAge: "pension_full_age",
+  pensionGuaranteeEnabled: "pension_guarantee_enabled",
+  pensionGuaranteeAmount: "pension_guarantee_amount",
   lifeExpectancy: "life_expectancy",
   groupReturnRates: "group_return_rates",
 };
@@ -38,6 +40,8 @@ function apiToSettings(api: ForecastingSettingsAPI): ForecastingSettings {
     pensionMonthlySalaryOverride: api.pension_monthly_salary_override,
     pensionAccrualRate: api.pension_accrual_rate,
     pensionFullAge: api.pension_full_age,
+    pensionGuaranteeEnabled: api.pension_guarantee_enabled,
+    pensionGuaranteeAmount: api.pension_guarantee_amount,
     lifeExpectancy: api.life_expectancy,
     groupReturnRates: api.group_return_rates ?? {},
   };

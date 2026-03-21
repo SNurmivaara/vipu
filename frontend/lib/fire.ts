@@ -20,6 +20,8 @@ export interface FireInputs {
   pensionMonthlySalary?: number;
   pensionAccrualRate?: number; // default 1.5
   pensionFullAge?: number; // default 68
+  pensionGuaranteeEnabled?: boolean;
+  pensionGuaranteeAmount?: number; // default 990
   lifeExpectancy?: number; // default 95
 }
 
@@ -35,6 +37,9 @@ export interface PensionResult {
   projectedMonthlyPension: number; // at FIRE age, before early/late adjustment
   scenarios: [PensionScenario, PensionScenario, PensionScenario];
   pensionCoastFireNumber: number;
+  guaranteeActive: boolean; // true when guarantee is enabled AND projected TyEL < guarantee
+  guaranteeAmount: number;
+  crossoverAge: number | null; // age at which projected TyEL >= guarantee amount
 }
 
 export interface FireResult {
@@ -246,6 +251,26 @@ export function calcPensionFireNumber(
 }
 
 /**
+ * Calculate the age at which projected TyEL pension >= guarantee amount.
+ * Returns null if already exceeded or if it never crosses within a reasonable timeframe.
+ */
+export function calcGuaranteeCrossoverAge(
+  accruedMonthly: number,
+  currentAge: number,
+  monthlySalary: number,
+  accrualRatePct: number,
+  guaranteeAmount: number,
+  maxAge: number
+): number | null {
+  if (accruedMonthly >= guaranteeAmount) return currentAge;
+  const annualAccrual = monthlySalary * (accrualRatePct / 100);
+  if (annualAccrual <= 0) return null;
+  const yearsNeeded = (guaranteeAmount - accruedMonthly) / annualAccrual;
+  const crossoverAge = currentAge + yearsNeeded;
+  return crossoverAge <= maxAge ? Math.round(crossoverAge * 10) / 10 : null;
+}
+
+/**
  * Generate the 3 pension scenarios (early / normal / late).
  */
 export function generatePensionScenarios(
@@ -437,6 +462,10 @@ export function calculateFire(inputs: FireInputs): FireResult {
       accrualRate
     );
 
+    // Guarantee pension (takuueläke) floor
+    const guaranteeEnabled = inputs.pensionGuaranteeEnabled ?? false;
+    const guaranteeAmount = inputs.pensionGuaranteeAmount ?? 990;
+
     const scenarios = generatePensionScenarios(
       projectedMonthly,
       pensionFullAge,
@@ -446,6 +475,24 @@ export function calculateFire(inputs: FireInputs): FireResult {
       realReturn
     );
 
+    // Apply guarantee floor to each scenario's pension
+    if (guaranteeEnabled) {
+      for (const scenario of scenarios) {
+        if (scenario.monthlyPension < guaranteeAmount) {
+          scenario.monthlyPension = guaranteeAmount;
+          scenario.annualPension = guaranteeAmount * 12;
+          scenario.pensionFireNumber = calcPensionFireNumber(
+            inputs.annualExpenses,
+            scenario.annualPension,
+            retirementAge,
+            scenario.pensionStartAge,
+            lifeExpectancy,
+            realReturn
+          );
+        }
+      }
+    }
+
     fireNumber = Math.round(scenarios[1].pensionFireNumber);
 
     const pensionCoastFireNumber = calcCoastFireNumber(
@@ -454,10 +501,24 @@ export function calculateFire(inputs: FireInputs): FireResult {
       Math.max(0, retirementAge - inputs.currentAge)
     );
 
+    const crossoverAge = guaranteeEnabled
+      ? calcGuaranteeCrossoverAge(
+          inputs.pensionAccruedMonthly!,
+          inputs.currentAge,
+          monthlySalary,
+          accrualRate,
+          guaranteeAmount,
+          pensionFullAge + 3
+        )
+      : null;
+
     pensionResult = {
       projectedMonthlyPension: projectedMonthly,
       scenarios,
       pensionCoastFireNumber: Math.round(pensionCoastFireNumber),
+      guaranteeActive: guaranteeEnabled && projectedMonthly < guaranteeAmount,
+      guaranteeAmount,
+      crossoverAge,
     };
   } else {
     fireNumber = Math.round(calcFireNumber(inputs.annualExpenses, inputs.safeWithdrawalRate));
