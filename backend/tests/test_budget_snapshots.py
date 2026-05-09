@@ -150,8 +150,7 @@ class TestUpdateBudgetSnapshot:
         original_balance = snapshot["current_balance"]
 
         updated_entries = [
-            {**e, "balance": e["balance"] + 100}
-            for e in snapshot["entries"]
+            {**e, "balance": e["balance"] + 100} for e in snapshot["entries"]
         ]
 
         resp = seeded_client.put(
@@ -188,10 +187,7 @@ class TestUpdateBudgetSnapshot:
         newer = snapshots[-2]
 
         # Update the older snapshot's entries to all be 0
-        zeroed = [
-            {**e, "balance": 0}
-            for e in older["entries"]
-        ]
+        zeroed = [{**e, "balance": 0} for e in older["entries"]]
         seeded_client.put(
             f"/api/budget/snapshots/{older['id']}",
             json={"entries": zeroed},
@@ -242,9 +238,7 @@ class TestDeleteBudgetSnapshot:
         new_prev = snapshots[-1]
         next_snap = snapshots[-3]
 
-        expected_change = (
-            next_snap["current_balance"] - new_prev["current_balance"]
-        )
+        expected_change = next_snap["current_balance"] - new_prev["current_balance"]
 
         del_resp = seeded_client.delete(f"/api/budget/snapshots/{target['id']}")
         assert del_resp.status_code == 200
@@ -266,9 +260,7 @@ class TestDeleteBudgetSnapshot:
         assert del_resp.status_code == 200
 
         refreshed = seeded_client.get("/api/budget/snapshots").json["snapshots"]
-        new_oldest_refreshed = next(
-            s for s in refreshed if s["id"] == new_oldest["id"]
-        )
+        new_oldest_refreshed = next(s for s in refreshed if s["id"] == new_oldest["id"])
         assert new_oldest_refreshed["change_from_previous"] == 0
 
 

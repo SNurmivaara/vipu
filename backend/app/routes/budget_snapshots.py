@@ -81,18 +81,14 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
     if notes is not None:
         notes = str(notes)[:500]
 
-    accounts: list[Account] = (
-        session.query(Account).order_by(Account.name).all()
-    )
+    accounts: list[Account] = session.query(Account).order_by(Account.name).all()
     current_balance = sum((a.balance for a in accounts), Decimal("0"))
 
     today = date.today()
 
     # Check for existing snapshot today
     existing = (
-        session.query(BudgetSnapshot)
-        .filter(BudgetSnapshot.date == today)
-        .first()
+        session.query(BudgetSnapshot).filter(BudgetSnapshot.date == today).first()
     )
 
     # Get previous snapshot for change calculation
@@ -105,16 +101,12 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
         )
     else:
         prev = (
-            session.query(BudgetSnapshot)
-            .order_by(BudgetSnapshot.date.desc())
-            .first()
+            session.query(BudgetSnapshot).order_by(BudgetSnapshot.date.desc()).first()
         )
 
     prev_balance = prev.current_balance if prev else None
     change = (
-        current_balance - prev_balance
-        if prev_balance is not None
-        else Decimal("0")
+        current_balance - prev_balance if prev_balance is not None else Decimal("0")
     )
 
     if existing:
@@ -129,13 +121,15 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
         ).delete()
 
         for account in accounts:
-            session.add(BudgetBalanceEntry(
-                snapshot_id=existing.id,
-                account_id=account.id,
-                account_name=account.name,
-                balance=account.balance,
-                is_credit=account.is_credit,
-            ))
+            session.add(
+                BudgetBalanceEntry(
+                    snapshot_id=existing.id,
+                    account_id=account.id,
+                    account_name=account.name,
+                    balance=account.balance,
+                    is_credit=account.is_credit,
+                )
+            )
 
         session.commit()
         session.refresh(existing)
@@ -153,13 +147,15 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
         session.flush()
 
         for account in accounts:
-            session.add(BudgetBalanceEntry(
-                snapshot_id=snapshot.id,
-                account_id=account.id,
-                account_name=account.name,
-                balance=account.balance,
-                is_credit=account.is_credit,
-            ))
+            session.add(
+                BudgetBalanceEntry(
+                    snapshot_id=snapshot.id,
+                    account_id=account.id,
+                    account_name=account.name,
+                    balance=account.balance,
+                    is_credit=account.is_credit,
+                )
+            )
 
         session.commit()
         session.refresh(snapshot)
@@ -301,13 +297,15 @@ def update_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
             if not account_name:
                 return jsonify({"error": "Each entry needs account_name"}), 400
 
-            session.add(BudgetBalanceEntry(
-                snapshot_id=snapshot.id,
-                account_id=entry_data.get("account_id"),
-                account_name=str(account_name)[:100],
-                balance=Decimal(str(entry_data.get("balance", 0))),
-                is_credit=bool(entry_data.get("is_credit", False)),
-            ))
+            session.add(
+                BudgetBalanceEntry(
+                    snapshot_id=snapshot.id,
+                    account_id=entry_data.get("account_id"),
+                    account_name=str(account_name)[:100],
+                    balance=Decimal(str(entry_data.get("balance", 0))),
+                    is_credit=bool(entry_data.get("is_credit", False)),
+                )
+            )
 
         # Recalculate current_balance from new entries
         session.flush()
@@ -323,9 +321,7 @@ def update_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
         .first()
     )
     snapshot.change_from_previous = (
-        snapshot.current_balance - prev.current_balance
-        if prev
-        else Decimal("0")
+        snapshot.current_balance - prev.current_balance if prev else Decimal("0")
     )
 
     # Update next snapshot's change_from_previous too

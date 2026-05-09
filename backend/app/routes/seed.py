@@ -250,55 +250,67 @@ def seed_data() -> Response:
     # Create budget history snapshots (simulating weekly tracking)
     # Work backwards from today: 6 weekly snapshots showing realistic
     # fluctuations (salary on 25th, spending in between)
-    snapshot_data = [
+    snapshot_data: list[tuple[int, dict[str, Decimal]]] = [
         # 5 weeks ago – just after payday, balances are high
-        {
-            "days_ago": 35,
-            "checking": Decimal("4200.00"),
-            "savings": Decimal("7500.00"),
-            "visa": Decimal("-300.00"),
-            "mastercard": Decimal("-100.00"),
-        },
+        (
+            35,
+            {
+                "checking": Decimal("4200.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-300.00"),
+                "mastercard": Decimal("-100.00"),
+            },
+        ),
         # 4 weeks ago – spending has started
-        {
-            "days_ago": 28,
-            "checking": Decimal("3400.00"),
-            "savings": Decimal("7500.00"),
-            "visa": Decimal("-550.00"),
-            "mastercard": Decimal("-150.00"),
-        },
+        (
+            28,
+            {
+                "checking": Decimal("3400.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-550.00"),
+                "mastercard": Decimal("-150.00"),
+            },
+        ),
         # 3 weeks ago – mid-period, more spending
-        {
-            "days_ago": 21,
-            "checking": Decimal("2900.00"),
-            "savings": Decimal("7500.00"),
-            "visa": Decimal("-700.00"),
-            "mastercard": Decimal("-180.00"),
-        },
+        (
+            21,
+            {
+                "checking": Decimal("2900.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-700.00"),
+                "mastercard": Decimal("-180.00"),
+            },
+        ),
         # 2 weeks ago – payday hit, balances jump up
-        {
-            "days_ago": 14,
-            "checking": Decimal("5100.00"),
-            "savings": Decimal("8000.00"),
-            "visa": Decimal("-400.00"),
-            "mastercard": Decimal("-120.00"),
-        },
+        (
+            14,
+            {
+                "checking": Decimal("5100.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-400.00"),
+                "mastercard": Decimal("-120.00"),
+            },
+        ),
         # 1 week ago – some spending after payday
-        {
-            "days_ago": 7,
-            "checking": Decimal("4100.00"),
-            "savings": Decimal("8000.00"),
-            "visa": Decimal("-600.00"),
-            "mastercard": Decimal("-180.00"),
-        },
+        (
+            7,
+            {
+                "checking": Decimal("4100.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-600.00"),
+                "mastercard": Decimal("-180.00"),
+            },
+        ),
         # Today – current state (matches seeded account balances)
-        {
-            "days_ago": 0,
-            "checking": Decimal("3500.00"),
-            "savings": Decimal("8000.00"),
-            "visa": Decimal("-750.00"),
-            "mastercard": Decimal("-200.00"),
-        },
+        (
+            0,
+            {
+                "checking": Decimal("3500.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-750.00"),
+                "mastercard": Decimal("-200.00"),
+            },
+        ),
     ]
 
     account_names = {
@@ -313,14 +325,15 @@ def seed_data() -> Response:
     account_id_map = {a.name: a.id for a in created_accounts}
 
     prev_balance: Decimal | None = None
-    for sd in snapshot_data:
-        snap_date = today - timedelta(days=sd["days_ago"])
+    for days_ago, balances in snapshot_data:
+        snap_date = today - timedelta(days=days_ago)
         balance = (
-            sd["checking"] + sd["savings"] + sd["visa"] + sd["mastercard"]
+            balances["checking"]
+            + balances["savings"]
+            + balances["visa"]
+            + balances["mastercard"]
         )
-        change = (
-            balance - prev_balance if prev_balance is not None else Decimal("0")
-        )
+        change = balance - prev_balance if prev_balance is not None else Decimal("0")
 
         snapshot = BudgetSnapshot(
             date=snap_date,
@@ -336,7 +349,7 @@ def seed_data() -> Response:
                     snapshot_id=snapshot.id,
                     account_id=account_id_map.get(name),
                     account_name=name,
-                    balance=sd[key],
+                    balance=balances[key],
                     is_credit=is_credit,
                 )
             )
