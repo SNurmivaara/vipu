@@ -27,7 +27,19 @@ const MONTH_NAMES = [
 export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
   const [editingSnapshot, setEditingSnapshot] = useState<NetWorthSnapshot | null>(null);
   const [deletingSnapshot, setDeletingSnapshot] = useState<NetWorthSnapshot | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  const toggleExpanded = (id: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -58,10 +70,18 @@ export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
   return (
     <>
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
           <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
             History
           </h3>
+          {expandedIds.size > 0 && (
+            <button
+              onClick={() => setExpandedIds(new Set())}
+              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+            >
+              Collapse all
+            </button>
+          )}
         </div>
         <div className="divide-y divide-gray-200 dark:divide-gray-800">
           {snapshots.map((snapshot) => {
@@ -72,7 +92,7 @@ export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
                   ? "text-red-600 dark:text-red-400"
                   : "text-gray-500 dark:text-gray-400";
             const changePrefix = snapshot.change_from_previous > 0 ? "+" : "";
-            const isExpanded = expandedId === snapshot.id;
+            const isExpanded = expandedIds.has(snapshot.id);
 
             // Group entries by their category's group
             const entriesByGroup = snapshot.entries.reduce((acc, entry) => {
@@ -88,7 +108,7 @@ export function SnapshotList({ snapshots, categories }: SnapshotListProps) {
               <div key={snapshot.id}>
                 <div
                   className="px-4 py-3 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer"
-                  onClick={() => setExpandedId(isExpanded ? null : snapshot.id)}
+                  onClick={() => toggleExpanded(snapshot.id)}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-4">

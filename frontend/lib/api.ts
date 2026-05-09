@@ -1,6 +1,7 @@
 import axios from "axios";
 import {
   BudgetData,
+  BudgetSnapshot,
   Account,
   AccountFormData,
   IncomeItem,
@@ -111,6 +112,56 @@ export const updateSettings = async (
 export const seedData = async (): Promise<{ message: string }> => {
   const { data } = await api.post<{ message: string }>("/seed");
   return data;
+};
+
+// Budget Snapshots
+export const createBudgetSnapshot = async (
+  notes?: string
+): Promise<{ snapshot: BudgetSnapshot; updated: boolean }> => {
+  const { data } = await api.post<{ snapshot: BudgetSnapshot; updated: boolean }>(
+    "/budget/snapshots",
+    notes ? { notes } : {}
+  );
+  return data;
+};
+
+export interface BudgetSnapshotsResponse {
+  snapshots: BudgetSnapshot[];
+  total: number;
+}
+
+export const fetchBudgetSnapshots = async (
+  limit = 50,
+  offset = 0
+): Promise<BudgetSnapshotsResponse> => {
+  const { data } = await api.get<BudgetSnapshotsResponse>(
+    "/budget/snapshots",
+    { params: { limit, offset } }
+  );
+  return data;
+};
+
+export const updateBudgetSnapshot = async (
+  id: number,
+  input: {
+    entries?: Array<{
+      account_name: string;
+      balance: number;
+      is_credit: boolean;
+      account_id?: number | null;
+    }>;
+    notes?: string | null;
+  }
+): Promise<{ snapshot: BudgetSnapshot }> => {
+  const { data } = await api.put<{ snapshot: BudgetSnapshot }>(
+    `/budget/snapshots/${id}`,
+    input
+  );
+  return data;
+};
+
+export const deleteBudgetSnapshot = async (id: number): Promise<void> => {
+  await api.delete(`/budget/snapshots/${id}`);
 };
 
 // Reset all budget data

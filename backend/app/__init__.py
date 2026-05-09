@@ -54,6 +54,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
     from app.routes import (
         accounts,
         budget,
+        budget_snapshots,
         expenses,
         forecasting,
         goals,
@@ -66,6 +67,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
 
     app.register_blueprint(health.bp)
     app.register_blueprint(budget.bp)
+    app.register_blueprint(budget_snapshots.bp)
     app.register_blueprint(accounts.bp)
     app.register_blueprint(income.bp)
     app.register_blueprint(expenses.bp)

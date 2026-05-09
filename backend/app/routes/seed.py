@@ -7,7 +7,9 @@ from flask import Response, jsonify, request
 from app import get_session
 from app.models import (
     Account,
+    BudgetBalanceEntry,
     BudgetSettings,
+    BudgetSnapshot,
     ExpenseItem,
     Goal,
     IncomeItem,
@@ -30,6 +32,8 @@ def seed_data() -> Response:
     session = get_session()
 
     # Clear existing data
+    session.query(BudgetBalanceEntry).delete()
+    session.query(BudgetSnapshot).delete()
     session.query(Account).delete()
     session.query(IncomeItem).delete()
     session.query(ExpenseItem).delete()
@@ -243,6 +247,117 @@ def seed_data() -> Response:
 
     session.commit()
 
+    # Create budget history snapshots (simulating weekly tracking)
+    # Work backwards from today: 6 weekly snapshots showing realistic
+    # fluctuations (salary on 25th, spending in between)
+    snapshot_data: list[tuple[int, dict[str, Decimal]]] = [
+        # 5 weeks ago – just after payday, balances are high
+        (
+            35,
+            {
+                "checking": Decimal("4200.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-300.00"),
+                "mastercard": Decimal("-100.00"),
+            },
+        ),
+        # 4 weeks ago – spending has started
+        (
+            28,
+            {
+                "checking": Decimal("3400.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-550.00"),
+                "mastercard": Decimal("-150.00"),
+            },
+        ),
+        # 3 weeks ago – mid-period, more spending
+        (
+            21,
+            {
+                "checking": Decimal("2900.00"),
+                "savings": Decimal("7500.00"),
+                "visa": Decimal("-700.00"),
+                "mastercard": Decimal("-180.00"),
+            },
+        ),
+        # 2 weeks ago – payday hit, balances jump up
+        (
+            14,
+            {
+                "checking": Decimal("5100.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-400.00"),
+                "mastercard": Decimal("-120.00"),
+            },
+        ),
+        # 1 week ago – some spending after payday
+        (
+            7,
+            {
+                "checking": Decimal("4100.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-600.00"),
+                "mastercard": Decimal("-180.00"),
+            },
+        ),
+        # Today – current state (matches seeded account balances)
+        (
+            0,
+            {
+                "checking": Decimal("3500.00"),
+                "savings": Decimal("8000.00"),
+                "visa": Decimal("-750.00"),
+                "mastercard": Decimal("-200.00"),
+            },
+        ),
+    ]
+
+    account_names = {
+        "checking": ("Checking", False),
+        "savings": ("Savings", False),
+        "visa": ("Visa", True),
+        "mastercard": ("Mastercard", True),
+    }
+
+    # Look up the account IDs we just created
+    created_accounts = session.query(Account).all()
+    account_id_map = {a.name: a.id for a in created_accounts}
+
+    prev_balance: Decimal | None = None
+    for days_ago, balances in snapshot_data:
+        snap_date = today - timedelta(days=days_ago)
+        balance = (
+            balances["checking"]
+            + balances["savings"]
+            + balances["visa"]
+            + balances["mastercard"]
+        )
+        change = balance - prev_balance if prev_balance is not None else Decimal("0")
+
+        snapshot = BudgetSnapshot(
+            date=snap_date,
+            current_balance=balance,
+            change_from_previous=change,
+        )
+        session.add(snapshot)
+        session.flush()
+
+        for key, (name, is_credit) in account_names.items():
+            session.add(
+                BudgetBalanceEntry(
+                    snapshot_id=snapshot.id,
+                    account_id=account_id_map.get(name),
+                    account_name=name,
+                    balance=balances[key],
+                    is_credit=is_credit,
+                )
+            )
+
+        prev_balance = balance
+
+    session.commit()
+
     return jsonify(
         {
             "message": "Example data seeded successfully",
@@ -251,6 +366,7 @@ def seed_data() -> Response:
                 "income_items": len(income_items),
                 "accounts": len(accounts),
                 "expenses": len(expenses),
+                "budget_snapshots": len(snapshot_data),
             },
         }
     )
@@ -265,6 +381,8 @@ def reset_data() -> Response:
     session = get_session()
 
     # Clear existing data
+    session.query(BudgetBalanceEntry).delete()
+    session.query(BudgetSnapshot).delete()
     session.query(Account).delete()
     session.query(IncomeItem).delete()
     session.query(ExpenseItem).delete()

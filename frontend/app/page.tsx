@@ -2,8 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useBudget } from "@/hooks/useBudget";
+import { useBudgetSnapshots } from "@/hooks/useBudgetSnapshots";
 import { useTheme } from "@/hooks/useTheme";
-import { useNetWorthCategories } from "@/hooks/useNetWorth";
 import {
   IncomeSection,
   DeductionsSection,
@@ -13,14 +13,15 @@ import {
   SavingsGoalsSection,
   SettingsCard,
   BudgetSummary,
+  BudgetHistory,
 } from "@/components/budget";
-import { SnapshotForm } from "@/components/networth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   seedData,
   resetBudget,
   exportBudget,
   importBudget,
+  createBudgetSnapshot,
   ExportData,
 } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
@@ -29,14 +30,14 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 export default function BudgetPage() {
   const { data, isLoading, error } = useBudget();
-  const { data: categories = [] } = useNetWorthCategories();
+  const { data: snapshotsData } = useBudgetSnapshots();
+  const budgetSnapshots = snapshotsData?.snapshots ?? [];
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<ExportData | null>(null);
-  const [snapshotFormOpen, setSnapshotFormOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -83,6 +84,20 @@ export default function BudgetPage() {
     },
     onError: () => {
       toast({ title: "Failed to import data", type: "error" });
+    },
+  });
+
+  const trackBudgetMutation = useMutation({
+    mutationFn: () => createBudgetSnapshot(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["budget-snapshots"] });
+      toast({
+        title: result.updated ? "Budget updated" : "Budget tracked",
+        type: "success",
+      });
+    },
+    onError: () => {
+      toast({ title: "Failed to track budget", type: "error" });
     },
   });
 
@@ -168,14 +183,13 @@ export default function BudgetPage() {
           Monthly Budget
         </h2>
         <div className="flex items-center gap-3">
-          {categories.length > 0 && (
-            <button
-              onClick={() => setSnapshotFormOpen(true)}
-              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              Record balances
-            </button>
-          )}
+          <button
+            onClick={() => trackBudgetMutation.mutate()}
+            disabled={trackBudgetMutation.isPending}
+            className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors disabled:opacity-50"
+          >
+            {trackBudgetMutation.isPending ? "Tracking..." : "Track budget"}
+          </button>
           <SettingsCard settings={data.settings} />
           <Menu
             trigger={
@@ -304,6 +318,8 @@ export default function BudgetPage() {
         </div>
       </div>
 
+      <BudgetHistory snapshots={budgetSnapshots} />
+
       {/* Reset Confirmation Dialog */}
       <Dialog.Root open={confirmResetOpen} onOpenChange={setConfirmResetOpen}>
         <Dialog.Portal>
@@ -397,12 +413,6 @@ export default function BudgetPage() {
         </Dialog.Portal>
       </Dialog.Root>
 
-      {/* Snapshot Form */}
-      <SnapshotForm
-        open={snapshotFormOpen}
-        onOpenChange={setSnapshotFormOpen}
-        categories={categories}
-      />
     </div>
   );
 }
