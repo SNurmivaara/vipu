@@ -4,14 +4,13 @@ import { useState, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { BudgetSnapshot } from "@/types";
-import { deleteBudgetSnapshot } from "@/lib/api";
+import { deleteBudgetSnapshot, updateBudgetSnapshot } from "@/lib/api";
 import { formatCurrencyRounded, cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { BudgetChart } from "./BudgetChart";
 
 interface BudgetHistoryProps {
   snapshots: BudgetSnapshot[];
-  paydayDay: number;
 }
 
 function formatSnapshotDate(dateStr: string): string {
@@ -34,38 +33,17 @@ function changeColor(value: number): string {
   return "text-gray-500 dark:text-gray-400";
 }
 
-/** Get the start date of the pay period containing today. */
-function getPayPeriodStart(paydayDay: number): Date {
-  const today = new Date();
-  const day = today.getDate();
-  const month = today.getMonth();
-  const year = today.getFullYear();
-
-  // Clamp payday to valid day in month
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const actualPayday = Math.min(paydayDay, daysInMonth);
-
-  if (day >= actualPayday) {
-    return new Date(year, month, actualPayday);
-  } else {
-    // Previous month
-    const prevMonth = month === 0 ? 11 : month - 1;
-    const prevYear = month === 0 ? year - 1 : year;
-    const daysInPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate();
-    const actualPrevPayday = Math.min(paydayDay, daysInPrevMonth);
-    return new Date(prevYear, prevMonth, actualPrevPayday);
-  }
-}
-
 function SnapshotRow({
   snapshot,
   isExpanded,
   onToggle,
+  onEdit,
   onDelete,
 }: {
   snapshot: BudgetSnapshot;
   isExpanded: boolean;
   onToggle: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
   const accounts = snapshot.entries.filter((e) => !e.is_credit);
@@ -94,8 +72,8 @@ function SnapshotRow({
               {formatSnapshotDate(snapshot.date)}
             </div>
             <div className="flex items-center gap-1.5">
-              <span className={cn("text-lg font-semibold tabular-nums", changeColor(snapshot.pay_period_change))}>
-                {formatChange(snapshot.pay_period_change)}
+              <span className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                {formatCurrencyRounded(snapshot.current_balance)}
               </span>
               {snapshot.change_from_previous !== 0 && (
                 <span className={cn("text-sm tabular-nums", changeColor(snapshot.change_from_previous))}>
@@ -105,7 +83,27 @@ function SnapshotRow({
             </div>
           </div>
         </div>
-        <div onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onEdit}
+            className="p-1.5 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+            title="Edit"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+              <path d="m15 5 4 4" />
+            </svg>
+          </button>
           <button
             onClick={onDelete}
             className="p-1.5 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
@@ -191,9 +189,12 @@ function SnapshotRow({
   );
 }
 
-export function BudgetHistory({ snapshots, paydayDay }: BudgetHistoryProps) {
+export function BudgetHistory({ snapshots }: BudgetHistoryProps) {
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const [olderOpen, setOlderOpen] = useState(false);
+  const [editingSnapshot, setEditingSnapshot] = useState<BudgetSnapshot | null>(null);
+  const [editEntries, setEditEntries] = useState<Record<number, string>>({});
+  const [editNotes, setEditNotes] = useState("");
   const [deletingSnapshot, setDeletingSnapshot] = useState<BudgetSnapshot | null>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -211,21 +212,58 @@ export function BudgetHistory({ snapshots, paydayDay }: BudgetHistoryProps) {
   };
 
   const { currentPeriod, older } = useMemo(() => {
-    const periodStart = getPayPeriodStart(paydayDay);
-    const periodStartStr = periodStart.toISOString().split("T")[0];
+    if (snapshots.length === 0) {
+      return { currentPeriod: [], older: [] };
+    }
+
+    // The most recent snapshot's pay_period_start defines the current period
+    const currentPeriodStart = snapshots[0].pay_period_start;
 
     const current: BudgetSnapshot[] = [];
     const old: BudgetSnapshot[] = [];
 
     for (const s of snapshots) {
-      if (s.date >= periodStartStr) {
+      if (s.pay_period_start === currentPeriodStart) {
         current.push(s);
       } else {
         old.push(s);
       }
     }
     return { currentPeriod: current, older: old };
-  }, [snapshots, paydayDay]);
+  }, [snapshots]);
+
+  const openEditDialog = (snapshot: BudgetSnapshot) => {
+    setEditingSnapshot(snapshot);
+    const balances: Record<number, string> = {};
+    for (const entry of snapshot.entries) {
+      balances[entry.id] = String(entry.balance);
+    }
+    setEditEntries(balances);
+    setEditNotes(snapshot.notes ?? "");
+  };
+
+  const editMutation = useMutation({
+    mutationFn: () => {
+      if (!editingSnapshot) return Promise.reject();
+      return updateBudgetSnapshot(editingSnapshot.id, {
+        entries: editingSnapshot.entries.map((entry) => ({
+          account_name: entry.account_name,
+          balance: parseFloat(editEntries[entry.id] ?? String(entry.balance)),
+          is_credit: entry.is_credit,
+          account_id: entry.account_id,
+        })),
+        notes: editNotes || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["budget-snapshots"] });
+      toast({ title: "Snapshot updated", type: "success" });
+      setEditingSnapshot(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to update snapshot", type: "error" });
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: deleteBudgetSnapshot,
@@ -271,6 +309,7 @@ export function BudgetHistory({ snapshots, paydayDay }: BudgetHistoryProps) {
                 snapshot={snapshot}
                 isExpanded={expandedIds.has(snapshot.id)}
                 onToggle={() => toggleExpanded(snapshot.id)}
+                onEdit={() => openEditDialog(snapshot)}
                 onDelete={() => setDeletingSnapshot(snapshot)}
               />
             ))}
@@ -313,6 +352,7 @@ export function BudgetHistory({ snapshots, paydayDay }: BudgetHistoryProps) {
                     snapshot={snapshot}
                     isExpanded={expandedIds.has(snapshot.id)}
                     onToggle={() => toggleExpanded(snapshot.id)}
+                    onEdit={() => openEditDialog(snapshot)}
                     onDelete={() => setDeletingSnapshot(snapshot)}
                   />
                 ))}
@@ -321,6 +361,99 @@ export function BudgetHistory({ snapshots, paydayDay }: BudgetHistoryProps) {
           </>
         )}
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog.Root
+        open={!!editingSnapshot}
+        onOpenChange={(open) => !open && setEditingSnapshot(null)}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white dark:bg-gray-900 rounded-lg shadow-xl p-6 max-h-[85vh] overflow-y-auto">
+            <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Edit Snapshot
+            </Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {editingSnapshot && formatSnapshotDate(editingSnapshot.date)}
+            </Dialog.Description>
+
+            {editingSnapshot && (
+              <div className="mt-4 space-y-4">
+                {editingSnapshot.entries.filter((e) => !e.is_credit).length > 0 && (
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Accounts</div>
+                    <div className="space-y-2">
+                      {editingSnapshot.entries.filter((e) => !e.is_credit).map((entry) => (
+                        <div key={entry.id} className="flex items-center gap-3">
+                          <label className="text-sm text-gray-600 dark:text-gray-400 w-28 truncate flex-shrink-0">
+                            {entry.account_name}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editEntries[entry.id] ?? ""}
+                            onChange={(e) => setEditEntries((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 tabular-nums"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {editingSnapshot.entries.filter((e) => e.is_credit).length > 0 && (
+                  <div>
+                    <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Credit Cards</div>
+                    <div className="space-y-2">
+                      {editingSnapshot.entries.filter((e) => e.is_credit).map((entry) => (
+                        <div key={entry.id} className="flex items-center gap-3">
+                          <label className="text-sm text-gray-600 dark:text-gray-400 w-28 truncate flex-shrink-0">
+                            {entry.account_name}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editEntries[entry.id] ?? ""}
+                            onChange={(e) => setEditEntries((prev) => ({ ...prev, [entry.id]: e.target.value }))}
+                            className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 tabular-nums"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Notes</label>
+                  <input
+                    type="text"
+                    maxLength={500}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="Optional notes"
+                    className="mt-1 w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <Dialog.Close asChild>
+                    <button className="px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                      Cancel
+                    </button>
+                  </Dialog.Close>
+                  <button
+                    onClick={() => editMutation.mutate()}
+                    disabled={editMutation.isPending}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {editMutation.isPending ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       {/* Delete Confirmation Dialog */}
       <Dialog.Root

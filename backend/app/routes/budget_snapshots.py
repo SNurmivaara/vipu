@@ -4,6 +4,8 @@ from decimal import Decimal
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
 
+from sqlalchemy.orm import Session as SQLAlchemySession
+
 from app import get_session
 from app.deadline_calc import normalize_day
 from app.models import (
@@ -35,6 +37,34 @@ def _get_pay_period_start(d: date, payday_day: int) -> date:
             prev_month, prev_year = d.month - 1, d.year
         actual_prev_day = normalize_day(payday_day, prev_year, prev_month)
         return date(prev_year, prev_month, actual_prev_day)
+
+
+def _compute_pay_period_fields(
+    session: SQLAlchemySession, snap: BudgetSnapshot
+) -> dict:
+    """Compute pay_period_change and pay_period_start for a single snapshot."""
+    settings = session.query(BudgetSettings).first()
+    payday_day = settings.payday_day if settings else 25
+
+    period_start = _get_pay_period_start(snap.date, payday_day)
+
+    # Find the last snapshot before this pay period as baseline
+    baseline = (
+        session.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.date < period_start)
+        .order_by(BudgetSnapshot.date.desc())
+        .first()
+    )
+
+    if baseline is not None:
+        change = float(snap.current_balance - baseline.current_balance)
+    else:
+        change = 0.0
+
+    return {
+        "pay_period_change": change,
+        "pay_period_start": period_start.isoformat(),
+    }
 
 
 @bp.post("/api/budget/snapshots")
@@ -110,7 +140,9 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
 
         session.commit()
         session.refresh(existing)
-        return jsonify({"snapshot": existing.to_dict(), "updated": True})
+        snap_dict = existing.to_dict()
+        snap_dict.update(_compute_pay_period_fields(session, existing))
+        return jsonify({"snapshot": snap_dict, "updated": True})
     else:
         snapshot = BudgetSnapshot(
             date=today,
@@ -132,66 +164,188 @@ def create_budget_snapshot() -> tuple[Response, int] | Response:
 
         session.commit()
         session.refresh(snapshot)
-        return jsonify({"snapshot": snapshot.to_dict(), "updated": False}), 201
+        snap_dict = snapshot.to_dict()
+        snap_dict.update(_compute_pay_period_fields(session, snapshot))
+        return jsonify({"snapshot": snap_dict, "updated": False}), 201
 
 
 @bp.get("/api/budget/snapshots")
 def list_budget_snapshots() -> Response:
-    """List all budget snapshots, newest first.
+    """List budget snapshots, newest first.
 
-    Each snapshot includes a computed ``pay_period_change`` field: the
-    cumulative balance change since the start of its pay period.
+    Each snapshot includes:
+    - ``pay_period_change``: cumulative balance change since pay period start
+    - ``pay_period_start``: ISO date string for the period this snapshot belongs to
+
+    Query params:
+    - ``limit``: max snapshots to return (default 50, max 200)
+    - ``offset``: number of snapshots to skip (default 0)
+
+    Response includes ``total`` for pagination.
     """
     session = get_session()
 
     settings = session.query(BudgetSettings).first()
     payday_day = settings.payday_day if settings else 25
 
+    # Pagination
+    limit = min(int(request.args.get("limit", 50)), 200)
+    offset = int(request.args.get("offset", 0))
+
+    total = session.query(BudgetSnapshot).count()
+
     snapshots = (
         session.query(BudgetSnapshot)
         .order_by(BudgetSnapshot.date.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
-    # Build chronological list to compute pay_period_change
-    chronological = list(reversed(snapshots))
+    if not snapshots:
+        return jsonify({"snapshots": [], "total": total})
 
-    pay_period_changes: dict[int, float] = {}
-    for i, snap in enumerate(chronological):
+    # To compute pay_period_change we need the last snapshot before the
+    # oldest pay period on this page as a potential baseline.
+    oldest_date = snapshots[-1].date
+    oldest_period_start = _get_pay_period_start(oldest_date, payday_day)
+
+    baseline_snap = (
+        session.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.date < oldest_period_start)
+        .order_by(BudgetSnapshot.date.desc())
+        .first()
+    )
+
+    # Build chronological list: baseline (if any) + page snapshots
+    chronological: list[BudgetSnapshot] = []
+    if baseline_snap:
+        chronological.append(baseline_snap)
+    chronological.extend(reversed(snapshots))
+
+    # Single pass: track the baseline balance per pay period.
+    # When the period changes, the last snapshot of the previous period
+    # becomes the new baseline. Within a period, all snapshots compare
+    # against the same baseline.
+    pay_period_data: dict[int, tuple[float, str]] = {}
+    current_period: date | None = None
+    period_baseline: Decimal | None = None
+    prev_balance: Decimal | None = (
+        baseline_snap.current_balance if baseline_snap else None
+    )
+
+    start_idx = 1 if baseline_snap else 0
+    for snap in chronological[start_idx:]:
         period_start = _get_pay_period_start(snap.date, payday_day)
 
-        # Find the last snapshot *before* this pay period started
-        baseline_balance: Decimal | None = None
-        for j in range(i - 1, -1, -1):
-            if chronological[j].date < period_start:
-                baseline_balance = chronological[j].current_balance
-                break
+        if period_start != current_period:
+            # Entering a new pay period — baseline is the last snapshot
+            # from the previous period
+            current_period = period_start
+            period_baseline = prev_balance
 
-        if baseline_balance is not None:
-            pay_period_changes[snap.id] = float(
-                snap.current_balance - baseline_balance
-            )
+        if period_baseline is not None:
+            change = float(snap.current_balance - period_baseline)
         else:
-            # No snapshot before this period – accumulate from the
-            # first snapshot in the period instead
-            pay_period_changes[snap.id] = 0.0
-            for j in range(i):
-                if (
-                    _get_pay_period_start(chronological[j].date, payday_day)
-                    == period_start
-                ):
-                    pay_period_changes[snap.id] = float(
-                        snap.current_balance - chronological[j].current_balance
-                    )
-                    break
+            change = 0.0
+
+        pay_period_data[snap.id] = (change, period_start.isoformat())
+        prev_balance = snap.current_balance
 
     result = []
     for snap in snapshots:
         d = snap.to_dict()
-        d["pay_period_change"] = pay_period_changes.get(snap.id, 0.0)
+        change, period_start_str = pay_period_data.get(
+            snap.id, (0.0, _get_pay_period_start(snap.date, payday_day).isoformat())
+        )
+        d["pay_period_change"] = change
+        d["pay_period_start"] = period_start_str
         result.append(d)
 
-    return jsonify(result)
+    return jsonify({"snapshots": result, "total": total})
+
+
+@bp.put("/api/budget/snapshots/<int:snapshot_id>")
+def update_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
+    """Update a budget snapshot's entries and/or notes.
+
+    Accepts JSON with:
+    - ``entries``: list of ``{account_name, balance, is_credit, account_id?}``
+    - ``notes``: optional string (max 500 chars)
+
+    Recalculates current_balance and change_from_previous. Also updates
+    the next snapshot's change_from_previous if one exists.
+    """
+    session = get_session()
+    snapshot = session.get(BudgetSnapshot, snapshot_id)
+    if not snapshot:
+        return jsonify({"error": "Snapshot not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    if "notes" in data:
+        notes = data["notes"]
+        snapshot.notes = str(notes)[:500] if notes is not None else None
+
+    if "entries" in data:
+        entries = data["entries"]
+        if not isinstance(entries, list):
+            return jsonify({"error": "entries must be a list"}), 400
+
+        # Replace all entries
+        session.query(BudgetBalanceEntry).filter(
+            BudgetBalanceEntry.snapshot_id == snapshot.id
+        ).delete()
+
+        for entry_data in entries:
+            account_name = entry_data.get("account_name", "")
+            if not account_name:
+                return jsonify({"error": "Each entry needs account_name"}), 400
+
+            session.add(BudgetBalanceEntry(
+                snapshot_id=snapshot.id,
+                account_id=entry_data.get("account_id"),
+                account_name=str(account_name)[:100],
+                balance=Decimal(str(entry_data.get("balance", 0))),
+                is_credit=bool(entry_data.get("is_credit", False)),
+            ))
+
+        # Recalculate current_balance from new entries
+        session.flush()
+        snapshot.current_balance = sum(
+            (e.balance for e in snapshot.entries), Decimal("0")
+        )
+
+    # Recalculate change_from_previous
+    prev = (
+        session.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.date < snapshot.date)
+        .order_by(BudgetSnapshot.date.desc())
+        .first()
+    )
+    snapshot.change_from_previous = (
+        snapshot.current_balance - prev.current_balance
+        if prev
+        else Decimal("0")
+    )
+
+    # Update next snapshot's change_from_previous too
+    next_snap = (
+        session.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.date > snapshot.date)
+        .order_by(BudgetSnapshot.date.asc())
+        .first()
+    )
+    if next_snap:
+        next_snap.change_from_previous = (
+            next_snap.current_balance - snapshot.current_balance
+        )
+
+    session.commit()
+    session.refresh(snapshot)
+    snap_dict = snapshot.to_dict()
+    snap_dict.update(_compute_pay_period_fields(session, snapshot))
+    return jsonify({"snapshot": snap_dict})
 
 
 @bp.delete("/api/budget/snapshots/<int:snapshot_id>")

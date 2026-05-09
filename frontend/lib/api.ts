@@ -125,8 +125,38 @@ export const createBudgetSnapshot = async (
   return data;
 };
 
-export const fetchBudgetSnapshots = async (): Promise<BudgetSnapshot[]> => {
-  const { data } = await api.get<BudgetSnapshot[]>("/budget/snapshots");
+export interface BudgetSnapshotsResponse {
+  snapshots: BudgetSnapshot[];
+  total: number;
+}
+
+export const fetchBudgetSnapshots = async (
+  limit = 50,
+  offset = 0
+): Promise<BudgetSnapshotsResponse> => {
+  const { data } = await api.get<BudgetSnapshotsResponse>(
+    "/budget/snapshots",
+    { params: { limit, offset } }
+  );
+  return data;
+};
+
+export const updateBudgetSnapshot = async (
+  id: number,
+  input: {
+    entries?: Array<{
+      account_name: string;
+      balance: number;
+      is_credit: boolean;
+      account_id?: number | null;
+    }>;
+    notes?: string | null;
+  }
+): Promise<{ snapshot: BudgetSnapshot }> => {
+  const { data } = await api.put<{ snapshot: BudgetSnapshot }>(
+    `/budget/snapshots/${id}`,
+    input
+  );
   return data;
 };
 

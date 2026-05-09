@@ -18,6 +18,8 @@ class TestCreateBudgetSnapshot:
         assert snapshot["change_from_previous"] == 0
         assert snapshot["entries"] == []
         assert snapshot["date"] == date.today().isoformat()
+        assert "pay_period_change" in snapshot
+        assert "pay_period_start" in snapshot
         assert "total_expenses" not in snapshot
         assert "net_income" not in snapshot
         assert "net_position" not in snapshot
@@ -90,26 +92,119 @@ class TestListBudgetSnapshots:
     """Tests for GET /api/budget/snapshots."""
 
     def test_list_empty(self, client):
-        """List returns empty array when no snapshots."""
+        """List returns empty response when no snapshots."""
         response = client.get("/api/budget/snapshots")
         assert response.status_code == 200
-        assert response.json == []
+        assert response.json["snapshots"] == []
+        assert response.json["total"] == 0
 
-    def test_list_includes_pay_period_change(self, seeded_client):
-        """Listed snapshots include computed pay_period_change."""
+    def test_list_includes_pay_period_fields(self, seeded_client):
+        """Listed snapshots include computed pay period fields."""
         response = seeded_client.get("/api/budget/snapshots")
         assert response.status_code == 200
-        for snapshot in response.json:
+        for snapshot in response.json["snapshots"]:
             assert "pay_period_change" in snapshot
+            assert "pay_period_start" in snapshot
 
     def test_list_ordered_by_date_desc(self, seeded_client):
         """Snapshots are listed newest first."""
         response = seeded_client.get("/api/budget/snapshots")
-        snapshots = response.json
+        snapshots = response.json["snapshots"]
         assert len(snapshots) >= 2
         # Verify descending order
         for i in range(len(snapshots) - 1):
             assert snapshots[i]["date"] >= snapshots[i + 1]["date"]
+
+    def test_list_pagination(self, seeded_client):
+        """Pagination limits results and returns total."""
+        response = seeded_client.get("/api/budget/snapshots?limit=2&offset=0")
+        data = response.json
+        assert len(data["snapshots"]) == 2
+        assert data["total"] >= 5  # Seed creates 6 snapshots
+
+        # Second page
+        response2 = seeded_client.get("/api/budget/snapshots?limit=2&offset=2")
+        data2 = response2.json
+        assert len(data2["snapshots"]) == 2
+        assert data2["total"] == data["total"]
+
+        # No overlap between pages
+        page1_ids = {s["id"] for s in data["snapshots"]}
+        page2_ids = {s["id"] for s in data2["snapshots"]}
+        assert page1_ids.isdisjoint(page2_ids)
+
+    def test_list_pagination_max_limit(self, seeded_client):
+        """Limit is capped at 200."""
+        response = seeded_client.get("/api/budget/snapshots?limit=999")
+        assert response.status_code == 200
+        # Should not error, just cap
+
+
+class TestUpdateBudgetSnapshot:
+    """Tests for PUT /api/budget/snapshots/<id>."""
+
+    def test_update_entry_balances(self, seeded_client):
+        """Update entry balances recalculates current_balance."""
+        snapshots = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        snapshot = snapshots[0]
+        original_balance = snapshot["current_balance"]
+
+        updated_entries = [
+            {**e, "balance": e["balance"] + 100}
+            for e in snapshot["entries"]
+        ]
+
+        resp = seeded_client.put(
+            f"/api/budget/snapshots/{snapshot['id']}",
+            json={"entries": updated_entries},
+        )
+        assert resp.status_code == 200
+        result = resp.json["snapshot"]
+        assert result["current_balance"] == original_balance + 100 * len(updated_entries)
+        assert "pay_period_change" in result
+        assert "pay_period_start" in result
+
+    def test_update_notes(self, client):
+        """Update notes only without changing entries."""
+        client.post("/api/budget/snapshots")
+        snapshots = client.get("/api/budget/snapshots").json["snapshots"]
+        snap_id = snapshots[0]["id"]
+
+        resp = client.put(
+            f"/api/budget/snapshots/{snap_id}",
+            json={"notes": "Updated note"},
+        )
+        assert resp.status_code == 200
+        assert resp.json["snapshot"]["notes"] == "Updated note"
+
+    def test_update_recalculates_next_snapshot(self, seeded_client):
+        """Updating a snapshot recalculates the next one's change_from_previous."""
+        snapshots = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        # Pick second-to-last (oldest is [-1], next is [-2])
+        if len(snapshots) < 2:
+            return
+        older = snapshots[-1]
+        newer = snapshots[-2]
+
+        # Update the older snapshot's entries to all be 0
+        zeroed = [
+            {**e, "balance": 0}
+            for e in older["entries"]
+        ]
+        seeded_client.put(
+            f"/api/budget/snapshots/{older['id']}",
+            json={"entries": zeroed},
+        )
+
+        # Refetch and check the newer snapshot's change
+        refreshed = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        newer_refreshed = next(s for s in refreshed if s["id"] == newer["id"])
+        assert newer_refreshed["change_from_previous"] == newer_refreshed["current_balance"]
+
+    def test_update_nonexistent(self, client):
+        """Update nonexistent snapshot returns 404."""
+        resp = client.put("/api/budget/snapshots/999", json={"notes": "x"})
+        assert resp.status_code == 404
 
 
 class TestDeleteBudgetSnapshot:
@@ -124,7 +219,7 @@ class TestDeleteBudgetSnapshot:
         assert del_resp.status_code == 200
 
         list_resp = client.get("/api/budget/snapshots")
-        assert len(list_resp.json) == 0
+        assert len(list_resp.json["snapshots"]) == 0
 
     def test_delete_nonexistent(self, client):
         """Delete nonexistent snapshot returns 404."""
@@ -138,7 +233,7 @@ class TestSeedData:
     def test_seed_creates_budget_snapshots(self, seeded_client):
         """Seeded data includes budget history snapshots."""
         response = seeded_client.get("/api/budget/snapshots")
-        snapshots = response.json
+        snapshots = response.json["snapshots"]
         assert len(snapshots) >= 5
 
         # First snapshot (oldest) should have 0 change
@@ -152,7 +247,7 @@ class TestSeedData:
     def test_seed_snapshots_have_entries(self, seeded_client):
         """Each seeded snapshot has account balance entries."""
         response = seeded_client.get("/api/budget/snapshots")
-        for snapshot in response.json:
+        for snapshot in response.json["snapshots"]:
             assert len(snapshot["entries"]) == 4  # 4 accounts in seed data
 
 
@@ -162,7 +257,7 @@ class TestAccountDeletionResilience:
     def test_entries_preserved_after_account_delete(self, seeded_client):
         """Snapshot entries retain account_name after account is deleted."""
         response = seeded_client.get("/api/budget/snapshots")
-        entry = response.json[0]["entries"][0]
+        entry = response.json["snapshots"][0]["entries"][0]
         account_name = entry["account_name"]
 
         assert account_name is not None

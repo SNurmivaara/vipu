@@ -30,7 +30,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 export default function BudgetPage() {
   const { data, isLoading, error } = useBudget();
-  const { data: budgetSnapshots = [] } = useBudgetSnapshots();
+  const { data: snapshotsData } = useBudgetSnapshots();
+  const budgetSnapshots = snapshotsData?.snapshots ?? [];
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -317,7 +318,7 @@ export default function BudgetPage() {
         </div>
       </div>
 
-      <BudgetHistory snapshots={budgetSnapshots} paydayDay={data.settings.payday_day} />
+      <BudgetHistory snapshots={budgetSnapshots} />
 
       {/* Reset Confirmation Dialog */}
       <Dialog.Root open={confirmResetOpen} onOpenChange={setConfirmResetOpen}>

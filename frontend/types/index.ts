@@ -105,6 +105,7 @@ export interface BudgetSnapshot {
   current_balance: number;
   change_from_previous: number;
   pay_period_change: number;
+  pay_period_start: string;
   notes: string | null;
   entries: BudgetBalanceEntry[];
 }

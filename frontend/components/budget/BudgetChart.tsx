@@ -125,6 +125,7 @@ export function BudgetChart({ snapshots }: BudgetChartProps) {
               tickLine={false}
               axisLine={false}
               width={65}
+              domain={["dataMin", "auto"]}
               className="text-gray-600 dark:text-gray-400"
             />
             <Tooltip content={<CustomTooltip />} />

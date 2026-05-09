@@ -154,18 +154,6 @@ MIGRATIONS: list[dict] = [
             );
         """,
     },
-    {
-        "id": "009_budget_snapshots_simplify",
-        "name": "Remove obsolete columns from budget_snapshots",
-        "sql": """
-            ALTER TABLE budget_snapshots
-                DROP COLUMN IF EXISTS total_expenses;
-            ALTER TABLE budget_snapshots
-                DROP COLUMN IF EXISTS net_income;
-            ALTER TABLE budget_snapshots
-                DROP COLUMN IF EXISTS net_position;
-        """,
-    },
 ]
 
 

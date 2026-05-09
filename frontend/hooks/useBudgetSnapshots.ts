@@ -1,10 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchBudgetSnapshots } from "@/lib/api";
-import { BudgetSnapshot } from "@/types";
+import { fetchBudgetSnapshots, BudgetSnapshotsResponse } from "@/lib/api";
 
 export function useBudgetSnapshots() {
-  return useQuery<BudgetSnapshot[]>({
+  return useQuery<BudgetSnapshotsResponse>({
     queryKey: ["budget-snapshots"],
-    queryFn: fetchBudgetSnapshots,
+    queryFn: () => fetchBudgetSnapshots(),
   });
 }
