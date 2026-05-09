@@ -3,7 +3,6 @@ from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
-
 from sqlalchemy.orm import Session as SQLAlchemySession
 
 from app import get_session
@@ -350,12 +349,39 @@ def update_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
 
 @bp.delete("/api/budget/snapshots/<int:snapshot_id>")
 def delete_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
-    """Delete a budget snapshot."""
+    """Delete a budget snapshot.
+
+    After deletion, the next snapshot's ``change_from_previous`` is
+    recalculated against the new previous snapshot so the displayed
+    delta stays consistent.
+    """
     session = get_session()
     snapshot = session.get(BudgetSnapshot, snapshot_id)
     if not snapshot:
         return jsonify({"error": "Snapshot not found"}), 404
 
+    next_snap = (
+        session.query(BudgetSnapshot)
+        .filter(BudgetSnapshot.date > snapshot.date)
+        .order_by(BudgetSnapshot.date.asc())
+        .first()
+    )
+
     session.delete(snapshot)
+    session.flush()
+
+    if next_snap:
+        new_prev = (
+            session.query(BudgetSnapshot)
+            .filter(BudgetSnapshot.date < next_snap.date)
+            .order_by(BudgetSnapshot.date.desc())
+            .first()
+        )
+        next_snap.change_from_previous = (
+            next_snap.current_balance - new_prev.current_balance
+            if new_prev
+            else Decimal("0")
+        )
+
     session.commit()
     return jsonify({"message": "Snapshot deleted"})

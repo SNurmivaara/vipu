@@ -1,7 +1,7 @@
 """Tests for budget snapshot API endpoints."""
 
-from unittest.mock import patch
 from datetime import date
+from unittest.mock import patch
 
 
 class TestCreateBudgetSnapshot:
@@ -160,7 +160,8 @@ class TestUpdateBudgetSnapshot:
         )
         assert resp.status_code == 200
         result = resp.json["snapshot"]
-        assert result["current_balance"] == original_balance + 100 * len(updated_entries)
+        expected = original_balance + 100 * len(updated_entries)
+        assert result["current_balance"] == expected
         assert "pay_period_change" in result
         assert "pay_period_start" in result
 
@@ -199,7 +200,10 @@ class TestUpdateBudgetSnapshot:
         # Refetch and check the newer snapshot's change
         refreshed = seeded_client.get("/api/budget/snapshots").json["snapshots"]
         newer_refreshed = next(s for s in refreshed if s["id"] == newer["id"])
-        assert newer_refreshed["change_from_previous"] == newer_refreshed["current_balance"]
+        assert (
+            newer_refreshed["change_from_previous"]
+            == newer_refreshed["current_balance"]
+        )
 
     def test_update_nonexistent(self, client):
         """Update nonexistent snapshot returns 404."""
@@ -225,6 +229,47 @@ class TestDeleteBudgetSnapshot:
         """Delete nonexistent snapshot returns 404."""
         response = client.delete("/api/budget/snapshots/999")
         assert response.status_code == 404
+
+    def test_delete_recalculates_next_snapshot(self, seeded_client):
+        """Deleting a snapshot recalculates the next one's change_from_previous."""
+        snapshots = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        if len(snapshots) < 3:
+            return
+
+        # Pick a middle snapshot to delete (not oldest, not newest)
+        # snapshots are newest-first, so [-2] has [-1] as prev and [-3] as next
+        target = snapshots[-2]
+        new_prev = snapshots[-1]
+        next_snap = snapshots[-3]
+
+        expected_change = (
+            next_snap["current_balance"] - new_prev["current_balance"]
+        )
+
+        del_resp = seeded_client.delete(f"/api/budget/snapshots/{target['id']}")
+        assert del_resp.status_code == 200
+
+        refreshed = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        next_refreshed = next(s for s in refreshed if s["id"] == next_snap["id"])
+        assert next_refreshed["change_from_previous"] == expected_change
+
+    def test_delete_oldest_zeros_next_change(self, seeded_client):
+        """Deleting the oldest snapshot makes the new oldest have 0 change."""
+        snapshots = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        if len(snapshots) < 2:
+            return
+
+        oldest = snapshots[-1]
+        new_oldest = snapshots[-2]
+
+        del_resp = seeded_client.delete(f"/api/budget/snapshots/{oldest['id']}")
+        assert del_resp.status_code == 200
+
+        refreshed = seeded_client.get("/api/budget/snapshots").json["snapshots"]
+        new_oldest_refreshed = next(
+            s for s in refreshed if s["id"] == new_oldest["id"]
+        )
+        assert new_oldest_refreshed["change_from_previous"] == 0
 
 
 class TestSeedData:
