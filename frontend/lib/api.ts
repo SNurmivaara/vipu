@@ -1,6 +1,7 @@
 import axios from "axios";
 import {
   BudgetData,
+  BudgetSnapshot,
   Account,
   AccountFormData,
   IncomeItem,
@@ -111,6 +112,26 @@ export const updateSettings = async (
 export const seedData = async (): Promise<{ message: string }> => {
   const { data } = await api.post<{ message: string }>("/seed");
   return data;
+};
+
+// Budget Snapshots
+export const createBudgetSnapshot = async (
+  notes?: string
+): Promise<{ snapshot: BudgetSnapshot; updated: boolean }> => {
+  const { data } = await api.post<{ snapshot: BudgetSnapshot; updated: boolean }>(
+    "/budget/snapshots",
+    notes ? { notes } : {}
+  );
+  return data;
+};
+
+export const fetchBudgetSnapshots = async (): Promise<BudgetSnapshot[]> => {
+  const { data } = await api.get<BudgetSnapshot[]>("/budget/snapshots");
+  return data;
+};
+
+export const deleteBudgetSnapshot = async (id: number): Promise<void> => {
+  await api.delete(`/budget/snapshots/${id}`);
 };
 
 // Reset all budget data

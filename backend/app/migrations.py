@@ -123,6 +123,49 @@ MIGRATIONS: list[dict] = [
                 NUMERIC(12,2) NOT NULL DEFAULT 990.0;
         """,
     },
+    {
+        "id": "008_budget_snapshots",
+        "name": "Create budget snapshot tables for tracking budget over time",
+        "sql": """
+            CREATE TABLE IF NOT EXISTS budget_snapshots (
+                id SERIAL PRIMARY KEY,
+                date DATE NOT NULL,
+                timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                current_balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+                change_from_previous NUMERIC(12,2) NOT NULL DEFAULT 0,
+                notes VARCHAR(500),
+                CONSTRAINT uq_budget_snapshot_date UNIQUE (date)
+            );
+
+            CREATE INDEX IF NOT EXISTS ix_budget_snapshots_date
+                ON budget_snapshots (date);
+
+            CREATE TABLE IF NOT EXISTS budget_balance_entries (
+                id SERIAL PRIMARY KEY,
+                snapshot_id INTEGER NOT NULL
+                    REFERENCES budget_snapshots(id) ON DELETE CASCADE,
+                account_id INTEGER
+                    REFERENCES accounts(id) ON DELETE SET NULL,
+                account_name VARCHAR(100) NOT NULL,
+                balance NUMERIC(12,2) NOT NULL DEFAULT 0,
+                is_credit BOOLEAN NOT NULL DEFAULT FALSE,
+                CONSTRAINT uq_budget_entry_snapshot_account
+                    UNIQUE (snapshot_id, account_id)
+            );
+        """,
+    },
+    {
+        "id": "009_budget_snapshots_simplify",
+        "name": "Remove obsolete columns from budget_snapshots",
+        "sql": """
+            ALTER TABLE budget_snapshots
+                DROP COLUMN IF EXISTS total_expenses;
+            ALTER TABLE budget_snapshots
+                DROP COLUMN IF EXISTS net_income;
+            ALTER TABLE budget_snapshots
+                DROP COLUMN IF EXISTS net_position;
+        """,
+    },
 ]
 
 

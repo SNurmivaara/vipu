@@ -89,6 +89,26 @@ export interface BudgetData {
   archived_expenses: ExpenseItem[];
 }
 
+// Budget Snapshot types
+export interface BudgetBalanceEntry {
+  id: number;
+  account_id: number | null;
+  account_name: string;
+  balance: number;
+  is_credit: boolean;
+}
+
+export interface BudgetSnapshot {
+  id: number;
+  date: string;
+  timestamp: string;
+  current_balance: number;
+  change_from_previous: number;
+  pay_period_change: number;
+  notes: string | null;
+  entries: BudgetBalanceEntry[];
+}
+
 export type AccountFormData = Omit<Account, "id" | "updated_at">;
 export type IncomeFormData = Omit<IncomeItem, "id">;
 export type DeductionFormData = Omit<IncomeItem, "id">;
