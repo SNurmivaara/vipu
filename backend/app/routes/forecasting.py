@@ -337,20 +337,19 @@ def get_forecasting_projection() -> Response:
     )
 
     result = calculate_fire(inputs)
-    result_dict = decimal_to_float(asdict(result))
-    result_dict["derived"] = decimal_to_float(
-        {
-            "current_net_worth": current_net_worth,
-            "monthly_savings": monthly_savings,
-            "annual_expenses": annual_expenses,
-            "weighted_return_pct": weighted_return_pct,
-            # Always exposed (used as the salary input placeholder) even when
-            # pension mode is off; only fed into the FIRE inputs when active.
-            "pension_monthly_salary": pension_monthly_salary,
-            "pension_active": pension_active,
-            "by_group": by_group,
-            "group_return_rates": resolve_group_return_rates(by_group, group_rates),
-        }
-    )
+    result_dict = asdict(result)
+    result_dict["derived"] = {
+        "current_net_worth": current_net_worth,
+        "monthly_savings": monthly_savings,
+        "annual_expenses": annual_expenses,
+        "weighted_return_pct": weighted_return_pct,
+        # Always exposed (used as the salary input placeholder) even when
+        # pension mode is off; only fed into the FIRE inputs when active.
+        "pension_monthly_salary": pension_monthly_salary,
+        "pension_active": pension_active,
+        "by_group": by_group,
+        "group_return_rates": resolve_group_return_rates(by_group, group_rates),
+    }
 
-    return jsonify(result_dict)
+    # Convert all Decimals (result + derived) to float in one pass.
+    return jsonify(decimal_to_float(result_dict))
