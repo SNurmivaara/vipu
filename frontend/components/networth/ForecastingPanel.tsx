@@ -12,9 +12,9 @@ import {
   ReferenceLine,
   Area,
 } from "recharts";
-import { NetWorthSnapshot, BudgetTotals, ForecastingSettings } from "@/types";
+import { ForecastingSettings } from "@/types";
 import { formatCurrencyRounded, cn } from "@/lib/utils";
-import { useFireCalculation, FireInputs } from "@/hooks/useFireCalculation";
+import { useForecastingProjection } from "@/hooks/useForecastingProjection";
 import { useForecastingSettings } from "@/hooks/useForecastingSettings";
 
 const DEFAULT_SETTINGS: ForecastingSettings = {
@@ -34,54 +34,11 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   groupReturnRates: {},
 };
 
-/** Default return assumptions by group name keyword matching. */
-function getDefaultReturnForGroup(groupName: string): number {
-  const lower = groupName.toLowerCase();
-  if (/invest|stock|equit|fund|etf/.test(lower)) return 7;
-  if (/real.?estate|property|home|house/.test(lower)) return 3;
-  if (/cash|saving|bank|deposit/.test(lower)) return 1;
-  if (/crypto|bitcoin|eth/.test(lower)) return 7;
-  if (/bond|fixed.?income/.test(lower)) return 3;
-  return 5;
-}
-
-/** Compute weighted annual return from group allocations. */
-function calcWeightedReturn(
-  byGroup: Record<string, number>,
-  returnRates: Record<string, number>
-): number {
-  let totalValue = 0;
-  let weightedSum = 0;
-  for (const [group, amount] of Object.entries(byGroup)) {
-    if (amount <= 0) continue; // only assets
-    const rate = returnRates[group] ?? getDefaultReturnForGroup(group);
-    weightedSum += amount * rate;
-    totalValue += amount;
-  }
-  return totalValue > 0 ? weightedSum / totalValue : 7;
-}
-
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
-
-interface ForecastingPanelProps {
-  snapshots: NetWorthSnapshot[];
-  budgetTotals?: BudgetTotals | null;
-  monthlyExpenses?: number;
-  monthlySavings?: number;
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-export function ForecastingPanel({
-  snapshots,
-  budgetTotals,
-  monthlyExpenses,
-  monthlySavings,
-}: ForecastingPanelProps) {
+export function ForecastingPanel() {
   const {
     settings: apiSettings,
     isLoading: settingsLoading,
@@ -91,82 +48,17 @@ export function ForecastingPanel({
 
   const settings = apiSettings ?? DEFAULT_SETTINGS;
 
-  // Derive values from budget data where possible
-  const derivedMonthlySavings =
-    settings.monthlySavingsOverride ??
-    monthlySavings ??
-    (budgetTotals ? budgetTotals.net_income - budgetTotals.total_expenses : 0);
+  // All FIRE inputs are derived on the backend from persisted settings,
+  // the latest net worth snapshot and the current budget.
+  const { result, isLoading: fireLoading, isFetching } =
+    useForecastingProjection();
+  const derived = result.derived;
 
-  const derivedAnnualExpenses =
-    settings.annualExpensesOverride ??
-    (monthlyExpenses ?? budgetTotals?.total_expenses ?? 0) * 12;
-
-  const currentNetWorth = snapshots.length > 0 ? snapshots[0].net_worth : 0;
-
-  const derivedPensionMonthlySalary =
-    settings.pensionMonthlySalaryOverride ?? budgetTotals?.gross_income ?? 0;
-
+  // Pension mode follows the persisted setting so the UI toggles instantly.
   const pensionActive = settings.pensionAccruedMonthly !== null;
 
-  // Weighted return by asset allocation (from latest snapshot groups)
-  const latestByGroup = useMemo(
-    () => (snapshots.length > 0 ? snapshots[0].by_group : {}),
-    [snapshots]
-  );
-  const groupReturnRates = useMemo(() => {
-    const rates: Record<string, number> = {};
-    for (const group of Object.keys(latestByGroup)) {
-      rates[group] = settings.groupReturnRates[group] ?? getDefaultReturnForGroup(group);
-    }
-    return rates;
-  }, [latestByGroup, settings.groupReturnRates]);
-
-  const weightedReturnPct = useMemo(
-    () => calcWeightedReturn(latestByGroup, groupReturnRates),
-    [latestByGroup, groupReturnRates]
-  );
-
-  const fireInputs: FireInputs = useMemo(
-    () => ({
-      currentNetWorth,
-      monthlyContribution: derivedMonthlySavings,
-      annualExpenses: derivedAnnualExpenses,
-      annualReturnPct: weightedReturnPct,
-      inflationPct: settings.inflationPct,
-      currentAge: settings.currentAge,
-      targetRetirementAge: settings.targetRetirementAge,
-      safeWithdrawalRate: settings.safeWithdrawalRate,
-      ...(pensionActive && {
-        pensionAccruedMonthly: settings.pensionAccruedMonthly!,
-        pensionMonthlySalary: derivedPensionMonthlySalary,
-        pensionAccrualRate: settings.pensionAccrualRate,
-        pensionFullAge: settings.pensionFullAge,
-        pensionGuaranteeEnabled: settings.pensionGuaranteeEnabled,
-        pensionGuaranteeAmount: settings.pensionGuaranteeAmount,
-        lifeExpectancy: settings.lifeExpectancy,
-      }),
-    }),
-    [
-      currentNetWorth,
-      derivedMonthlySavings,
-      derivedAnnualExpenses,
-      weightedReturnPct,
-      settings.inflationPct,
-      settings.currentAge,
-      settings.targetRetirementAge,
-      settings.safeWithdrawalRate,
-      pensionActive,
-      settings.pensionAccruedMonthly,
-      derivedPensionMonthlySalary,
-      settings.pensionAccrualRate,
-      settings.pensionFullAge,
-      settings.pensionGuaranteeEnabled,
-      settings.pensionGuaranteeAmount,
-      settings.lifeExpectancy,
-    ]
-  );
-
-  const { result, isLoading: fireLoading, isFetching } = useFireCalculation(fireInputs);
+  // Asset groups (with allocations) for the per-group return inputs.
+  const latestByGroup = derived.byGroup;
 
   // Build chart data
   const chartData = useMemo(() => {
@@ -343,11 +235,11 @@ export function ForecastingPanel({
           />
           <NumberInput
             label="Monthly savings"
-            value={settings.monthlySavingsOverride ?? derivedMonthlySavings}
+            value={settings.monthlySavingsOverride ?? derived.monthlySavings}
             onChange={(v) => updateSetting("monthlySavingsOverride", v)}
             min={0}
             step={100}
-            placeholder={derivedMonthlySavings.toString()}
+            placeholder={derived.monthlySavings.toString()}
             onClear={
               settings.monthlySavingsOverride !== null
                 ? () => updateSetting("monthlySavingsOverride", null)
@@ -356,11 +248,11 @@ export function ForecastingPanel({
           />
           <NumberInput
             label="Annual expenses"
-            value={settings.annualExpensesOverride ?? derivedAnnualExpenses}
+            value={settings.annualExpensesOverride ?? derived.annualExpenses}
             onChange={(v) => updateSetting("annualExpensesOverride", v)}
             min={0}
             step={1000}
-            placeholder={derivedAnnualExpenses.toString()}
+            placeholder={derived.annualExpenses.toString()}
             onClear={
               settings.annualExpensesOverride !== null
                 ? () => updateSetting("annualExpensesOverride", null)
@@ -373,7 +265,7 @@ export function ForecastingPanel({
             <>
               <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
                 <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
-                  Expected return % by asset group (weighted: {weightedReturnPct.toFixed(1)}%)
+                  Expected return % by asset group (weighted: {derived.weightedReturnPct.toFixed(1)}%)
                 </div>
               </div>
               {Object.entries(latestByGroup)
@@ -383,7 +275,10 @@ export function ForecastingPanel({
                   <NumberInput
                     key={group}
                     label={group}
-                    value={groupReturnRates[group] ?? getDefaultReturnForGroup(group)}
+                    value={
+                      settings.groupReturnRates[group] ??
+                      derived.groupReturnRates[group]
+                    }
                     onChange={(v) => {
                       const updated = { ...settings.groupReturnRates, [group]: v };
                       updateSetting("groupReturnRates", updated);
@@ -416,11 +311,11 @@ export function ForecastingPanel({
           />
           <NumberInput
             label="TyEL monthly salary"
-            value={settings.pensionMonthlySalaryOverride ?? derivedPensionMonthlySalary}
+            value={settings.pensionMonthlySalaryOverride ?? derived.pensionMonthlySalary}
             onChange={(v) => updateSetting("pensionMonthlySalaryOverride", v)}
             min={0}
             step={100}
-            placeholder={derivedPensionMonthlySalary.toString()}
+            placeholder={derived.pensionMonthlySalary.toString()}
             onClear={
               settings.pensionMonthlySalaryOverride !== null
                 ? () => updateSetting("pensionMonthlySalaryOverride", null)
@@ -502,14 +397,14 @@ export function ForecastingPanel({
           sublabel={
             result.coastFireReached
               ? "Reached — can stop saving!"
-              : `${formatCurrencyRounded(result.coastFireNumber - currentNetWorth)} to go`
+              : `${formatCurrencyRounded(result.coastFireNumber - derived.currentNetWorth)} to go`
           }
           highlight={result.coastFireReached}
         />
         <MetricCard
           label="Real return"
-          value={`${(weightedReturnPct - settings.inflationPct).toFixed(1)}%`}
-          sublabel={`${weightedReturnPct.toFixed(1)}% weighted - ${settings.inflationPct}% infl.`}
+          value={`${(derived.weightedReturnPct - settings.inflationPct).toFixed(1)}%`}
+          sublabel={`${derived.weightedReturnPct.toFixed(1)}% weighted - ${settings.inflationPct}% infl.`}
         />
       </div>
 
@@ -527,8 +422,8 @@ export function ForecastingPanel({
           late: "#56B4E9",
         };
         const normalScenario = pension.scenarios[1];
-        const coveragePct = derivedAnnualExpenses > 0
-          ? Math.round((normalScenario.annualPension / derivedAnnualExpenses) * 100)
+        const coveragePct = derived.annualExpenses > 0
+          ? Math.round((normalScenario.annualPension / derived.annualExpenses) * 100)
           : 0;
         return (
           <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3">
@@ -570,7 +465,7 @@ export function ForecastingPanel({
       {/* Portfolio depletion warning */}
       {result.portfolioDepletedAge !== null && result.pension && (() => {
         const normalPension = result.pension.scenarios[1];
-        const monthlyExpenses = derivedAnnualExpenses / 12;
+        const monthlyExpenses = derived.annualExpenses / 12;
         const shortfall = monthlyExpenses - normalPension.monthlyPension;
         const pensionStarted = result.portfolioDepletedAge >= normalPension.pensionStartAge;
         return (
@@ -804,14 +699,33 @@ function NumberInput({
   placeholder?: string;
   onClear?: () => void;
 }) {
+  // While focused, keep the raw text so the field can be cleared and retyped
+  // (no forced 0); otherwise mirror the numeric prop.
+  const [focused, setFocused] = useState(false);
+  const [text, setText] = useState("");
+  const display = focused ? text : String(value);
+
   return (
     <div>
       <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{label}</label>
       <div className="flex items-center gap-1">
         <input
           type="number"
-          value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
+          value={display}
+          onFocus={() => {
+            setText(String(value));
+            setFocused(true);
+          }}
+          onBlur={() => setFocused(false)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setText(raw);
+            // Only propagate real numbers; an empty/partial field is left as-is
+            // until the user types a value or blurs back to the current one.
+            if (raw === "") return;
+            const parsed = parseFloat(raw);
+            if (!Number.isNaN(parsed)) onChange(parsed);
+          }}
           min={min}
           max={max}
           step={step}

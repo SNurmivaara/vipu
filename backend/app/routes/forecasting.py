@@ -6,8 +6,14 @@ from flask import Response, jsonify, request
 from marshmallow import Schema, ValidationError, fields, post_load, validate
 
 from app import get_session
-from app.fire import FireInputs, calculate_fire
-from app.models import ForecastingSettings
+from app.fire import (
+    FireInputs,
+    calculate_fire,
+    resolve_group_return_rates,
+    weighted_return,
+)
+from app.models import ForecastingSettings, NetWorthSnapshot
+from app.routes.budget import compute_budget_totals
 
 bp = APIBlueprint("forecasting", __name__, tag="Forecasting")
 
@@ -256,3 +262,94 @@ def calculate_fire_projection() -> Response | tuple[Response, int]:
     result_dict = decimal_to_float(asdict(result))
 
     return jsonify(result_dict)
+
+
+@bp.get("/api/forecasting/projection")
+def get_forecasting_projection() -> Response:
+    """Compute FIRE projections from persisted settings, snapshots and budget.
+
+    All FIRE inputs (weighted return, monthly savings, annual expenses, pension
+    salary) are derived on the backend from the persisted forecasting settings,
+    the latest net worth snapshot and the current budget — so the result is the
+    same in every browser instead of being assembled client-side. Computed on
+    demand; nothing is stored.
+
+    Returns the same shape as POST /api/forecasting/calculate, plus a "derived"
+    block exposing the inputs used (and the resolved per-group return rates).
+    """
+    session = get_session()
+    settings = get_or_create_forecasting_settings()
+
+    # Latest net worth snapshot -> current net worth + asset allocation
+    latest = (
+        session.query(NetWorthSnapshot)
+        .order_by(NetWorthSnapshot.year.desc(), NetWorthSnapshot.month.desc())
+        .first()
+    )
+    current_net_worth = Decimal(str(latest.net_worth)) if latest else Decimal("0")
+    by_group: dict = latest.to_dict()["by_group"] if latest else {}
+
+    # Budget-derived figures (shared helper)
+    budget_totals = compute_budget_totals(session)
+    net_income = budget_totals["net_income"]
+    total_expenses = budget_totals["total_expenses"]
+    gross_income = budget_totals["gross_income"]
+
+    group_rates = settings.group_return_rates or {}
+
+    # Derive FIRE inputs, mirroring the former frontend logic
+    monthly_savings = (
+        settings.monthly_savings_override
+        if settings.monthly_savings_override is not None
+        else net_income - total_expenses
+    )
+    annual_expenses = (
+        settings.annual_expenses_override
+        if settings.annual_expenses_override is not None
+        else total_expenses * 12
+    )
+    pension_monthly_salary = (
+        settings.pension_monthly_salary_override
+        if settings.pension_monthly_salary_override is not None
+        else gross_income
+    )
+    weighted_return_pct = weighted_return(by_group, group_rates)
+    pension_active = settings.pension_accrued_monthly is not None
+
+    inputs = FireInputs(
+        current_net_worth=current_net_worth,
+        monthly_contribution=monthly_savings,
+        annual_expenses=annual_expenses,
+        annual_return_pct=weighted_return_pct,
+        inflation_pct=settings.inflation_pct,
+        current_age=settings.current_age,
+        target_retirement_age=settings.target_retirement_age,
+        safe_withdrawal_rate=settings.safe_withdrawal_rate,
+        pension_accrued_monthly=(
+            settings.pension_accrued_monthly if pension_active else None
+        ),
+        pension_monthly_salary=pension_monthly_salary if pension_active else None,
+        pension_accrual_rate=settings.pension_accrual_rate,
+        pension_full_age=settings.pension_full_age,
+        pension_guarantee_enabled=settings.pension_guarantee_enabled,
+        pension_guarantee_amount=settings.pension_guarantee_amount,
+        life_expectancy=settings.life_expectancy,
+    )
+
+    result = calculate_fire(inputs)
+    result_dict = asdict(result)
+    result_dict["derived"] = {
+        "current_net_worth": current_net_worth,
+        "monthly_savings": monthly_savings,
+        "annual_expenses": annual_expenses,
+        "weighted_return_pct": weighted_return_pct,
+        # Always exposed (used as the salary input placeholder) even when
+        # pension mode is off; only fed into the FIRE inputs when active.
+        "pension_monthly_salary": pension_monthly_salary,
+        "pension_active": pension_active,
+        "by_group": by_group,
+        "group_return_rates": resolve_group_return_rates(by_group, group_rates),
+    }
+
+    # Convert all Decimals (result + derived) to float in one pass.
+    return jsonify(decimal_to_float(result_dict))

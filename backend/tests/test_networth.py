@@ -1601,3 +1601,46 @@ class TestForecast:
         assert data["monthly_change_rate"] == -2000
         # First projection: 48000 - 2000 = 46000
         assert data["projections"][0]["projected_net_worth"] == 46000
+
+
+class TestSnapshotChangePercent:
+    """Tests for the month-over-month change_percent field (issue #56)."""
+
+    def test_change_percent_zero_for_first_snapshot(self, client, seeded_categories):
+        """First snapshot has no prior value, so change_percent is 0."""
+        cats = seeded_categories
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 10000}],
+            },
+        )
+        assert response.status_code == 201
+        assert response.json["change_from_previous"] == 0.0
+        assert response.json["change_percent"] == 0.0
+
+    def test_change_percent_computed_from_previous(self, client, seeded_categories):
+        """change_percent is the change relative to the previous net worth."""
+        cats = seeded_categories
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 10000}],
+            },
+        )
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": 2,
+                "year": 2024,
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 11000}],
+            },
+        )
+        assert response.status_code == 201
+        # +1000 on a 10000 base -> 10%
+        assert response.json["change_from_previous"] == 1000.0
+        assert response.json["change_percent"] == 10.0

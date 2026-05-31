@@ -5,6 +5,7 @@ import {
   updateForecastingSettings,
 } from "@/lib/api";
 import { ForecastingSettings, ForecastingSettingsAPI } from "@/types";
+import { FORECASTING_PROJECTION_KEY } from "./useForecastingProjection";
 
 const QUERY_KEY = ["forecasting-settings"];
 const DEBOUNCE_MS = 500;
@@ -75,6 +76,8 @@ export function useForecastingSettings() {
       updateForecastingSettings(settingsToApi(update)),
     onSuccess: (data) => {
       queryClient.setQueryData(QUERY_KEY, data);
+      // Settings feed the backend-derived FIRE projection — refresh it.
+      queryClient.invalidateQueries({ queryKey: FORECASTING_PROJECTION_KEY });
     },
     onError: () => {
       // Roll back optimistic update on failure

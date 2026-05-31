@@ -5,6 +5,7 @@ Return rates are annual percentages (e.g., 7 for 7%).
 Inflation is an annual percentage (e.g., 2 for 2%).
 """
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -109,6 +110,82 @@ def _decimal_power(base: Decimal, exponent: Decimal) -> Decimal:
     Note: For financial projections, float precision is acceptable.
     """
     return Decimal(str(float(base) ** float(exponent)))
+
+
+# ---------------------------------------------------------------------------
+# Input derivation from persisted state
+#
+# These derive FIRE inputs from net worth allocations and per-group return
+# assumptions. They previously lived in the frontend (ForecastingPanel); kept
+# here so the FIRE result is computed consistently on the backend.
+# ---------------------------------------------------------------------------
+
+# Default annual return assumptions (%), matched by group-name keyword.
+_DEFAULT_RETURN_RULES: list[tuple[str, Decimal]] = [
+    (r"invest|stock|equit|fund|etf", Decimal("7")),
+    (r"real.?estate|property|home|house", Decimal("3")),
+    (r"cash|saving|bank|deposit", Decimal("1")),
+    (r"crypto|bitcoin|eth", Decimal("7")),
+    (r"bond|fixed.?income", Decimal("3")),
+]
+_DEFAULT_RETURN_FALLBACK = Decimal("5")
+
+
+def default_return_for_group(group_name: str) -> Decimal:
+    """Default annual return assumption (%) for an asset group by name.
+
+    Mirrors the frontend keyword matching so projections are unchanged.
+    """
+    lower = group_name.lower()
+    for pattern, rate in _DEFAULT_RETURN_RULES:
+        if re.search(pattern, lower):
+            return rate
+    return _DEFAULT_RETURN_FALLBACK
+
+
+def resolve_group_return_rates(
+    by_group: dict[str, float | Decimal],
+    group_return_rates: dict[str, float | Decimal],
+) -> dict[str, Decimal]:
+    """Return the effective return rate (%) for each asset group.
+
+    Uses the persisted override when present, otherwise the keyword default.
+    """
+    resolved: dict[str, Decimal] = {}
+    for group in by_group:
+        override = group_return_rates.get(group)
+        resolved[group] = (
+            Decimal(str(override))
+            if override is not None
+            else default_return_for_group(group)
+        )
+    return resolved
+
+
+def weighted_return(
+    by_group: dict[str, float | Decimal],
+    group_return_rates: dict[str, float | Decimal],
+) -> Decimal:
+    """Portfolio-weighted annual return (%) from asset allocations.
+
+    Only positive balances (assets) are weighted. Falls back to 7% when there
+    are no assets to weight. Mirrors the frontend calcWeightedReturn.
+    """
+    total_value = Decimal("0")
+    weighted_sum = Decimal("0")
+    for group, amount in by_group.items():
+        amount_dec = Decimal(str(amount))
+        if amount_dec <= 0:
+            continue  # only assets
+        override = group_return_rates.get(group)
+        rate = (
+            Decimal(str(override))
+            if override is not None
+            else default_return_for_group(group)
+        )
+        weighted_sum += amount_dec * rate
+        total_value += amount_dec
+    return weighted_sum / total_value if total_value > 0 else Decimal("7")
 
 
 # ---------------------------------------------------------------------------

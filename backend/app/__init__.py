@@ -12,6 +12,23 @@ from app.models import Base
 engine: Any = None
 Session: scoped_session[SQLAlchemySession] | None = None
 
+# Recycle pooled connections before typical managed-Postgres/proxy idle
+# timeouts (often ~5 min) so we never hand out a half-open connection.
+POOL_RECYCLE_SECONDS = 280
+
+
+def build_engine_options(database_uri: str) -> dict[str, Any]:
+    """SQLAlchemy engine options for a given database URI.
+
+    For server databases (Postgres) we enable ``pool_pre_ping`` so a connection
+    the server dropped while idle is transparently replaced instead of surfacing
+    as an intermittent 500 until the pool recycles. SQLite (tests) uses its own
+    pooling and needs neither option.
+    """
+    if database_uri.startswith("sqlite"):
+        return {}
+    return {"pool_pre_ping": True, "pool_recycle": POOL_RECYCLE_SECONDS}
+
 
 def create_app(config_class: type | None = None) -> APIFlask:
     """Create and configure the Flask application."""
@@ -38,7 +55,8 @@ def create_app(config_class: type | None = None) -> APIFlask:
     cors_origins = [o.strip() for o in cors_config.split(",") if o.strip()]
     CORS(app, origins=cors_origins or ["http://localhost:3000"])
 
-    engine = create_engine(app.config["SQLALCHEMY_DATABASE_URI"])
+    database_uri = app.config["SQLALCHEMY_DATABASE_URI"]
+    engine = create_engine(database_uri, **build_engine_options(database_uri))
     session_factory = sessionmaker(bind=engine)
     Session = scoped_session(session_factory)
 

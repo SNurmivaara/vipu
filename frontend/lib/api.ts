@@ -25,6 +25,7 @@ import {
   ForecastingSettingsAPI,
   FireCalculateInput,
   FireResultAPI,
+  ForecastingProjectionAPI,
 } from "@/types";
 
 export const api = axios.create({
@@ -421,3 +422,12 @@ export const calculateFire = async (
   const { data } = await api.post<FireResultAPI>("/forecasting/calculate", input);
   return data;
 };
+
+// FIRE projection derived on the backend from persisted state
+export const fetchForecastingProjection =
+  async (): Promise<ForecastingProjectionAPI> => {
+    const { data } = await api.get<ForecastingProjectionAPI>(
+      "/forecasting/projection"
+    );
+    return data;
+  };

@@ -533,6 +533,16 @@ class NetWorthSnapshot(Base):
         def to_float(val: Decimal | None) -> float:
             return float(val) if val is not None else 0.0
 
+        # Month-over-month change as a percentage of the previous net worth.
+        # 0 when there is no previous value to compare against.
+        change = self.change_from_previous or Decimal(0)
+        previous_net_worth = (self.net_worth or Decimal(0)) - change
+        change_percent = (
+            round(float(change / previous_net_worth * 100), 2)
+            if previous_net_worth != 0
+            else 0.0
+        )
+
         result: dict = {
             "id": self.id,
             "month": self.month,
@@ -542,6 +552,7 @@ class NetWorthSnapshot(Base):
             "total_liabilities": to_float(self.total_liabilities),
             "net_worth": to_float(self.net_worth),
             "change_from_previous": to_float(self.change_from_previous),
+            "change_percent": change_percent,
             "personal_wealth": to_float(self.personal_wealth),
             "company_wealth": to_float(self.company_wealth),
         }
