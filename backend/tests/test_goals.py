@@ -809,3 +809,146 @@ class TestGoalStatus:
         progress = response.json[0]
         # Only 2 months of data, need 3+ for status
         assert progress["status"] is None
+
+
+def _add_snapshot(client, month, year, category_id, amount):
+    """Helper: create a single-category net worth snapshot."""
+    return client.post(
+        "/api/networth",
+        json={
+            "month": month,
+            "year": year,
+            "entries": [{"category_id": category_id, "amount": amount}],
+        },
+    )
+
+
+class TestSavingsGoalPace:
+    """Tests for the savings-goal pace / on-track math (issue #57)."""
+
+    def test_flat_balance_is_behind_not_on_track(self, client):
+        """A stagnant balance should read as 'behind', not 'on track'.
+
+        Regression for the quirk where current_value / data_months treated a
+        long-standing balance as if it had all been saved recently, so a
+        category that never grew was reported as on track.
+        """
+        client.post("/api/networth/categories/seed")
+
+        # Balance sits flat at 4000 for three months — no saving happening.
+        _add_snapshot(client, 1, 2026, 1, 4000)
+        _add_snapshot(client, 2, 2026, 1, 4000)
+        _add_snapshot(client, 3, 2026, 1, 4000)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": "2027-01-31T00:00:00+00:00",
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+        assert progress["status"] == "behind"
+        assert progress["recent_monthly"] == 0.0
+        assert progress["status_reason"]
+
+    def test_steady_saving_is_on_track(self, client):
+        """Saving faster than required reads as 'on track' with a projection."""
+        client.post("/api/networth/categories/seed")
+
+        # +1000/month for three months.
+        _add_snapshot(client, 1, 2026, 1, 1000)
+        _add_snapshot(client, 2, 2026, 1, 2000)
+        _add_snapshot(client, 3, 2026, 1, 3000)
+
+        # Need 2000 more by ~10 months out -> 200/mo required, saving 1000/mo.
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": "2027-01-31T00:00:00+00:00",
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+        assert progress["status"] == "on_track"
+        assert progress["recent_monthly"] == 1000.0
+        assert progress["required_monthly"] is not None
+        assert progress["recent_monthly"] >= progress["required_monthly"]
+        # Projection should comfortably clear the target.
+        assert progress["projected_value"] >= 5000
+
+    def test_slow_saving_is_behind(self, client):
+        """Saving slower than required reads as 'behind'."""
+        client.post("/api/networth/categories/seed")
+
+        # +100/month for three months -> far short of what's needed.
+        _add_snapshot(client, 1, 2026, 1, 1000)
+        _add_snapshot(client, 2, 2026, 1, 1100)
+        _add_snapshot(client, 3, 2026, 1, 1200)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": "2026-09-30T00:00:00+00:00",
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+        assert progress["status"] == "behind"
+        assert progress["recent_monthly"] == 100.0
+        assert progress["recent_monthly"] < progress["required_monthly"]
+
+    def test_no_target_date_has_reason(self, client):
+        """Without a target date, status is None but a reason is given."""
+        client.post("/api/networth/categories/seed")
+        _add_snapshot(client, 1, 2026, 1, 1000)
+        _add_snapshot(client, 2, 2026, 1, 2000)
+        _add_snapshot(client, 3, 2026, 1, 3000)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+        assert progress["status"] is None
+        assert "target date" in progress["status_reason"].lower()
+
+    def test_achieved_goal_is_on_track(self, client):
+        """A goal already at/over target is on track regardless of pace."""
+        client.post("/api/networth/categories/seed")
+        _add_snapshot(client, 1, 2026, 1, 5000)
+        _add_snapshot(client, 2, 2026, 1, 5500)
+        _add_snapshot(client, 3, 2026, 1, 6000)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": "2027-01-31T00:00:00+00:00",
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+        assert progress["is_achieved"] is True
+        assert progress["status"] == "on_track"

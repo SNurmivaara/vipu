@@ -230,6 +230,11 @@ export interface GoalProgress {
   progress_percentage: number;
   is_achieved: boolean;
   status: "on_track" | "behind" | null;
+  status_reason?: string | null;
+  required_monthly?: number | null;
+  recent_monthly?: number | null;
+  projected_value?: number | null;
+  months_remaining?: number | null;
   data_months: number;
   category_name?: string | null;
 }

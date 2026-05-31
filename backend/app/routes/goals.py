@@ -258,53 +258,136 @@ def _calculate_net_income(
     return total
 
 
-def _calculate_on_track_status(
-    goal: Goal, current_value: Decimal, target_value: Decimal, data_months: int
-) -> str | None:
-    """Calculate on-track/behind status.
+# Minimum snapshots before we trust a measured saving pace.
+MIN_MONTHS_FOR_PACE = 3
 
-    For savings_rate goals: Always show status based on current vs target rate.
-    For other goals: Only show status if target_date is set and we have 3+ months data.
 
-    Returns 'on_track', 'behind', or None.
+def _months_between(later: NetWorthSnapshot, earlier: NetWorthSnapshot) -> int:
+    """Whole months from the earlier snapshot to the later one."""
+    return (later.year - earlier.year) * 12 + (later.month - earlier.month)
+
+
+def _tracked_value_in_snapshot(snapshot: NetWorthSnapshot, goal: Goal) -> Decimal:
+    """The value this goal tracks within a single snapshot."""
+    if goal.goal_type in ("net_worth", "net_worth_target"):
+        return Decimal(str(snapshot.net_worth))
+    if goal.goal_type in ("savings_goal", "category_target") and goal.category_id:
+        return abs(_get_category_amount_in_snapshot(snapshot, goal.category_id))
+    return Decimal("0")
+
+
+def _recent_monthly_change(
+    goal: Goal, snapshots: list[NetWorthSnapshot]
+) -> Decimal | None:
+    """Average monthly change in the tracked value across the snapshot window.
+
+    This is the *actual* recent saving pace: how much the tracked balance has
+    moved per month over the available history. The previous implementation
+    divided the whole current balance by the number of months of data, which
+    treated a long-standing balance as if it had all been saved since tracking
+    began and badly overstated progress.
+
+    Returns None when there aren't at least two snapshots spanning a positive
+    number of months, so no pace can be derived.
     """
-    # Savings rate is always ongoing - just compare current vs target
-    if goal.goal_type in ("savings_rate", "category_rate"):
-        if data_months < 2:
-            return None  # Not enough data
-        return "on_track" if current_value >= target_value else "behind"
-
-    # For other goal types, require target_date and enough data
-    if not goal.target_date or data_months < 3:
+    if len(snapshots) < 2:
         return None
 
-    now = datetime.now(tz=goal.target_date.tzinfo)
+    latest, oldest = snapshots[0], snapshots[-1]
+    months = _months_between(latest, oldest)
+    if months <= 0:
+        return None
 
-    # Already achieved
+    change = _tracked_value_in_snapshot(latest, goal) - _tracked_value_in_snapshot(
+        oldest, goal
+    )
+    return change / Decimal(months)
+
+
+def _empty_pace() -> dict:
+    """A pace analysis with no verdict (used for rate goals and as a base)."""
+    return {
+        "status": None,
+        "status_reason": None,
+        "required_monthly": None,
+        "recent_monthly": None,
+        "projected_value": None,
+        "months_remaining": None,
+    }
+
+
+def _calculate_rate_status(
+    current_value: Decimal, target_value: Decimal, data_months: int
+) -> str | None:
+    """On-track status for savings_rate goals: compare current vs target rate."""
+    if data_months < 2:
+        return None  # Not enough data
+    return "on_track" if current_value >= target_value else "behind"
+
+
+def _analyze_pace(
+    goal: Goal,
+    current_value: Decimal,
+    target_value: Decimal,
+    recent_monthly: Decimal | None,
+    data_months: int,
+) -> dict:
+    """Assess whether a net_worth / savings_goal is on track for its target.
+
+    Compares the *required* monthly pace (the gap to target spread over the
+    time remaining) against the *actual* recent monthly pace measured from
+    snapshots, and explains the verdict so the UI can say why.
+
+    Returns a dict with: status, status_reason, required_monthly,
+    recent_monthly, projected_value, months_remaining.
+    """
+    pace = _empty_pace()
+
+    # Already there.
     if current_value >= target_value:
-        return "on_track"
+        pace["status"] = "on_track"
+        pace["status_reason"] = "Target reached"
+        return pace
 
-    # Target date has passed
-    if goal.target_date <= now:
-        return "behind"
+    # Without a deadline there is no pace to be on track for.
+    if not goal.target_date:
+        pace["status_reason"] = "Set a target date to track your pace"
+        return pace
 
-    # Calculate if on track based on linear projection
-    # Months remaining until target date
+    now = datetime.now(tz=goal.target_date.tzinfo)
     months_remaining = (goal.target_date.year - now.year) * 12 + (
         goal.target_date.month - now.month
     )
+    pace["months_remaining"] = months_remaining
 
-    if months_remaining <= 0:
-        return "behind"
+    if goal.target_date <= now or months_remaining <= 0:
+        pace["status"] = "behind"
+        pace["status_reason"] = "Target date has passed"
+        return pace
 
-    # Required monthly progress
-    remaining = float(target_value - current_value)
-    required_monthly = remaining / months_remaining
+    remaining = target_value - current_value
+    required_monthly = remaining / Decimal(months_remaining)
+    pace["required_monthly"] = float(required_monthly)
 
-    # Current monthly rate (simple: current / months of data)
-    current_monthly = float(current_value) / data_months
+    # Need enough history to measure a trustworthy pace.
+    if recent_monthly is None or data_months < MIN_MONTHS_FOR_PACE:
+        pace["status_reason"] = "Add more monthly snapshots to track your pace"
+        return pace
 
-    return "on_track" if current_monthly >= required_monthly else "behind"
+    pace["recent_monthly"] = float(recent_monthly)
+    projected = current_value + recent_monthly * months_remaining
+    pace["projected_value"] = float(projected)
+
+    if recent_monthly >= required_monthly:
+        pace["status"] = "on_track"
+        pace["status_reason"] = "Saving fast enough to reach the target on time"
+    elif recent_monthly <= 0:
+        pace["status"] = "behind"
+        pace["status_reason"] = "Balance isn't growing toward the target"
+    else:
+        pace["status"] = "behind"
+        pace["status_reason"] = "Saving too slowly to reach the target on time"
+    return pace
 
 
 def calculate_goal_progress(
@@ -321,6 +404,11 @@ def calculate_goal_progress(
     - progress_percentage: 0-100 percentage (capped at 100)
     - is_achieved: whether goal is met
     - status: 'on_track', 'behind', or None (if no target_date or <3 months data)
+    - status_reason: short human-readable explanation of the status
+    - required_monthly: monthly amount needed to hit the target by target_date
+    - recent_monthly: actual recent monthly saving pace (from snapshots)
+    - projected_value: value at target_date if the recent pace continues
+    - months_remaining: whole months until target_date
     - data_months: number of months of snapshot data available
     - category_name: category name (for savings_goal type)
     """
@@ -399,8 +487,13 @@ def calculate_goal_progress(
     # Cap at 100%, floor at 0%
     progress_pct = max(0.0, min(progress_pct, 100.0))
 
-    # Calculate on-track status
-    status = _calculate_on_track_status(goal, current_value, target, data_months)
+    # Calculate on-track status and the pace details behind it
+    if goal.goal_type in ("savings_rate", "category_rate"):
+        pace = _empty_pace()
+        pace["status"] = _calculate_rate_status(current_value, target, data_months)
+    else:
+        recent_monthly = _recent_monthly_change(goal, snapshots)
+        pace = _analyze_pace(goal, current_value, target, recent_monthly, data_months)
 
     return {
         "goal": goal.to_dict(),
@@ -408,7 +501,12 @@ def calculate_goal_progress(
         "target_value": float(target),
         "progress_percentage": round(progress_pct, 2),
         "is_achieved": is_achieved,
-        "status": status,
+        "status": pace["status"],
+        "status_reason": pace["status_reason"],
+        "required_monthly": pace["required_monthly"],
+        "recent_monthly": pace["recent_monthly"],
+        "projected_value": pace["projected_value"],
+        "months_remaining": pace["months_remaining"],
         "data_months": data_months,
         "category_name": category_name,
     }
