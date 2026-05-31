@@ -15,7 +15,6 @@ import {
   ForecastingPanel,
 } from "@/components/networth";
 import { GoalsSection } from "@/components/budget";
-import { useBudget } from "@/hooks/useBudget";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -35,7 +34,6 @@ export default function NetWorthPage() {
     queryKey: ["goals-progress"],
     queryFn: fetchGoalsProgress,
   });
-  const { data: budgetData } = useBudget();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -319,18 +317,7 @@ export default function NetWorthPage() {
       )}
 
       {/* FIRE Forecasting */}
-      {hasSnapshots && (
-        <ForecastingPanel
-          snapshots={snapshotList}
-          budgetTotals={budgetData?.totals}
-          monthlyExpenses={budgetData?.totals.total_expenses}
-          monthlySavings={
-            budgetData
-              ? budgetData.totals.net_income - budgetData.totals.total_expenses
-              : undefined
-          }
-        />
-      )}
+      {hasSnapshots && <ForecastingPanel />}
 
       {/* Snapshot History */}
       {hasCategories && (

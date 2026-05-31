@@ -155,6 +155,7 @@ export interface NetWorthSnapshot {
   total_liabilities: number;
   net_worth: number;
   change_from_previous: number;
+  change_percent: number;
   personal_wealth: number;
   company_wealth: number;
   entries: NetWorthEntry[];
@@ -354,4 +355,21 @@ export interface FireResultAPI {
   portfolio_depleted_age: number | null;
   projections: FireProjectionPointAPI[];
   pension: FirePensionResultAPI | null;
+}
+
+// FIRE inputs derived on the backend from persisted settings + snapshots + budget
+export interface ForecastingDerivedAPI {
+  current_net_worth: number;
+  monthly_savings: number;
+  annual_expenses: number;
+  weighted_return_pct: number;
+  pension_monthly_salary: number;
+  pension_active: boolean;
+  by_group: Record<string, number>;
+  group_return_rates: Record<string, number>;
+}
+
+// Response of GET /api/forecasting/projection: FIRE result + the derived inputs
+export interface ForecastingProjectionAPI extends FireResultAPI {
+  derived: ForecastingDerivedAPI;
 }

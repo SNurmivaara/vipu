@@ -13,8 +13,11 @@ from app.fire import (
     calc_projected_monthly_pension,
     calc_years_to_fire,
     calculate_fire,
+    default_return_for_group,
     generate_pension_scenarios,
     pv_annuity,
+    resolve_group_return_rates,
+    weighted_return,
 )
 
 
@@ -555,3 +558,135 @@ class TestFireCalculateEndpoint:
 
         assert response.status_code == 200
         assert response.json["pension"] is None
+
+
+class TestDefaultReturnForGroup:
+    """Tests for per-group default return assumptions (issue #56)."""
+
+    def test_investments(self):
+        assert default_return_for_group("Personal Investments") == Decimal("7")
+        assert default_return_for_group("Stocks") == Decimal("7")
+        assert default_return_for_group("ETF Portfolio") == Decimal("7")
+
+    def test_real_estate(self):
+        assert default_return_for_group("Property") == Decimal("3")
+        assert default_return_for_group("Real Estate") == Decimal("3")
+        assert default_return_for_group("My House") == Decimal("3")
+
+    def test_cash(self):
+        assert default_return_for_group("Cash") == Decimal("1")
+        assert default_return_for_group("Savings Account") == Decimal("1")
+
+    def test_crypto(self):
+        assert default_return_for_group("Crypto") == Decimal("7")
+        assert default_return_for_group("Bitcoin Wallet") == Decimal("7")
+
+    def test_bonds(self):
+        assert default_return_for_group("Bonds") == Decimal("3")
+        assert default_return_for_group("Fixed Income") == Decimal("3")
+
+    def test_fallback(self):
+        assert default_return_for_group("Miscellaneous") == Decimal("5")
+        assert default_return_for_group("") == Decimal("5")
+
+
+class TestWeightedReturn:
+    """Tests for portfolio-weighted return derivation (issue #56)."""
+
+    def test_mixed_allocation_uses_defaults(self):
+        # (10000*1 + 30000*7) / 40000 = 5.5
+        by_group = {"Cash": 10000, "Investments": 30000}
+        assert weighted_return(by_group, {}) == Decimal("5.5")
+
+    def test_override_takes_precedence(self):
+        # (10000*1 + 30000*10) / 40000 = 7.75
+        by_group = {"Cash": 10000, "Investments": 30000}
+        assert weighted_return(by_group, {"Investments": 10}) == Decimal("7.75")
+
+    def test_liabilities_and_zero_ignored(self):
+        # Only the positive Investments balance is weighted -> 7
+        by_group = {"Investments": 10000, "Loans": -5000, "Empty": 0}
+        assert weighted_return(by_group, {}) == Decimal("7")
+
+    def test_empty_falls_back_to_seven(self):
+        assert weighted_return({}, {}) == Decimal("7")
+        assert weighted_return({"Loans": -100}, {}) == Decimal("7")
+
+
+class TestResolveGroupReturnRates:
+    """Tests for resolving effective per-group return rates (issue #56)."""
+
+    def test_fills_defaults_and_overrides(self):
+        by_group = {"Cash": 100, "Investments": 200}
+        resolved = resolve_group_return_rates(by_group, {"Investments": 9})
+        assert resolved == {"Cash": Decimal("1"), "Investments": Decimal("9")}
+
+
+class TestForecastingProjection:
+    """Tests for GET /api/forecasting/projection (backend-derived FIRE)."""
+
+    def test_no_data(self, client):
+        """With no snapshot/budget, derived inputs are zero and return is 7%."""
+        resp = client.get("/api/forecasting/projection")
+        assert resp.status_code == 200
+        derived = resp.json["derived"]
+        assert derived["current_net_worth"] == 0
+        assert derived["monthly_savings"] == 0
+        assert derived["annual_expenses"] == 0
+        assert derived["weighted_return_pct"] == 7
+        assert derived["pension_active"] is False
+        assert resp.json["pension"] is None
+
+    def test_with_snapshot_and_budget(self, client):
+        """Derives net worth, weighted return, savings and expenses from state."""
+        client.post("/api/networth/categories/seed")
+        # Cash 10000 (cat 1) + Investments 30000 (cat 5) -> NW 40000, return 5.5
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 1, "amount": 10000},
+                    {"category_id": 5, "amount": 30000},
+                ],
+            },
+        )
+        # Untaxed income 4000 net; 1000 expenses
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "is_taxed": False},
+        )
+        client.post("/api/expenses", json={"name": "Rent", "amount": 1000})
+
+        resp = client.get("/api/forecasting/projection")
+        assert resp.status_code == 200
+        derived = resp.json["derived"]
+        assert derived["current_net_worth"] == 40000
+        assert derived["weighted_return_pct"] == 5.5
+        assert derived["monthly_savings"] == 3000  # 4000 - 1000
+        assert derived["annual_expenses"] == 12000  # 1000 * 12
+        assert derived["group_return_rates"] == {"Cash": 1, "Investments": 7}
+
+    def test_overrides_applied(self, client):
+        """Persisted overrides take precedence over budget-derived values."""
+        client.put(
+            "/api/forecasting/settings",
+            json={"monthly_savings_override": 1500, "annual_expenses_override": 20000},
+        )
+        resp = client.get("/api/forecasting/projection")
+        assert resp.status_code == 200
+        derived = resp.json["derived"]
+        assert derived["monthly_savings"] == 1500
+        assert derived["annual_expenses"] == 20000
+
+    def test_pension_mode_activated(self, client):
+        """Setting pension_accrued_monthly activates pension mode."""
+        client.put(
+            "/api/forecasting/settings",
+            json={"pension_accrued_monthly": 500},
+        )
+        resp = client.get("/api/forecasting/projection")
+        assert resp.status_code == 200
+        assert resp.json["derived"]["pension_active"] is True
+        assert resp.json["pension"] is not None

@@ -85,13 +85,26 @@ export function EditDialog({
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
-      // Apply signs to signed_number fields
+      // Numeric fields are edited as raw strings (so they can be cleared and
+      // typed freely). Coerce them to clamped numbers here so the API never
+      // receives an empty string or an out-of-range value, and apply the sign
+      // for signed_number fields.
       const finalValues = { ...values };
       fields.forEach((field) => {
+        if (field.type !== "number" && field.type !== "signed_number") return;
+
+        let num = parseFloat(String(finalValues[field.name]));
+        if (Number.isNaN(num)) num = field.min ?? 0;
+
         if (field.type === "signed_number") {
-          const absValue = Math.abs(finalValues[field.name] as number);
+          num = Math.abs(num);
+          if (field.max !== undefined) num = Math.min(field.max, num);
           finalValues[field.name] =
-            signs[field.name] === "negative" ? -absValue : absValue;
+            signs[field.name] === "negative" ? -num : num;
+        } else {
+          if (field.min !== undefined) num = Math.max(field.min, num);
+          if (field.max !== undefined) num = Math.min(field.max, num);
+          finalValues[field.name] = num;
         }
       });
       onSave(finalValues);
@@ -186,15 +199,22 @@ export function EditDialog({
                       <input
                         type="number"
                         id={field.name}
-                        value={Math.abs(values[field.name] as number)}
+                        // Raw string while editing (clearable); sign is applied
+                        // and the value coerced on submit.
+                        value={
+                          values[field.name] === ""
+                            ? ""
+                            : Math.abs(Number(values[field.name]) || 0)
+                        }
                         onChange={(e) =>
                           setValues((prev) => ({
                             ...prev,
-                            [field.name]: parseFloat(e.target.value) || 0,
+                            [field.name]: e.target.value,
                           }))
                         }
                         required={field.required}
                         min={0}
+                        max={field.max}
                         step={field.step}
                         placeholder={field.placeholder}
                         className={cn(
@@ -314,18 +334,18 @@ export function EditDialog({
                     <input
                       type={field.type}
                       id={field.name}
-                      value={values[field.name] as string | number}
+                      // Keep the raw string while editing so the field can be
+                      // cleared and retyped (no forced 0); coerced on submit.
+                      value={(values[field.name] as string | number) ?? ""}
                       onChange={(e) =>
                         setValues((prev) => ({
                           ...prev,
-                          [field.name]:
-                            field.type === "number"
-                              ? parseFloat(e.target.value) || 0
-                              : e.target.value,
+                          [field.name]: e.target.value,
                         }))
                       }
                       required={field.required}
                       min={field.min}
+                      max={field.max}
                       step={field.step}
                       placeholder={field.placeholder}
                       className={cn(

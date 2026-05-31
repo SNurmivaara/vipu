@@ -41,10 +41,8 @@ export function SummaryCards({ snapshots }: SummaryCardsProps) {
     );
   }
 
-  const changePercent =
-    latest.net_worth !== 0 && latest.change_from_previous !== 0
-      ? ((latest.change_from_previous / (latest.net_worth - latest.change_from_previous)) * 100)
-      : 0;
+  // Month-over-month change %, computed on the backend (see snapshot.to_dict).
+  const changePercent = latest.change_percent;
 
   const changeColor =
     latest.change_from_previous > 0

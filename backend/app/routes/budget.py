@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify
+from sqlalchemy.orm import Session
 
 from app import get_session
 from app.deadline_calc import (
@@ -31,6 +32,42 @@ def calculate_net_income(
     for item in income_items:
         total += item.calculate_net(default_tax_pct)
     return total
+
+
+def compute_budget_totals(session: Session) -> dict[str, Decimal]:
+    """Compute headline budget totals from active (non-archived) items.
+
+    Returns gross_income, net_income, current_balance, total_expenses and
+    net_position as Decimals. Shared by the budget and forecasting endpoints so
+    the same numbers are derived in one place.
+    """
+    settings = session.query(BudgetSettings).first()
+    tax_pct = settings.tax_percentage if settings else Decimal("25.0")
+
+    active_income = [
+        i for i in session.query(IncomeItem).all() if i.archived_at is None
+    ]
+    active_expenses = [
+        e for e in session.query(ExpenseItem).all() if e.archived_at is None
+    ]
+    accounts = session.query(Account).all()
+
+    # Gross income excludes deductions
+    gross_income = sum(
+        (i.gross_amount for i in active_income if not i.is_deduction),
+        Decimal("0"),
+    )
+    net_income = calculate_net_income(active_income, tax_pct)
+    current_balance = sum((a.balance for a in accounts), Decimal("0"))
+    total_expenses = sum((e.amount for e in active_expenses), Decimal("0"))
+
+    return {
+        "gross_income": gross_income,
+        "net_income": net_income,
+        "current_balance": current_balance,
+        "total_expenses": total_expenses,
+        "net_position": current_balance - total_expenses,
+    }
 
 
 @bp.get("/api/budget/current")
@@ -73,16 +110,13 @@ def get_current_budget() -> Response:
     active_expenses = [e for e in expenses if e.archived_at is None]
     archived_expenses = [e for e in expenses if e.archived_at is not None]
 
-    # Calculate totals (using active items only)
-    # Gross income excludes deductions
-    gross_income = sum(
-        (i.gross_amount for i in active_income if not i.is_deduction),
-        Decimal("0"),
-    )
-    net_income = calculate_net_income(active_income, settings.tax_percentage)
-    current_balance = sum((a.balance for a in accounts), Decimal("0"))
-    total_expenses = sum((e.amount for e in active_expenses), Decimal("0"))
-    net_position = current_balance - total_expenses
+    # Calculate headline totals (active items only) via the shared helper
+    totals = compute_budget_totals(session)
+    gross_income = totals["gross_income"]
+    net_income = totals["net_income"]
+    current_balance = totals["current_balance"]
+    total_expenses = totals["total_expenses"]
+    net_position = totals["net_position"]
 
     # Calculate deadline-aware totals
     next_payday = get_next_payday(today, settings.payday_day)
