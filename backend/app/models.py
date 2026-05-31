@@ -278,6 +278,98 @@ class ForecastingSettings(Base):
         }
 
 
+class BudgetSnapshot(Base):
+    """Point-in-time snapshot of budget state for tracking over time.
+
+    Stores the total balance across all accounts and the net change
+    from the previous snapshot. Individual account balances are stored
+    in BudgetBalanceEntry for drill-down.
+    """
+
+    __tablename__ = "budget_snapshots"
+    __table_args__ = (
+        UniqueConstraint("date", name="uq_budget_snapshot_date"),
+        Index("ix_budget_snapshots_date", "date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+    # Sum of all account balances at snapshot time
+    current_balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    # Net change in current_balance vs previous snapshot
+    change_from_previous: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0
+    )
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Relationships
+    entries: Mapped[list["BudgetBalanceEntry"]] = relationship(
+        "BudgetBalanceEntry",
+        back_populates="snapshot",
+        cascade="all, delete-orphan",
+        order_by="BudgetBalanceEntry.id",
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "date": self.date.isoformat(),
+            "timestamp": self.timestamp.isoformat(),
+            "current_balance": float(self.current_balance),
+            "change_from_previous": float(self.change_from_previous),
+            "notes": self.notes,
+            "entries": [e.to_dict() for e in self.entries],
+        }
+
+
+class BudgetBalanceEntry(Base):
+    """Individual account balance in a budget snapshot."""
+
+    __tablename__ = "budget_balance_entries"
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_id", "account_id", name="uq_budget_entry_snapshot_account"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("budget_snapshots.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    account_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("accounts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    account_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    is_credit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Relationships
+    snapshot: Mapped["BudgetSnapshot"] = relationship(
+        "BudgetSnapshot", back_populates="entries"
+    )
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "id": self.id,
+            "account_id": self.account_id,
+            "account_name": self.account_name,
+            "balance": float(self.balance),
+            "is_credit": self.is_credit,
+        }
+
+
 class NetWorthGroup(Base):
     """User-defined group for categorizing net worth items."""
 

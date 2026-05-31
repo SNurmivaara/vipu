@@ -11,3 +11,5 @@ export { GoalsSection } from "./GoalsSection";
 export { TotalsCard } from "./TotalsCard";
 export { SettingsCard } from "./SettingsCard";
 export { EditDialog } from "./EditDialog";
+export { BudgetHistory } from "./BudgetHistory";
+export { BudgetChart } from "./BudgetChart";
