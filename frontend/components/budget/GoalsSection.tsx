@@ -45,30 +45,24 @@ function formatValue(value: number, goalType: GoalType): string {
   return formatCurrency(value);
 }
 
-function calculateMonthlyRequired(
-  currentValue: number,
-  targetValue: number,
-  targetDate: string | null,
-  isAchieved: boolean
-): number | null {
-  // Don't show for achieved goals or goals without a deadline
-  if (isAchieved || !targetDate) return null;
+const RATE_TYPES = ["savings_rate", "category_rate"];
 
-  const now = new Date();
-  const target = new Date(targetDate);
+// Build the explanatory pace text shown on hover over the on-track/behind badge.
+function buildStatusHint(gp: GoalProgress): string | null {
+  if (RATE_TYPES.includes(gp.goal.goal_type) || !gp.status_reason) return null;
 
-  // Calculate months remaining
-  const monthsRemaining =
-    (target.getFullYear() - now.getFullYear()) * 12 +
-    (target.getMonth() - now.getMonth());
-
-  // If deadline passed or less than 1 month, don't show
-  if (monthsRemaining < 1) return null;
-
-  const remaining = targetValue - currentValue;
-  if (remaining <= 0) return null;
-
-  return remaining / monthsRemaining;
+  let hint = gp.status_reason;
+  if (gp.recent_monthly != null && gp.required_monthly != null) {
+    hint += ` — saving ${formatCurrency(gp.recent_monthly)}/mo vs ${formatCurrency(
+      gp.required_monthly
+    )}/mo needed`;
+  }
+  if (gp.projected_value != null && gp.months_remaining != null) {
+    hint += `. At this pace you'll have ~${formatCurrency(
+      gp.projected_value
+    )} by the deadline`;
+  }
+  return hint;
 }
 
 export function GoalsSection({
@@ -161,38 +155,48 @@ export function GoalsSection({
               <span className="text-sm px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                 {GOAL_TYPE_LABELS[gp.goal.goal_type]}
               </span>
-              {/* Monthly required for numeric goals with deadlines */}
-              {!["savings_rate", "category_rate"].includes(gp.goal.goal_type) && (() => {
-                const monthlyRequired = calculateMonthlyRequired(
-                  gp.current_value,
-                  gp.target_value,
-                  gp.goal.target_date,
-                  gp.is_achieved
-                );
-                if (monthlyRequired === null) return null;
-                return (
+              {/* Monthly amount still needed to hit the target on time */}
+              {!RATE_TYPES.includes(gp.goal.goal_type) &&
+                !gp.is_achieved &&
+                gp.required_monthly != null &&
+                gp.required_monthly > 0 && (
                   <span className="text-sm text-gray-400 dark:text-gray-500">
-                    {formatCurrency(monthlyRequired)}/mo
+                    {formatCurrency(gp.required_monthly)}/mo needed
                   </span>
-                );
-              })()}
-              {gp.is_achieved && !["savings_rate", "category_rate"].includes(gp.goal.goal_type) && (
+                )}
+              {gp.is_achieved && !RATE_TYPES.includes(gp.goal.goal_type) && (
                 <span className="text-sm px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
                   Achieved
                 </span>
               )}
             </div>
-            {gp.status && (
-              <span
-                className={`text-sm px-2 py-0.5 rounded-full ${
-                  gp.status === "on_track"
-                    ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
-                    : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
-                }`}
-              >
-                {gp.status === "on_track" ? "On track" : "Behind"}
-              </span>
-            )}
+            {gp.status &&
+              (() => {
+                const hint = buildStatusHint(gp);
+                const badge = (
+                  <span
+                    className={`text-sm px-2 py-0.5 rounded-full ${
+                      gp.status === "on_track"
+                        ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                        : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                    } ${hint ? "cursor-help" : ""}`}
+                  >
+                    {gp.status === "on_track" ? "On track" : "Behind"}
+                  </span>
+                );
+                if (!hint) return badge;
+                return (
+                  <span className="relative group/status">
+                    {badge}
+                    <span
+                      role="tooltip"
+                      className="pointer-events-none invisible opacity-0 group-hover/status:visible group-hover/status:opacity-100 transition-opacity absolute right-0 top-full mt-1 z-10 w-64 rounded-md bg-gray-900 dark:bg-gray-700 px-3 py-2 text-xs font-normal text-gray-100 shadow-lg"
+                    >
+                      {hint}
+                    </span>
+                  </span>
+                );
+              })()}
           </div>
 
           {gp.category_name && (
@@ -218,6 +222,15 @@ export function GoalsSection({
             </span>
             <span>{gp.progress_percentage.toFixed(1)}%</span>
           </div>
+
+          {/* Setup guidance when there's no on-track/behind badge to hover */}
+          {!RATE_TYPES.includes(gp.goal.goal_type) &&
+            !gp.status &&
+            gp.status_reason && (
+              <div className="text-sm mt-1 text-gray-500 dark:text-gray-400">
+                {gp.status_reason}
+              </div>
+            )}
 
           {gp.goal.goal_type === "savings_rate" && gp.data_months < 2 && (
             <div className="text-sm text-amber-600 dark:text-amber-400 mt-1">
