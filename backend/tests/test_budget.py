@@ -340,6 +340,95 @@ class TestBudget:
         # Net position: 10550 - 6300 = 4250
         assert totals["net_position"] == 4250.0
 
+    def test_due_today_bill_auto_clears(self, client, monkeypatch):
+        """A bill due today is assumed paid: it drops out of the 'before payday'
+        totals and the still-due list, but moves to next period rather than vanishing.
+        A bill due tomorrow is still counted as due."""
+        import datetime
+
+        from app.routes import budget as budget_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 6, 10)
+
+        # Freeze "today" so the pay-period window is deterministic.
+        # Default payday_day is 25, so the next payday is 2026-06-25.
+        monkeypatch.setattr(budget_route, "date", _FixedDate)
+
+        # Monthly bills, distinguished by due day relative to the frozen today.
+        client.post(
+            "/api/expenses", json={"name": "DueToday", "amount": 100, "due_day": 10}
+        )
+        client.post(
+            "/api/expenses", json={"name": "DueTomorrow", "amount": 200, "due_day": 11}
+        )
+        client.post(
+            "/api/expenses", json={"name": "DueLater", "amount": 300, "due_day": 20}
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "SaveToday",
+                "amount": 50,
+                "due_day": 10,
+                "is_savings_goal": True,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        # DueToday (100) auto-clears; only DueTomorrow + DueLater are still due.
+        assert totals["expenses_before_payday"] == 500.0
+        # Savings transfer due today auto-clears too.
+        assert totals["savings_before_payday"] == 0.0
+
+        before_names = {e["name"] for e in totals["expenses_before_payday_list"]}
+        assert before_names == {"DueTomorrow", "DueLater"}
+
+        # The due-today bill isn't lost: its next occurrence shows in the next
+        # period, and it must NOT be misrouted into the "future" bucket.
+        next_names = {e["name"] for e in totals["expenses_next_period_list"]}
+        future_names = {e["name"] for e in totals["expenses_future_list"]}
+        assert "DueToday" in next_names
+        assert "DueToday" not in future_names
+
+    def test_one_time_bill_due_today_clears(self, client, monkeypatch):
+        """A one-time bill due exactly today clears and is not shown anywhere
+        (regression guard: it must not land in the 'future' bucket)."""
+        import datetime
+
+        from app.routes import budget as budget_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 6, 10)
+
+        monkeypatch.setattr(budget_route, "date", _FixedDate)
+
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "OneTimeToday",
+                "amount": 99,
+                "is_ephemeral": True,
+                "start_date": "2026-06-10",
+                "due_day": 10,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        assert totals["expenses_before_payday"] == 0.0
+        all_listed = (
+            totals["expenses_before_payday_list"]
+            + totals["expenses_next_period_list"]
+            + totals["expenses_future_list"]
+        )
+        assert all(e["name"] != "OneTimeToday" for e in all_listed)
+
 
 class TestSeed:
     """Tests for seed endpoint."""
