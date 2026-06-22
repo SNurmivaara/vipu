@@ -1,12 +1,8 @@
 "use client";
 
 import { BudgetData } from "@/types";
-import {
-  formatCurrency,
-  formatDateShort,
-  getBalanceColor,
-  cn,
-} from "@/lib/utils";
+import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 interface BudgetSummaryProps {
   data: BudgetData;
@@ -25,72 +21,88 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     income_next_period,
   } = data.totals;
 
-  // Total obligations before next payday (expenses + savings)
-  // CC payments excluded: they are internal transfers already reflected in current_balance
-  const obligationsBeforePayday =
-    expenses_before_payday + savings_before_payday;
+  // Total obligations before next payday (expenses + savings).
+  // CC payments excluded: they are internal transfers already reflected in current_balance.
+  // Bills due today (or earlier) are excluded by the backend — they're assumed paid —
+  // so this is genuinely "what's still due before payday".
+  const obligationsBeforePayday = expenses_before_payday + savings_before_payday;
 
-  // Three financial states (deadline-aware):
-  // 1. Current Position: Balance minus ALL obligations due before next payday
+  // Three projected balances, anchored to the actual current balance:
+  // 1. Before payday: balance minus the obligations still due before next payday
   const currentPosition = current_balance - obligationsBeforePayday;
 
-  // 2. After Next Payday: Current position plus income arriving before payday
+  // 2. After payday: plus the income arriving up to and including payday
   const afterPayday = currentPosition + income_before_payday;
 
-  // 3. Next Month Preview: After payday plus next period income minus next period obligations
-  const nextPeriodObligations =
-    expenses_next_period + savings_next_period;
-  const nextMonthPreview = afterPayday + income_next_period - nextPeriodObligations;
+  // 3. End of next period: plus next period's income, minus next period's obligations
+  const nextPeriodObligations = expenses_next_period + savings_next_period;
+  const nextMonthPreview =
+    afterPayday + income_next_period - nextPeriodObligations;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      {/* Current Position */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-        <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          Current Position
-        </div>
-        <div
-          className={cn("text-2xl font-bold", getBalanceColor(currentPosition))}
-        >
-          {formatCurrency(currentPosition)}
-        </div>
-        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          After {formatCurrency(obligationsBeforePayday)} due by{" "}
-          {formatDateShort(next_payday)}
-        </div>
+    <CollapsibleSection
+      title="You have now"
+      total={formatCurrency(current_balance)}
+      totalClassName="font-semibold text-gray-900 dark:text-gray-100"
+      defaultOpen
+    >
+      {/* Projected balance at each upcoming moment — smaller, muted extra info. */}
+      <div className="px-4 py-2.5 space-y-2">
+        <PositionRow
+          label="Before payday"
+          date={next_payday}
+          value={currentPosition}
+          detail={
+            obligationsBeforePayday > 0
+              ? `−${formatCurrency(obligationsBeforePayday)} bills still due`
+              : "Nothing left to pay before payday"
+          }
+        />
+        <PositionRow
+          label="After payday"
+          date={next_payday}
+          value={afterPayday}
+          detail={`+${formatCurrency(income_before_payday)} pay`}
+        />
+        <PositionRow
+          label="End of next period"
+          date={next_period_end}
+          value={nextMonthPreview}
+          detail={
+            nextPeriodObligations > 0
+              ? `+${formatCurrency(income_next_period)} pay · −${formatCurrency(nextPeriodObligations)} bills`
+              : `+${formatCurrency(income_next_period)} pay · no bills`
+          }
+        />
       </div>
+    </CollapsibleSection>
+  );
+}
 
-      {/* After Next Payday */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-        <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          After Next Payday
-        </div>
-        <div
-          className={cn("text-2xl font-bold", getBalanceColor(afterPayday))}
-        >
-          {formatCurrency(afterPayday)}
-        </div>
-        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          Plus {formatCurrency(income_before_payday)} income
-        </div>
-      </div>
+interface PositionRowProps {
+  label: string;
+  /** ISO date string for the moment this balance is projected to */
+  date: string;
+  value: number;
+  /** Sub-line explaining the change from the line above */
+  detail: string;
+}
 
-      {/* Next Month Preview */}
-      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-4">
-        <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-          Next Month Preview
+function PositionRow({ label, date, value, detail }: PositionRowProps) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          {label}
+          <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+            {formatDateShort(date)}
+          </span>
         </div>
-        <div
-          className={cn("text-2xl font-bold", getBalanceColor(nextMonthPreview))}
-        >
-          {formatCurrency(nextMonthPreview)}
-        </div>
-        <div className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          {nextPeriodObligations > 0
-            ? `Minus ${formatCurrency(nextPeriodObligations)} due by ${formatDateShort(next_period_end)}`
-            : "No obligations next period"}
-        </div>
+        <div className="text-xs text-gray-400 dark:text-gray-500">{detail}</div>
       </div>
+      <span className="text-sm font-medium text-gray-600 dark:text-gray-400 whitespace-nowrap">
+        {formatCurrency(value)}
+      </span>
     </div>
   );
 }

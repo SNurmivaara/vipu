@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -122,11 +122,18 @@ def get_current_budget() -> Response:
     next_payday = get_next_payday(today, settings.payday_day)
     next_period_end = get_payday_after(next_payday, settings.payday_day)
 
+    # A bill is assumed paid once its due day arrives — bills usually debit at the
+    # start of the day and are then reflected in current_balance. So the current
+    # period starts the day AFTER today: anything due today (or earlier) has cleared
+    # and no longer counts as still-due (mirrors the income-on-payday handling in
+    # calculate_income_before_payday).
+    current_period_start = today + timedelta(days=1)
+
     expenses_before_payday = calculate_expenses_before_payday(
-        active_expenses, today, next_payday, include_savings=False
+        active_expenses, current_period_start, next_payday, include_savings=False
     )
     savings_before_payday = calculate_expenses_before_payday(
-        active_expenses, today, next_payday, include_savings=True
+        active_expenses, current_period_start, next_payday, include_savings=True
     )
     income_before_payday = calculate_income_before_payday(
         active_income,
@@ -202,10 +209,17 @@ def get_current_budget() -> Response:
             window_end=next_period_end,
         )
 
+        # Auto-clear: a bill due today (or earlier) is assumed paid — don't list it
+        # as still-due. The today-inclusive `occurrences_before_payday` is still used
+        # for the Future-bucket check below so a due-today bill isn't misrouted there.
+        occurrences_before_payday_unpaid = [
+            occurrence for occurrence in occurrences_before_payday if occurrence > today
+        ]
+
         # Add one entry per occurrence in "this month" and "next month"
-        if occurrences_before_payday:
+        if occurrences_before_payday_unpaid:
             expenses_before_payday_ids.append(expense.id)
-            for occurrence in occurrences_before_payday:
+            for occurrence in occurrences_before_payday_unpaid:
                 expense_dict = expense.to_dict()
                 expense_dict["next_occurrence_date"] = occurrence.isoformat()
                 expenses_before_payday_list.append(expense_dict)
