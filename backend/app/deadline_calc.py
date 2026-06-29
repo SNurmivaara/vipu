@@ -130,12 +130,28 @@ def get_occurrences_in_window(
 
     # Recurring logic based on frequency_unit
     if frequency_unit == "months":
-        # On due_day every N months
-        current = date(window_start.year, window_start.month, 1)
+        # On due_day every N months, phase-anchored to start_date's month so the
+        # cadence stays stable regardless of which month a window happens to begin
+        # in (a quarterly bill stays quarterly across every period). Without a
+        # start_date there is no canonical phase, so fall back to window_start.
+        anchor = start_date if start_date is not None else window_start
+        anchor_total = anchor.year * 12 + (anchor.month - 1)
+        window_start_total = window_start.year * 12 + (window_start.month - 1)
 
-        while current <= window_end:
-            occurrence_day = normalize_day(due_day, current.year, current.month)
-            occurrence = date(current.year, current.month, occurrence_day)
+        # Jump to the in-phase month at or before window_start, then step forward.
+        if window_start_total > anchor_total:
+            steps = (window_start_total - anchor_total) // frequency_value
+        else:
+            steps = 0
+        current_total = anchor_total + steps * frequency_value
+
+        while True:
+            year, month = current_total // 12, current_total % 12 + 1
+            if date(year, month, 1) > window_end:
+                break
+
+            occurrence_day = normalize_day(due_day, year, month)
+            occurrence = date(year, month, occurrence_day)
 
             if window_start <= occurrence < window_end:
                 if start_date is None or occurrence >= start_date:
@@ -143,18 +159,21 @@ def get_occurrences_in_window(
                         occurrences.append(occurrence)
 
             # Move to next occurrence (N months later)
-            month = current.month + frequency_value
-            year = current.year
-            while month > 12:
-                month -= 12
-                year += 1
-            current = date(year, month, 1)
+            current_total += frequency_value
 
     elif frequency_unit == "years":
-        # On due_day of same month every N years
-        # Use start_date's month, or January if no start_date
+        # On due_day of start_date's month every N years, phase-anchored to
+        # start_date's year (so "every 2 years" stays in phase). Without a
+        # start_date, fall back to window_start's year and January.
         base_month = start_date.month if start_date else 1
-        current_year = window_start.year
+        anchor_year = start_date.year if start_date else window_start.year
+
+        # Jump to the in-phase year at or before window_start, then step forward.
+        if window_start.year > anchor_year:
+            steps = (window_start.year - anchor_year) // frequency_value
+        else:
+            steps = 0
+        current_year = anchor_year + steps * frequency_value
 
         while True:
             occurrence_day = normalize_day(due_day, current_year, base_month)
