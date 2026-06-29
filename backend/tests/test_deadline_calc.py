@@ -130,6 +130,100 @@ class TestGetOccurrencesInWindow:
         )
         assert occurrences == [date(2026, 1, 1), date(2026, 3, 1), date(2026, 5, 1)]
 
+    def test_quarterly_anchored_to_start_date(self):
+        # Every 3 months on the 23rd, starting June 23. Over a full year the
+        # cadence must stay June/Sep/Dec, anchored to start_date — not to the
+        # window's first month.
+        occurrences = get_occurrences_in_window(
+            due_day=23,
+            frequency_value=3,
+            frequency_unit="months",
+            start_date=date(2026, 6, 23),
+            end_date=None,
+            is_ephemeral=False,
+            archived_at=None,
+            window_start=date(2026, 1, 1),
+            window_end=date(2027, 1, 1),
+        )
+        assert occurrences == [
+            date(2026, 6, 23),
+            date(2026, 9, 23),
+            date(2026, 12, 23),
+        ]
+
+    def test_quarterly_off_phase_window_is_empty(self):
+        # A quarterly bill anchored to June must NOT appear in a Jul-Aug window
+        # (the regression: it used to re-anchor to the window's month and show
+        # July 23).
+        occurrences = get_occurrences_in_window(
+            due_day=23,
+            frequency_value=3,
+            frequency_unit="months",
+            start_date=date(2026, 6, 23),
+            end_date=None,
+            is_ephemeral=False,
+            archived_at=None,
+            window_start=date(2026, 7, 1),
+            window_end=date(2026, 9, 1),
+        )
+        assert occurrences == []
+
+    def test_quarterly_in_phase_window(self):
+        # The same quarterly bill DOES appear in a window containing September.
+        occurrences = get_occurrences_in_window(
+            due_day=23,
+            frequency_value=3,
+            frequency_unit="months",
+            start_date=date(2026, 6, 23),
+            end_date=None,
+            is_ephemeral=False,
+            archived_at=None,
+            window_start=date(2026, 9, 1),
+            window_end=date(2026, 10, 1),
+        )
+        assert occurrences == [date(2026, 9, 23)]
+
+    def test_quarterly_start_date_in_past(self):
+        # Setting the start date backwards (March) keeps the Mar/Jun/Sep/Dec
+        # cadence anchored to that month.
+        occurrences = get_occurrences_in_window(
+            due_day=23,
+            frequency_value=3,
+            frequency_unit="months",
+            start_date=date(2026, 3, 23),
+            end_date=None,
+            is_ephemeral=False,
+            archived_at=None,
+            window_start=date(2026, 1, 1),
+            window_end=date(2027, 1, 1),
+        )
+        assert occurrences == [
+            date(2026, 3, 23),
+            date(2026, 6, 23),
+            date(2026, 9, 23),
+            date(2026, 12, 23),
+        ]
+
+    def test_every_two_years_anchored_to_start_year(self):
+        # Every 2 years on March 15, starting 2024. Phase must be anchored to
+        # 2024 (2026/2028/2030), not to the window's first year.
+        occurrences = get_occurrences_in_window(
+            due_day=15,
+            frequency_value=2,
+            frequency_unit="years",
+            start_date=date(2024, 3, 15),
+            end_date=None,
+            is_ephemeral=False,
+            archived_at=None,
+            window_start=date(2025, 1, 1),
+            window_end=date(2030, 12, 31),
+        )
+        assert occurrences == [
+            date(2026, 3, 15),
+            date(2028, 3, 15),
+            date(2030, 3, 15),
+        ]
+
     def test_weekly(self):
         # Weekly on Mondays (let's say 3rd is Monday), window 2 weeks
         # window_end is exclusive, so use 18th to include the 17th
