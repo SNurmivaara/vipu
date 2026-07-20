@@ -67,8 +67,9 @@ export function ForecastingPanel() {
       age: p.age,
       netWorth: p.netWorth,
       coastNetWorth: p.coastNetWorth,
-      fireNumber: result.fireNumber,
-      coastFireNumber: result.coastFireNumber,
+      // Use age-specific FIRE numbers when available (pension mode)
+      fireNumber: p.fireNumberAtAge ?? result.fireNumber,
+      coastFireNumber: p.coastFireNumberAtAge ?? result.coastFireNumber,
       ...(p.netWorthEarly !== undefined && { netWorthEarly: p.netWorthEarly }),
       ...(p.netWorthNormal !== undefined && { netWorthNormal: p.netWorthNormal }),
       ...(p.netWorthLate !== undefined && { netWorthLate: p.netWorthLate }),
@@ -78,8 +79,9 @@ export function ForecastingPanel() {
   // Y-axis domain
   const yDomain = useMemo(() => {
     const vals = chartData.flatMap((d) => {
-      const v = [d.netWorth, d.coastNetWorth, d.fireNumber];
+      const v = [d.netWorth, d.coastNetWorth, d.fireNumber, d.coastFireNumber];
       if ("netWorthEarly" in d) v.push(d.netWorthEarly as number);
+      if ("netWorthNormal" in d) v.push(d.netWorthNormal as number);
       if ("netWorthLate" in d) v.push(d.netWorthLate as number);
       return v;
     });
@@ -134,6 +136,12 @@ export function ForecastingPanel() {
                 </p>
               </>
             )}
+            <p style={{ color: "#D55E00" }}>
+              FIRE target: {formatCurrencyRounded(d.fireNumber)}
+            </p>
+            <p style={{ color: "#CC79A7" }}>
+              Coast FIRE: {formatCurrencyRounded(d.coastFireNumber)}
+            </p>
           </>
         ) : (
           <>
@@ -142,6 +150,9 @@ export function ForecastingPanel() {
             </p>
             <p style={{ color: "#CC79A7" }}>
               Coast (no savings): {formatCurrencyRounded(d.coastNetWorth)}
+            </p>
+            <p style={{ color: "#D55E00" }}>
+              FIRE target: {formatCurrencyRounded(d.fireNumber)}
             </p>
           </>
         )}
@@ -537,21 +548,43 @@ export function ForecastingPanel() {
               />
               <Tooltip content={<CustomTooltip />} />
 
-              {/* FIRE number line */}
-              <ReferenceLine
-                y={result.fireNumber}
-                stroke="#D55E00"
-                strokeWidth={2}
-                strokeDasharray="8 4"
-              />
+              {/* FIRE number line - use Line for age-varying (pension mode) or ReferenceLine for constant */}
+              {result.pension ? (
+                <Line
+                  type="monotone"
+                  dataKey="fireNumber"
+                  stroke="#D55E00"
+                  strokeWidth={2}
+                  strokeDasharray="8 4"
+                  dot={false}
+                />
+              ) : (
+                <ReferenceLine
+                  y={result.fireNumber}
+                  stroke="#D55E00"
+                  strokeWidth={2}
+                  strokeDasharray="8 4"
+                />
+              )}
 
-              {/* Coast FIRE number line */}
-              <ReferenceLine
-                y={result.coastFireNumber}
-                stroke={result.pension ? "#CC79A7" : "#56B4E9"}
-                strokeWidth={1.5}
-                strokeDasharray="4 4"
-              />
+              {/* Coast FIRE number line - use Line for age-varying (pension mode) or ReferenceLine for constant */}
+              {result.pension ? (
+                <Line
+                  type="monotone"
+                  dataKey="coastFireNumber"
+                  stroke="#CC79A7"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                  dot={false}
+                />
+              ) : (
+                <ReferenceLine
+                  y={result.coastFireNumber}
+                  stroke="#56B4E9"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 4"
+                />
+              )}
 
               {/* Retirement age line */}
               {settings.targetRetirementAge > settings.currentAge && (

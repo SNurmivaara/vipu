@@ -72,6 +72,9 @@ class ProjectionPoint:
     month: int
     net_worth: Decimal
     coast_net_worth: Decimal
+    # Age-specific FIRE numbers (present when pension is active)
+    fire_number_at_age: Decimal | None = None
+    coast_fire_number_at_age: Decimal | None = None
     # Pension drawdown projections (present when pension is active)
     net_worth_early: Decimal | None = None
     net_worth_normal: Decimal | None = None
@@ -589,10 +592,12 @@ def generate_projections(
 ) -> list[ProjectionPoint]:
     """Generate year-by-year projections for net worth growth.
 
-    When pension inputs are present, extends past FIRE age with drawdown projections.
+    When pension inputs are present, extends past FIRE age with drawdown projections
+    and calculates age-specific FIRE numbers for each projection point.
     """
     real_return_pct = inputs.annual_return_pct - inputs.inflation_pct
-    monthly_return = _decimal_power(1 + real_return_pct / 100, Decimal("1") / 12) - 1
+    real_return = real_return_pct / 100
+    monthly_return = _decimal_power(1 + real_return, Decimal("1") / 12) - 1
     total_months = years_ahead * 12
     current_year = datetime.now().year
     current_month = datetime.now().month
@@ -644,13 +649,58 @@ def generate_projections(
     nw_normal = inputs.current_net_worth
     nw_late = inputs.current_net_worth
 
+    # Helper to calculate age-specific FIRE number for pension mode
+    def calc_fire_number_for_projection_age(retirement_age: Decimal) -> Decimal:
+        """Calculate FIRE number for a specific retirement age."""
+        if not has_pension:
+            return calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate)
+
+        return calc_fire_number_for_age(
+            retirement_age,
+            inputs.annual_expenses,
+            inputs.safe_withdrawal_rate,
+            real_return,
+            inputs.pension_accrued_monthly or Decimal("0"),
+            inputs.current_age,
+            inputs.pension_monthly_salary or Decimal("0"),
+            inputs.pension_accrual_rate,
+            inputs.pension_full_age,
+            inputs.pension_guarantee_enabled,
+            inputs.pension_guarantee_amount,
+        )
+
+    def calc_coast_fire_number_for_projection_age(
+        fire_number_at_age: Decimal, retirement_age: Decimal
+    ) -> Decimal:
+        """Calculate Coast FIRE number for a specific retirement age."""
+        years_to_retirement = max(
+            Decimal("0"), retirement_age - Decimal(inputs.current_age)
+        )
+        return calc_coast_fire_number(
+            fire_number_at_age,
+            real_return_pct,
+            years_to_retirement,
+        )
+
     # Add starting point
+    start_age = inputs.current_age
+    start_fire_number = calc_fire_number_for_projection_age(Decimal(start_age))
+    start_coast_fire_number = calc_coast_fire_number_for_projection_age(
+        start_fire_number, Decimal(start_age)
+    )
+
     start_point = ProjectionPoint(
-        age=inputs.current_age,
+        age=start_age,
         year=current_year,
         month=current_month,
         net_worth=_decimal_round(nw, 0),
         coast_net_worth=_decimal_round(coast_nw, 0),
+        fire_number_at_age=(
+            _decimal_round(start_fire_number, 0) if has_pension else None
+        ),
+        coast_fire_number_at_age=(
+            _decimal_round(start_coast_fire_number, 0) if has_pension else None
+        ),
     )
     if has_pension:
         start_point.net_worth_early = _decimal_round(nw, 0)
@@ -701,12 +751,26 @@ def generate_projections(
                 proj_month -= 12
                 proj_year += 1
 
+            # Calculate age-specific FIRE numbers for this projection age
+            proj_age = inputs.current_age + years_out
+            proj_age_decimal = Decimal(proj_age)
+            fire_number_at_age = calc_fire_number_for_projection_age(proj_age_decimal)
+            coast_fire_number_at_age = calc_coast_fire_number_for_projection_age(
+                fire_number_at_age, proj_age_decimal
+            )
+
             point = ProjectionPoint(
-                age=inputs.current_age + years_out,
+                age=proj_age,
                 year=proj_year,
                 month=proj_month,
                 net_worth=_decimal_round(nw, 0),
                 coast_net_worth=_decimal_round(coast_nw, 0),
+                fire_number_at_age=(
+                    _decimal_round(fire_number_at_age, 0) if has_pension else None
+                ),
+                coast_fire_number_at_age=(
+                    _decimal_round(coast_fire_number_at_age, 0) if has_pension else None
+                ),
             )
             if has_pension:
                 point.net_worth_early = _decimal_round(nw_early, 0)

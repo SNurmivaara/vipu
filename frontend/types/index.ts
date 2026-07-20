@@ -339,6 +339,10 @@ export interface FireProjectionPointAPI {
   month: number;
   net_worth: number;
   coast_net_worth: number;
+  // Age-specific FIRE numbers (present when pension mode is active)
+  fire_number_at_age?: number | null;
+  coast_fire_number_at_age?: number | null;
+  // Pension drawdown projections (present when pension mode is active)
   net_worth_early?: number | null;
   net_worth_normal?: number | null;
   net_worth_late?: number | null;
