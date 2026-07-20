@@ -14,6 +14,10 @@ export interface ProjectionPoint {
   month: number;
   netWorth: number;
   coastNetWorth: number;
+  // Age-specific FIRE numbers (present when pension mode is active)
+  fireNumberAtAge?: number;
+  coastFireNumberAtAge?: number;
+  // Pension drawdown projections (present when pension mode is active)
   netWorthEarly?: number;
   netWorthNormal?: number;
   netWorthLate?: number;
@@ -95,6 +99,8 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       month: p.month,
       netWorth: p.net_worth,
       coastNetWorth: p.coast_net_worth,
+      ...(p.fire_number_at_age != null && { fireNumberAtAge: p.fire_number_at_age }),
+      ...(p.coast_fire_number_at_age != null && { coastFireNumberAtAge: p.coast_fire_number_at_age }),
       ...(p.net_worth_early != null && { netWorthEarly: p.net_worth_early }),
       ...(p.net_worth_normal != null && { netWorthNormal: p.net_worth_normal }),
       ...(p.net_worth_late != null && { netWorthLate: p.net_worth_late }),
