@@ -62,24 +62,30 @@ export function ForecastingPanel() {
 
   // Build chart data
   const chartData = useMemo(() => {
+    const targetAge = settings.targetRetirementAge;
     return result.projections.map((p) => ({
       label: `${p.age}`,
       age: p.age,
       netWorth: p.netWorth,
       coastNetWorth: p.coastNetWorth,
       // Use age-specific FIRE numbers when available (pension mode)
-      fireNumber: p.fireNumberAtAge ?? result.fireNumber,
-      coastFireNumber: p.coastFireNumberAtAge ?? result.coastFireNumber,
+      // Stop drawing FIRE/Coast FIRE lines after target retirement age
+      ...(p.age <= targetAge && {
+        fireNumber: p.fireNumberAtAge ?? result.fireNumber,
+        coastFireNumber: p.coastFireNumberAtAge ?? result.coastFireNumber,
+      }),
       ...(p.netWorthEarly !== undefined && { netWorthEarly: p.netWorthEarly }),
       ...(p.netWorthNormal !== undefined && { netWorthNormal: p.netWorthNormal }),
       ...(p.netWorthLate !== undefined && { netWorthLate: p.netWorthLate }),
     }));
-  }, [result]);
+  }, [result, settings.targetRetirementAge]);
 
   // Y-axis domain
   const yDomain = useMemo(() => {
     const vals = chartData.flatMap((d) => {
-      const v = [d.netWorth, d.coastNetWorth, d.fireNumber, d.coastFireNumber];
+      const v: number[] = [d.netWorth, d.coastNetWorth];
+      if (d.fireNumber !== undefined) v.push(d.fireNumber);
+      if (d.coastFireNumber !== undefined) v.push(d.coastFireNumber);
       if ("netWorthEarly" in d) v.push(d.netWorthEarly as number);
       if ("netWorthNormal" in d) v.push(d.netWorthNormal as number);
       if ("netWorthLate" in d) v.push(d.netWorthLate as number);
@@ -116,6 +122,7 @@ export function ForecastingPanel() {
     if (!active || !payload?.length) return null;
     const d = payload[0].payload;
     const hasPensionLines = "netWorthEarly" in d;
+    const hasFireNumbers = d.fireNumber !== undefined || d.coastFireNumber !== undefined;
     return (
       <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-3 text-sm">
         <p className="font-medium text-gray-900 dark:text-gray-100 mb-1">
@@ -136,12 +143,16 @@ export function ForecastingPanel() {
                 </p>
               </>
             )}
-            <p style={{ color: "#D55E00" }}>
-              FIRE target: {formatCurrencyRounded(d.fireNumber)}
-            </p>
-            <p style={{ color: "#CC79A7" }}>
-              Coast FIRE: {formatCurrencyRounded(d.coastFireNumber)}
-            </p>
+            {hasFireNumbers && (
+              <>
+                <p style={{ color: "#D55E00" }}>
+                  FIRE target: {formatCurrencyRounded(d.fireNumber)}
+                </p>
+                <p style={{ color: "#CC79A7" }}>
+                  Coast FIRE: {formatCurrencyRounded(d.coastFireNumber)}
+                </p>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -151,9 +162,11 @@ export function ForecastingPanel() {
             <p style={{ color: "#CC79A7" }}>
               Coast (no savings): {formatCurrencyRounded(d.coastNetWorth)}
             </p>
-            <p style={{ color: "#D55E00" }}>
-              FIRE target: {formatCurrencyRounded(d.fireNumber)}
-            </p>
+            {hasFireNumbers && (
+              <p style={{ color: "#D55E00" }}>
+                FIRE target: {formatCurrencyRounded(d.fireNumber)}
+              </p>
+            )}
           </>
         )}
       </div>

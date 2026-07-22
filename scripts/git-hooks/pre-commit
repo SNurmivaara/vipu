@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# Pre-commit hook for vipu project
+# Validates code formatting and linting for both backend (Python) and frontend (TypeScript)
+
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${YELLOW}Running pre-commit checks...${NC}"
+
+# Track if any checks fail
+FAILED=0
+
+# ============================================================================
+# Backend Checks (Python)
+# ============================================================================
+echo ""
+echo -e "${YELLOW}=== Backend Checks ===${NC}"
+
+# Check if we're in the vipu directory
+if [ -d "backend" ]; then
+    cd backend
+    
+    # Check if virtual environment exists
+    if [ -d ".venv" ]; then
+        echo "Activating virtual environment..."
+        source .venv/bin/activate
+    fi
+    
+    # Run black formatter check
+    echo "Running black formatter check..."
+    if uv run black --check . 2>/dev/null; then
+        echo -e "${GREEN}✓ Backend: black formatter check passed${NC}"
+    else
+        echo -e "${RED}✗ Backend: black formatter check failed${NC}"
+        echo "  Run: uv run black ."
+        FAILED=1
+    fi
+    
+    # Run ruff linter check (if available)
+    echo "Running ruff linter check..."
+    if uv run ruff check . 2>/dev/null; then
+        echo -e "${GREEN}✓ Backend: ruff linter check passed${NC}"
+    else
+        echo -e "${RED}✗ Backend: ruff linter check failed${NC}"
+        echo "  Run: uv run ruff check . --fix"
+        FAILED=1
+    fi
+    
+    # Run mypy type check (if available)
+    echo "Running mypy type check..."
+    if uv run mypy . 2>/dev/null; then
+        echo -e "${GREEN}✓ Backend: mypy type check passed${NC}"
+    else
+        echo -e "${RED}✗ Backend: mypy type check failed${NC}"
+        echo "  Run: uv run mypy ."
+        FAILED=1
+    fi
+    
+    # Run backend tests
+    echo "Running backend tests..."
+    if uv run pytest tests/ -q 2>/dev/null; then
+        echo -e "${GREEN}✓ Backend: tests passed${NC}"
+    else
+        echo -e "${RED}✗ Backend: tests failed${NC}"
+        echo "  Run: uv run pytest tests/ -v"
+        FAILED=1
+    fi
+    
+    cd ..
+else
+    echo -e "${YELLOW}Warning: Not in vipu project directory, skipping backend checks${NC}"
+fi
+
+# ============================================================================
+# Frontend Checks (TypeScript)
+# ============================================================================
+echo ""
+echo -e "${YELLOW}=== Frontend Checks ===${NC}"
+
+if [ -d "frontend" ]; then
+    cd frontend
+    
+    # Run TypeScript type check
+    echo "Running TypeScript type check..."
+    if npx tsc --noEmit 2>/dev/null; then
+        echo -e "${GREEN}✓ Frontend: TypeScript type check passed${NC}"
+    else
+        echo -e "${RED}✗ Frontend: TypeScript type check failed${NC}"
+        echo "  Run: npx tsc --noEmit"
+        FAILED=1
+    fi
+    
+    # Run ESLint (if available)
+    if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ] || [ -f ".eslintrc.yml" ]; then
+        echo "Running ESLint..."
+        if npx eslint . 2>/dev/null; then
+            echo -e "${GREEN}✓ Frontend: ESLint check passed${NC}"
+        else
+            echo -e "${RED}✗ Frontend: ESLint check failed${NC}"
+            echo "  Run: npx eslint . --fix"
+            FAILED=1
+        fi
+    else
+        echo -e "${YELLOW}No ESLint config found, skipping${NC}"
+    fi
+    
+    # Run Prettier check (if available)
+    if [ -f ".prettierrc" ]; then
+        echo "Running Prettier check..."
+        if npx prettier --check . 2>/dev/null; then
+            echo -e "${GREEN}✓ Frontend: Prettier check passed${NC}"
+        else
+            echo -e "${RED}✗ Frontend: Prettier check failed${NC}"
+            echo "  Run: npx prettier --write ."
+            FAILED=1
+        fi
+    else
+        echo -e "${YELLOW}No Prettier config found, skipping${NC}"
+    fi
+    
+    cd ..
+else
+    echo -e "${YELLOW}Warning: Not in vipu project directory, skipping frontend checks${NC}"
+fi
+
+# ============================================================================
+# Final Result
+# ============================================================================
+echo ""
+echo -e "${YELLOW}=== Summary ===${NC}"
+
+if [ $FAILED -eq 0 ]; then
+    echo -e "${GREEN}✓ All pre-commit checks passed!${NC}"
+    exit 0
+else
+    echo -e "${RED}✗ Some pre-commit checks failed. Please fix the issues above.${NC}"
+    echo ""
+    echo "To auto-fix formatting issues:"
+    echo "  Backend:  uv run black ."
+    echo "  Frontend: npx prettier --write . && npx eslint . --fix"
+    exit 1
+fi
