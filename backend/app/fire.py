@@ -589,6 +589,7 @@ def generate_projections(
     inputs: FireInputs,
     years_ahead: int = 40,
     pension_result: PensionResult | None = None,
+    fire_number_at_target: Decimal | None = None,
 ) -> list[ProjectionPoint]:
     """Generate year-by-year projections for net worth growth.
 
@@ -610,6 +611,9 @@ def generate_projections(
         fire_age = Decimal(inputs.target_retirement_age)
     else:
         fire_age = Decimal("Infinity")
+
+    # Target retirement age for Coast FIRE calculations
+    target_retirement_age = inputs.target_retirement_age
 
     monthly_expenses = inputs.annual_expenses / 12
     early_pension_monthly = (
@@ -670,14 +674,31 @@ def generate_projections(
         )
 
     def calc_coast_fire_number_for_projection_age(
-        fire_number_at_age: Decimal, retirement_age: Decimal
+        projection_age: Decimal
     ) -> Decimal:
-        """Calculate Coast FIRE number for a specific retirement age."""
+        """Calculate Coast FIRE number for a specific projection age.
+        
+        In pension mode: Coast FIRE at age X = FIRE_number_at_target / (1 + r)^(target_age - X)
+        This represents: "At age X, how much do you need to coast to target retirement age?"
+        
+        In non-pension mode: Coast FIRE is constant (same as result.coast_fire_number).
+        """
+        if fire_number_at_target is None:
+            # Fallback for non-pension mode or when not provided
+            # Calculate constant Coast FIRE
+            years_to_retirement = max(
+                Decimal("0"), Decimal(target_retirement_age) - Decimal(inputs.current_age)
+            )
+            fire_num = calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate)
+            return calc_coast_fire_number(fire_num, real_return_pct, years_to_retirement)
+        
+        # Pension mode (or when fire_number_at_target is provided):
+        # Coast FIRE at projection_age = fire_number_at_target / (1 + r)^(target_age - projection_age)
         years_to_retirement = max(
-            Decimal("0"), retirement_age - Decimal(inputs.current_age)
+            Decimal("0"), Decimal(target_retirement_age) - projection_age
         )
         return calc_coast_fire_number(
-            fire_number_at_age,
+            fire_number_at_target,
             real_return_pct,
             years_to_retirement,
         )
@@ -686,7 +707,7 @@ def generate_projections(
     start_age = inputs.current_age
     start_fire_number = calc_fire_number_for_projection_age(Decimal(start_age))
     start_coast_fire_number = calc_coast_fire_number_for_projection_age(
-        start_fire_number, Decimal(start_age)
+        Decimal(start_age)
     )
 
     start_point = ProjectionPoint(
@@ -756,7 +777,7 @@ def generate_projections(
             proj_age_decimal = Decimal(proj_age)
             fire_number_at_age = calc_fire_number_for_projection_age(proj_age_decimal)
             coast_fire_number_at_age = calc_coast_fire_number_for_projection_age(
-                fire_number_at_age, proj_age_decimal
+                proj_age_decimal
             )
 
             point = ProjectionPoint(
@@ -951,7 +972,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         if has_pension
         else default_projection_years
     )
-    projections = generate_projections(inputs, projection_years, pension_result)
+    projections = generate_projections(inputs, projection_years, pension_result, fire_number)
 
     # Find when portfolio depletes (normal scenario hits 0)
     portfolio_depleted_age: Decimal | None = None
