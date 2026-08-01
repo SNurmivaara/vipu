@@ -400,8 +400,8 @@ export function ForecastingPanel() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <MetricCard
           label="FIRE Number"
-          value={formatCurrencyRounded(result.fireNumber)}
-          sublabel={result.pension ? `${settings.safeWithdrawalRate}% SWR + pension` : `${settings.safeWithdrawalRate}% SWR`}
+          value={formatCurrencyRounded(result.fireNumberNow)}
+          sublabel={result.pension ? `If retiring now — ${settings.safeWithdrawalRate}% SWR + pension` : `${settings.safeWithdrawalRate}% SWR`}
         />
         <MetricCard
           label="Years to FIRE"
