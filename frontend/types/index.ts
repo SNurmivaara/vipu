@@ -350,6 +350,7 @@ export interface FireProjectionPointAPI {
 
 export interface FireResultAPI {
   fire_number: number;
+  fire_number_now: number;
   coast_fire_number: number;
   coast_fire_reached: boolean;
   years_to_fire: number | null;
