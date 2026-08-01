@@ -447,6 +447,70 @@ class TestCalculateFire:
         assert first_point.net_worth_normal is not None
         assert first_point.net_worth_late is not None
 
+    def test_fire_number_now_equals_fire_number_without_pension(self):
+        """Without pension the retire-now number matches the FIRE number."""
+        inputs = FireInputs(
+            current_net_worth=Decimal("100000"),
+            monthly_contribution=Decimal("2000"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("7"),
+            inflation_pct=Decimal("2"),
+            current_age=30,
+            target_retirement_age=55,
+            safe_withdrawal_rate=Decimal("4"),
+        )
+
+        result = calculate_fire(inputs)
+
+        assert result.fire_number_now == result.fire_number
+
+    def test_fire_number_now_matches_current_age_projection(self):
+        """In pension mode the retire-now number is the current-age FIRE line."""
+        inputs = FireInputs(
+            current_net_worth=Decimal("100000"),
+            monthly_contribution=Decimal("2000"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("7"),
+            inflation_pct=Decimal("2"),
+            current_age=30,
+            target_retirement_age=55,
+            safe_withdrawal_rate=Decimal("4"),
+            pension_accrued_monthly=Decimal("300"),
+            pension_monthly_salary=Decimal("4000"),
+        )
+
+        result = calculate_fire(inputs)
+
+        # The retire-now figure equals the leftmost point of the age-varying
+        # FIRE line, and (since pension keeps accruing) is higher than the
+        # number for retiring later at the target age.
+        assert result.fire_number_now == result.projections[0].fire_number_at_age
+        assert result.fire_number_now > result.fire_number
+
+    def test_fire_number_now_ignores_target_retirement_age(self):
+        """The retire-now number must not move with the retirement-age slider."""
+
+        def build(target: int) -> FireInputs:
+            return FireInputs(
+                current_net_worth=Decimal("100000"),
+                monthly_contribution=Decimal("2000"),
+                annual_expenses=Decimal("40000"),
+                annual_return_pct=Decimal("7"),
+                inflation_pct=Decimal("2"),
+                current_age=30,
+                target_retirement_age=target,
+                safe_withdrawal_rate=Decimal("4"),
+                pension_accrued_monthly=Decimal("300"),
+                pension_monthly_salary=Decimal("4000"),
+            )
+
+        result_55 = calculate_fire(build(55))
+        result_60 = calculate_fire(build(60))
+
+        # fire_number depends on the target age; fire_number_now does not.
+        assert result_55.fire_number != result_60.fire_number
+        assert result_55.fire_number_now == result_60.fire_number_now
+
 
 class TestFireCalculateEndpoint:
     """Tests for the FIRE calculation API endpoint."""

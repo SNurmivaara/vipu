@@ -54,6 +54,9 @@ export interface DerivedInputs {
 
 export interface ForecastingProjection {
   fireNumber: number;
+  // FIRE number if you retired now (at current age). Equals fireNumber in
+  // non-pension mode; in pension mode it ignores the target retirement age.
+  fireNumberNow: number;
   coastFireNumber: number;
   coastFireReached: boolean;
   yearsToFire: number | null;
@@ -86,6 +89,7 @@ function fromApiPension(api: FirePensionResultAPI): PensionResult {
 function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
   return {
     fireNumber: api.fire_number,
+    fireNumberNow: api.fire_number_now,
     coastFireNumber: api.coast_fire_number,
     coastFireReached: api.coast_fire_reached,
     yearsToFire: api.years_to_fire,
@@ -122,6 +126,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
 // Empty result for loading/error states.
 const DEFAULT_RESULT: ForecastingProjection = {
   fireNumber: 0,
+  fireNumberNow: 0,
   coastFireNumber: 0,
   coastFireReached: false,
   yearsToFire: null,

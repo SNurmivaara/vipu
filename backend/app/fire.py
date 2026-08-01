@@ -86,6 +86,10 @@ class FireResult:
     """Complete FIRE calculation results."""
 
     fire_number: Decimal
+    # FIRE number if you retired *now* (at current age). In pension mode this
+    # accounts for pension accrued so far and is independent of the target
+    # retirement age; in simple mode it equals fire_number.
+    fire_number_now: Decimal
     coast_fire_number: Decimal
     coast_fire_reached: bool
     years_to_fire: Decimal | None  # None if unreachable
@@ -871,6 +875,27 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
 
         fire_number = _decimal_round(scenarios[1].pension_fire_number, 0)
 
+        # FIRE number if you retired at the current age. Accounts for pension
+        # accrued so far but not for future accrual, so it does not move when
+        # the target retirement age changes. This is the headline figure —
+        # "what you'd need to FIRE right now".
+        fire_number_now = _decimal_round(
+            calc_fire_number_for_age(
+                Decimal(inputs.current_age),
+                inputs.annual_expenses,
+                inputs.safe_withdrawal_rate,
+                real_return,
+                pension_accrued,
+                inputs.current_age,
+                monthly_salary,
+                accrual_rate,
+                pension_full_age,
+                guarantee_enabled,
+                guarantee_amount,
+            ),
+            0,
+        )
+
         pension_coast_fire_number = calc_coast_fire_number(
             fire_number,
             real_return_pct,
@@ -902,6 +927,9 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         fire_number = _decimal_round(
             calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate), 0
         )
+        # No pension: the FIRE number is independent of retirement age, so the
+        # "retire now" figure is identical.
+        fire_number_now = fire_number
 
     years_to_retirement = max(0, inputs.target_retirement_age - inputs.current_age)
     if has_pension and pension_result:
@@ -994,6 +1022,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
 
     return FireResult(
         fire_number=fire_number,
+        fire_number_now=fire_number_now,
         coast_fire_number=coast_fire_number,
         coast_fire_reached=coast_fire_reached,
         years_to_fire=(
