@@ -3,7 +3,10 @@
 import { useState, useRef } from "react";
 import { useBudget } from "@/hooks/useBudget";
 import { useBudgetSnapshots } from "@/hooks/useBudgetSnapshots";
+import { useRoadmap } from "@/hooks/useGoals";
 import { useTheme } from "@/hooks/useTheme";
+import { buildBudgetSummary } from "@/lib/aiSummary";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   IncomeSection,
   DeductionsSection,
@@ -30,6 +33,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 export default function BudgetPage() {
   const { data, isLoading, error } = useBudget();
+  const { data: roadmapData } = useRoadmap();
   const { data: snapshotsData } = useBudgetSnapshots();
   const budgetSnapshots = snapshotsData?.snapshots ?? [];
   const { resolvedTheme, setTheme } = useTheme();
@@ -123,6 +127,16 @@ export default function BudgetPage() {
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleCopyForAI = async () => {
+    if (!data) return;
+    const copied = await copyToClipboard(buildBudgetSummary(data, roadmapData));
+    toast(
+      copied
+        ? { title: "Copied — paste into your AI chat", type: "success" }
+        : { title: "Failed to copy", type: "error" }
+    );
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -220,6 +234,7 @@ export default function BudgetPage() {
               {showArchived ? "Hide archived items" : "Show archived items"}
             </MenuItem>
             <MenuSeparator />
+            <MenuItem onClick={handleCopyForAI}>Copy for AI</MenuItem>
             <MenuItem onClick={handleExport}>Export data</MenuItem>
             <MenuItem onClick={handleImportClick}>Import data</MenuItem>
             <MenuSeparator />

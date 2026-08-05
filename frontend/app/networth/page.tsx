@@ -4,7 +4,10 @@ import { useState, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNetWorthSnapshots, useNetWorthCategories } from "@/hooks/useNetWorth";
+import { useForecastingProjection } from "@/hooks/useForecastingProjection";
 import { useTheme } from "@/hooks/useTheme";
+import { buildWealthSummary } from "@/lib/aiSummary";
+import { copyToClipboard } from "@/lib/clipboard";
 import {
   SummaryCards,
   NetWorthChart,
@@ -34,6 +37,7 @@ export default function NetWorthPage() {
     queryKey: ["goals-progress"],
     queryFn: fetchGoalsProgress,
   });
+  const { result: projection } = useForecastingProjection();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -128,6 +132,17 @@ export default function NetWorthPage() {
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleCopyForAI = async () => {
+    const copied = await copyToClipboard(
+      buildWealthSummary(snapshots ?? [], goalsProgress, projection)
+    );
+    toast(
+      copied
+        ? { title: "Copied — paste into your AI chat", type: "success" }
+        : { title: "Failed to copy", type: "error" }
+    );
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,6 +240,7 @@ export default function NetWorthPage() {
               Manage categories
             </MenuItem>
             <MenuSeparator />
+            <MenuItem onClick={handleCopyForAI}>Copy for AI</MenuItem>
             <MenuItem onClick={handleExport}>Export data</MenuItem>
             <MenuItem onClick={handleImportClick}>Import data</MenuItem>
             <MenuSeparator />
