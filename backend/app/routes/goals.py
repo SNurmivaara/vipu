@@ -1,36 +1,66 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import get_session
 from app.models import (
-    BudgetSettings,
     Goal,
-    IncomeItem,
     NetWorthCategory,
     NetWorthSnapshot,
 )
+from app.routes.budget import compute_budget_totals
 
 bp = APIBlueprint("goals", __name__, tag="Goals")
 
 MAX_NAME_LENGTH = 100
 MAX_TARGET_VALUE = 1_000_000_000  # 1 billion
-VALID_GOAL_TYPES = ["net_worth", "savings_rate", "savings_goal"]
+VALID_GOAL_TYPES = ["net_worth", "savings_goal", "debt_payoff"]
+# Goal types that participate in the sequential roadmap
+ROADMAP_TYPES = ("savings_goal", "debt_payoff")
 
-RATE_ERROR = "savings_rate target_value must be between 0 and 100"
 DATE_FORMAT_ERROR = "target_date must be a valid ISO date string"
-CATEGORY_REQUIRED_ERROR = "category_id is required for savings_goal type"
+CATEGORY_TYPE_ERROR = "category_id is only supported for savings_goal type"
+
+AVG_DAYS_PER_MONTH = 30.44
 
 
 @bp.get("/api/goals")
 def list_goals() -> Response:
-    """List all goals."""
+    """List all goals, roadmap steps first in plan order."""
     session = get_session()
-    goals = session.query(Goal).order_by(Goal.created_at.desc()).all()
+    goals = (
+        session.query(Goal)
+        .order_by(Goal.priority.asc().nulls_last(), Goal.created_at.desc())
+        .all()
+    )
     return jsonify([g.to_dict() for g in goals])
+
+
+def _next_priority(session: Session) -> int:
+    """Next free position at the end of the roadmap."""
+    max_priority = (
+        session.query(func.max(Goal.priority))
+        .filter(Goal.goal_type.in_(ROADMAP_TYPES))
+        .scalar()
+    )
+    return 0 if max_priority is None else max_priority + 1
+
+
+def _parse_amount(value: object, field: str) -> tuple[Decimal | None, str | None]:
+    """Parse a non-negative money field; returns (value, error)."""
+    try:
+        amount = Decimal(str(value))
+    except (ValueError, TypeError, ArithmeticError):
+        return None, f"{field} must be a valid number"
+    if amount < 0:
+        return None, f"{field} must be positive"
+    if amount > MAX_TARGET_VALUE:
+        return None, f"{field} exceeds maximum allowed value"
+    return amount, None
 
 
 @bp.post("/api/goals")
@@ -38,7 +68,9 @@ def create_goal() -> Response | tuple[Response, int]:
     """Create a new goal.
 
     Required fields: name, goal_type, target_value
-    Optional fields: category_id (required for savings_goal), target_date, is_active
+    Optional fields: category_id (savings_goal only), current_amount,
+    target_date, is_active. Roadmap goals (savings_goal/debt_payoff) are
+    appended to the end of the plan.
     """
     session = get_session()
     data = request.get_json()
@@ -65,38 +97,26 @@ def create_goal() -> Response | tuple[Response, int]:
         types_str = ", ".join(VALID_GOAL_TYPES)
         return jsonify({"error": f"goal_type must be one of: {types_str}"}), 400
 
-    # Validate target_value
-    try:
-        target_value = Decimal(str(data["target_value"]))
-    except (ValueError, TypeError):
-        return jsonify({"error": "target_value must be a valid number"}), 400
+    target_value, err = _parse_amount(data["target_value"], "target_value")
+    if err:
+        return jsonify({"error": err}), 400
 
-    if target_value < 0:
-        return jsonify({"error": "target_value must be positive"}), 400
-
-    if target_value > MAX_TARGET_VALUE:
-        return jsonify({"error": "target_value exceeds maximum allowed value"}), 400
-
-    # For savings_rate, target_value should be a percentage (0-100)
-    if goal_type == "savings_rate" and target_value > 100:
-        return jsonify({"error": RATE_ERROR}), 400
-
-    # Only one savings_rate goal allowed
-    if goal_type == "savings_rate":
-        existing = session.query(Goal).filter_by(goal_type="savings_rate").first()
-        if existing:
-            return jsonify({"error": "Only one savings rate goal allowed"}), 400
-
-    # Validate category_id for savings_goal
+    # Optional category link (progress then tracks the category's snapshot balance)
     category_id = None
-    if goal_type == "savings_goal":
-        if "category_id" not in data or data["category_id"] is None:
-            return jsonify({"error": CATEGORY_REQUIRED_ERROR}), 400
+    if data.get("category_id") is not None:
+        if goal_type != "savings_goal":
+            return jsonify({"error": CATEGORY_TYPE_ERROR}), 400
         category_id = int(data["category_id"])
-        # Verify category exists
         category = session.query(NetWorthCategory).filter_by(id=category_id).first()
         if not category:
             return jsonify({"error": "Category not found"}), 404
+
+    # Optional manual progress
+    current_amount = None
+    if data.get("current_amount") is not None:
+        current_amount, err = _parse_amount(data["current_amount"], "current_amount")
+        if err:
+            return jsonify({"error": err}), 400
 
     # Parse optional target_date
     target_date = None
@@ -112,8 +132,10 @@ def create_goal() -> Response | tuple[Response, int]:
         goal_type=goal_type,
         target_value=target_value,
         category_id=category_id,
+        current_amount=current_amount,
         target_date=target_date,
         is_active=bool(data.get("is_active", True)),
+        priority=_next_priority(session) if goal_type in ROADMAP_TYPES else None,
     )
     session.add(goal)
     session.commit()
@@ -149,8 +171,8 @@ def update_goal(goal_id: int) -> Response | tuple[Response, int]:
     if "name" in data:
         name = str(data["name"]).strip()
         if not name or len(name) > MAX_NAME_LENGTH:
-            err = f"name must be 1-{MAX_NAME_LENGTH} characters"
-            return jsonify({"error": err}), 400
+            name_err = f"name must be 1-{MAX_NAME_LENGTH} characters"
+            return jsonify({"error": name_err}), 400
         goal.name = name
 
     if "goal_type" in data:
@@ -159,36 +181,37 @@ def update_goal(goal_id: int) -> Response | tuple[Response, int]:
             types_str = ", ".join(VALID_GOAL_TYPES)
             return jsonify({"error": f"goal_type must be one of: {types_str}"}), 400
 
-        # Only one savings_rate goal allowed (check if changing to savings_rate)
-        if goal_type == "savings_rate" and goal.goal_type != "savings_rate":
-            existing = session.query(Goal).filter_by(goal_type="savings_rate").first()
-            if existing:
-                return jsonify({"error": "Only one savings rate goal allowed"}), 400
+        # Keep roadmap ordering consistent when a goal moves in or out of the plan
+        if goal_type in ROADMAP_TYPES and goal.priority is None:
+            goal.priority = _next_priority(session)
+        elif goal_type not in ROADMAP_TYPES:
+            goal.priority = None
 
         goal.goal_type = goal_type
 
     if "target_value" in data:
-        try:
-            target_value = Decimal(str(data["target_value"]))
-        except (ValueError, TypeError):
-            return jsonify({"error": "target_value must be a valid number"}), 400
-
-        if target_value < 0:
-            return jsonify({"error": "target_value must be positive"}), 400
-
-        if target_value > MAX_TARGET_VALUE:
-            return jsonify({"error": "target_value exceeds maximum allowed value"}), 400
-
-        current_type = data.get("goal_type", goal.goal_type)
-        if current_type == "savings_rate" and target_value > 100:
-            return jsonify({"error": RATE_ERROR}), 400
-
+        target_value, err = _parse_amount(data["target_value"], "target_value")
+        if err is not None or target_value is None:
+            return jsonify({"error": err}), 400
         goal.target_value = target_value
+
+    if "current_amount" in data:
+        if data["current_amount"] is None:
+            goal.current_amount = None
+        else:
+            current_amount, err = _parse_amount(
+                data["current_amount"], "current_amount"
+            )
+            if err is not None or current_amount is None:
+                return jsonify({"error": err}), 400
+            goal.current_amount = current_amount
 
     if "category_id" in data:
         if data["category_id"] is None:
             goal.category_id = None
         else:
+            if data.get("goal_type", goal.goal_type) != "savings_goal":
+                return jsonify({"error": CATEGORY_TYPE_ERROR}), 400
             category_id = int(data["category_id"])
             category = session.query(NetWorthCategory).filter_by(id=category_id).first()
             if not category:
@@ -227,6 +250,127 @@ def delete_goal(goal_id: int) -> tuple[Response, int]:
     return jsonify({"message": "Goal deleted"}), 200
 
 
+def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decimal:
+    """Current progress of a roadmap step.
+
+    A linked net worth category wins (auto-tracked from the latest snapshot);
+    otherwise the manually maintained current_amount.
+    """
+    if goal.goal_type == "savings_goal" and goal.category_id and latest:
+        return abs(_get_category_amount_in_snapshot(latest, goal.category_id))
+    return goal.current_amount if goal.current_amount is not None else Decimal("0")
+
+
+@bp.get("/api/goals/roadmap")
+def get_roadmap() -> Response:
+    """The sequential financial roadmap, funded by the monthly budget surplus.
+
+    Active savings_goal/debt_payoff goals in priority order form a waterfall:
+    the whole surplus (net income minus expenses) flows into the first
+    unfinished step until it completes, then cascades to the next. Returns
+    per-step progress and projected completion dates at the current surplus.
+    """
+    session = get_session()
+
+    goals = (
+        session.query(Goal)
+        .filter(Goal.goal_type.in_(ROADMAP_TYPES), Goal.is_active.is_(True))
+        .order_by(Goal.priority.asc().nulls_last(), Goal.created_at.asc())
+        .all()
+    )
+
+    totals = compute_budget_totals(session)
+    surplus = totals["net_income"] - totals["total_expenses"]
+
+    snapshots = _get_snapshots(session, 1)
+    latest = snapshots[0] if snapshots else None
+
+    today = date.today()
+    cumulative_months = Decimal("0")
+    active_seen = False
+    steps = []
+    for goal in goals:
+        current = _roadmap_current_value(goal, latest)
+        target = goal.target_value
+        remaining = max(Decimal("0"), target - current)
+
+        if target > 0:
+            progress_pct = min(100.0, float(current / target * 100))
+        else:
+            progress_pct = 100.0
+
+        months_to_complete: float | None = None
+        completion_date: date | None = None
+        if remaining <= 0:
+            status = "completed"
+        else:
+            status = "upcoming" if active_seen else "active"
+            active_seen = True
+            if surplus > 0:
+                cumulative_months += remaining / surplus
+                months_to_complete = float(cumulative_months)
+                completion_date = today + timedelta(
+                    days=float(cumulative_months) * AVG_DAYS_PER_MONTH
+                )
+
+        steps.append(
+            {
+                "goal": goal.to_dict(),
+                "current_value": float(current),
+                "remaining": float(remaining),
+                "progress_percentage": round(progress_pct, 2),
+                "status": status,
+                "months_to_complete": (
+                    round(months_to_complete, 1)
+                    if months_to_complete is not None
+                    else None
+                ),
+                "projected_completion_date": (
+                    completion_date.isoformat() if completion_date else None
+                ),
+            }
+        )
+
+    return jsonify(
+        {
+            "surplus_monthly": float(surplus),
+            "goals": steps,
+        }
+    )
+
+
+@bp.put("/api/goals/reorder")
+def reorder_goals() -> Response | tuple[Response, int]:
+    """Reorder the roadmap: goal_ids in the desired sequence."""
+    session = get_session()
+    data = request.get_json()
+
+    if not data or not isinstance(data.get("goal_ids"), list):
+        return jsonify({"error": "goal_ids list is required"}), 400
+
+    try:
+        goal_ids = [int(goal_id) for goal_id in data["goal_ids"]]
+    except (ValueError, TypeError):
+        return jsonify({"error": "goal_ids must be integers"}), 400
+
+    goals = session.query(Goal).filter(Goal.id.in_(goal_ids)).all()
+    by_id = {g.id: g for g in goals}
+
+    missing = [goal_id for goal_id in goal_ids if goal_id not in by_id]
+    if missing:
+        return jsonify({"error": f"Goals not found: {missing}"}), 404
+
+    non_roadmap = [g.id for g in goals if g.goal_type not in ROADMAP_TYPES]
+    if non_roadmap:
+        return jsonify({"error": f"Not roadmap goals: {non_roadmap}"}), 400
+
+    for index, goal_id in enumerate(goal_ids):
+        by_id[goal_id].priority = index
+    session.commit()
+
+    return jsonify([by_id[goal_id].to_dict() for goal_id in goal_ids])
+
+
 def _get_snapshots(session: Session, num_months: int) -> list[NetWorthSnapshot]:
     """Get snapshots ordered newest first."""
     result: list[NetWorthSnapshot] = (
@@ -246,16 +390,6 @@ def _get_category_amount_in_snapshot(
         if entry.category_id == category_id:
             return entry.amount if entry.amount is not None else Decimal("0")
     return Decimal("0")
-
-
-def _calculate_net_income(
-    income_items: list[IncomeItem], default_tax_pct: Decimal
-) -> Decimal:
-    """Calculate total net income after taxes."""
-    total = Decimal("0")
-    for item in income_items:
-        total += item.calculate_net(default_tax_pct)
-    return total
 
 
 # Minimum snapshots before we trust a measured saving pace.
@@ -305,7 +439,7 @@ def _recent_monthly_change(
 
 
 def _empty_pace() -> dict:
-    """A pace analysis with no verdict (used for rate goals and as a base)."""
+    """A pace analysis with no verdict."""
     return {
         "status": None,
         "status_reason": None,
@@ -314,15 +448,6 @@ def _empty_pace() -> dict:
         "projected_value": None,
         "months_remaining": None,
     }
-
-
-def _calculate_rate_status(
-    current_value: Decimal, target_value: Decimal, data_months: int
-) -> str | None:
-    """On-track status for savings_rate goals: compare current vs target rate."""
-    if data_months < 2:
-        return None  # Not enough data
-    return "on_track" if current_value >= target_value else "behind"
 
 
 def _analyze_pace(
@@ -393,7 +518,6 @@ def _analyze_pace(
 def calculate_goal_progress(
     goal: Goal,
     snapshots: list[NetWorthSnapshot],
-    net_income: Decimal,
 ) -> dict:
     """Calculate progress for a single goal.
 
@@ -424,52 +548,18 @@ def calculate_goal_progress(
         if latest:
             current_value = Decimal(str(latest.net_worth))
 
-    elif goal.goal_type in ("savings_rate", "category_rate"):
-        # Savings rate: YTD average ((current - start of year) / months / income) * 100
-        category_name = None
-        if len(snapshots) >= 2 and net_income > 0:
-            current_nw = Decimal(str(snapshots[0].net_worth))
-            current_year = snapshots[0].year
-
-            # Find the start of year snapshot (Jan) or earliest snapshot in this year
-            # Snapshots are ordered newest first
-            start_snapshot = None
-            for s in snapshots:
-                if s.year == current_year:
-                    start_snapshot = s  # Keep updating to get the oldest in this year
-                elif s.year < current_year:
-                    # Use last year's December as baseline if available
-                    start_snapshot = s
-                    break
-
-            if start_snapshot and start_snapshot != snapshots[0]:
-                start_nw = Decimal(str(start_snapshot.net_worth))
-                # Calculate months elapsed
-                months_elapsed = (
-                    (snapshots[0].year - start_snapshot.year) * 12
-                    + snapshots[0].month
-                    - start_snapshot.month
-                )
-                if months_elapsed > 0:
-                    total_change = current_nw - start_nw
-                    avg_monthly_change = total_change / months_elapsed
-                    current_value = (avg_monthly_change / net_income) * 100
-                else:
-                    current_value = zero
-            else:
-                current_value = zero
-        else:
-            current_value = zero
-
     elif goal.goal_type in ("savings_goal", "category_target"):
-        # Target balance for a specific category
+        # Linked category balance wins; manual current_amount otherwise
         if latest and goal.category_id:
-            current_value = _get_category_amount_in_snapshot(latest, goal.category_id)
-            # Use absolute value for display
-            current_value = abs(current_value)
-            category_name = goal.category.name if goal.category else None
-        else:
-            category_name = goal.category.name if goal.category else None
+            current_value = abs(
+                _get_category_amount_in_snapshot(latest, goal.category_id)
+            )
+        elif goal.current_amount is not None:
+            current_value = goal.current_amount
+        category_name = goal.category.name if goal.category else None
+
+    elif goal.goal_type == "debt_payoff":
+        current_value = goal.current_amount if goal.current_amount is not None else zero
 
     # Calculate progress percentage
     target = goal.target_value
@@ -488,12 +578,8 @@ def calculate_goal_progress(
     progress_pct = max(0.0, min(progress_pct, 100.0))
 
     # Calculate on-track status and the pace details behind it
-    if goal.goal_type in ("savings_rate", "category_rate"):
-        pace = _empty_pace()
-        pace["status"] = _calculate_rate_status(current_value, target, data_months)
-    else:
-        recent_monthly = _recent_monthly_change(goal, snapshots)
-        pace = _analyze_pace(goal, current_value, target, recent_monthly, data_months)
+    recent_monthly = _recent_monthly_change(goal, snapshots)
+    pace = _analyze_pace(goal, current_value, target, recent_monthly, data_months)
 
     return {
         "goal": goal.to_dict(),
@@ -518,8 +604,8 @@ def get_goals_progress() -> Response:
 
     Calculates current progress based on:
     - net_worth: Latest net worth snapshot value
-    - savings_rate: (monthly net worth change / net income) * 100
-    - savings_goal: Current balance in a specific category
+    - savings_goal: Linked category balance, or manual current_amount
+    - debt_payoff: Manual current_amount (paid off so far)
 
     Returns a list of goal progress objects.
     """
@@ -529,7 +615,7 @@ def get_goals_progress() -> Response:
     goals = (
         session.query(Goal)
         .filter_by(is_active=True)
-        .order_by(Goal.created_at.desc())
+        .order_by(Goal.priority.asc().nulls_last(), Goal.created_at.desc())
         .all()
     )
 
@@ -539,15 +625,7 @@ def get_goals_progress() -> Response:
     # Get snapshots (enough for calculating monthly changes)
     snapshots = _get_snapshots(session, 12)
 
-    # Calculate net income for savings_rate goals
-    settings = session.query(BudgetSettings).first()
-    tax_pct = settings.tax_percentage if settings else Decimal("25.0")
-    income_items = session.query(IncomeItem).all()
-    net_income = _calculate_net_income(income_items, tax_pct)
-
     # Calculate progress for each goal
-    progress_list = [
-        calculate_goal_progress(goal, snapshots, net_income) for goal in goals
-    ]
+    progress_list = [calculate_goal_progress(goal, snapshots) for goal in goals]
 
     return jsonify(progress_list)

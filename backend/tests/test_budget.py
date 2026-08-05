@@ -307,10 +307,10 @@ class TestBudget:
         assert response.status_code == 200
         data = response.json
 
-        # Check counts (5 income, 4 accounts, 12 expenses)
+        # Check counts (5 income, 4 accounts, 9 expenses)
         assert len(data["income"]) == 5
         assert len(data["accounts"]) == 4
-        assert len(data["expenses"]) == 12
+        assert len(data["expenses"]) == 9
 
         # Check settings
         assert data["settings"]["tax_percentage"] == 25.0
@@ -334,11 +334,11 @@ class TestBudget:
         # Current balance: 3500 + 8000 + (-750) + (-200) = 10550
         assert totals["current_balance"] == 10550.0
 
-        # Total expenses: 1200+100+150+50+500+1200+50+150+2000+300+100+500 = 6300
-        assert totals["total_expenses"] == 6300.0
+        # Total expenses: 1200+100+150+50+500+1200+50+150+800 = 4200
+        assert totals["total_expenses"] == 4200.0
 
-        # Net position: 10550 - 6300 = 4250
-        assert totals["net_position"] == 4250.0
+        # Net position: 10550 - 4200 = 6350
+        assert totals["net_position"] == 6350.0
 
     def test_due_today_bill_auto_clears(self, client, monkeypatch):
         """A bill due today is assumed paid: it drops out of the 'before payday'
@@ -443,7 +443,8 @@ class TestSeed:
         assert data["counts"]["settings"] == 1
         assert data["counts"]["income_items"] == 5
         assert data["counts"]["accounts"] == 4
-        assert data["counts"]["expenses"] == 12
+        assert data["counts"]["expenses"] == 9
+        assert data["counts"]["goals"] == 3
 
     def test_seed_is_idempotent(self, client):
         """POST /api/seed clears and recreates data."""
@@ -457,7 +458,7 @@ class TestSeed:
         data = budget_response.json
         assert len(data["income"]) == 5
         assert len(data["accounts"]) == 4
-        assert len(data["expenses"]) == 12
+        assert len(data["expenses"]) == 9
 
 
 class TestNetIncomeCalculation:

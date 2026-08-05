@@ -302,10 +302,9 @@ export default function NetWorthPage() {
       {/* Summary Cards */}
       <SummaryCards snapshots={snapshotList} />
 
-      {/* Financial Goals */}
+      {/* Net worth milestones (savings/debt goals live on the Budget roadmap) */}
       <GoalsSection
-        goals={goalsProgress}
-        categories={categoryList}
+        goals={goalsProgress.filter((gp) => gp.goal.goal_type === "net_worth")}
       />
 
       {/* Charts Row */}

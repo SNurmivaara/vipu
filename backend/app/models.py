@@ -631,9 +631,14 @@ class Goal(Base):
     """Financial goal for tracking progress.
 
     Goal types:
-    - net_worth: Track total net worth against a target
-    - savings_rate: Track percentage of income saved monthly
-    - savings_goal: Track a specific category balance against a target
+    - net_worth: Track total net worth against a target (Wealth page)
+    - savings_goal: Save up toward a target amount (roadmap step)
+    - debt_payoff: Pay off a debt of target_value (roadmap step)
+
+    Roadmap steps (savings_goal / debt_payoff) are ordered by priority and
+    funded sequentially from the monthly budget surplus. Their progress comes
+    from current_amount, or from the linked net worth category's latest
+    snapshot balance when category_id is set.
     """
 
     __tablename__ = "goals"
@@ -642,7 +647,7 @@ class Goal(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     goal_type: Mapped[str] = mapped_column(
         String(20), nullable=False
-    )  # "net_worth", "savings_rate", "savings_goal"
+    )  # "net_worth", "savings_goal", "debt_payoff"
     target_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("networth_categories.id"), nullable=True
@@ -651,6 +656,13 @@ class Goal(Base):
         DateTime(timezone=True), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Roadmap ordering: position in the sequential plan (null for net_worth goals)
+    priority: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Manual progress: amount saved / paid off so far (ignored when a category
+    # is linked — the snapshot balance wins)
+    current_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
@@ -669,5 +681,9 @@ class Goal(Base):
             "category": self.category.to_dict() if self.category else None,
             "target_date": self.target_date.isoformat() if self.target_date else None,
             "is_active": self.is_active,
+            "priority": self.priority,
+            "current_amount": (
+                float(self.current_amount) if self.current_amount is not None else None
+            ),
             "created_at": self.created_at.isoformat(),
         }

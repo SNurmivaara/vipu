@@ -10,7 +10,7 @@ import {
   AccountsSection,
   CreditCardsSection,
   ExpensesGroupSection,
-  SavingsGoalsSection,
+  RoadmapSection,
   SettingsCard,
   BudgetSummary,
   BudgetHistory,
@@ -259,6 +259,8 @@ export default function BudgetPage() {
 
       <BudgetSummary data={data} />
 
+      <RoadmapSection />
+
       {showArchived && (
         <div className="flex items-center justify-between px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm">
           <span className="text-amber-800 dark:text-amber-200">
@@ -307,13 +309,6 @@ export default function BudgetPage() {
               ...data.totals.expenses_future_list,
               ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal).map(e => ({ ...e, next_occurrence_date: null })) : []),
             ]}
-          />
-          <SavingsGoalsSection
-            savingsGoals={[
-              ...data.expenses.filter((e) => e.is_savings_goal),
-              ...(showArchived ? data.archived_expenses.filter((e) => e.is_savings_goal) : []),
-            ]}
-            collapsible
           />
         </div>
       </div>

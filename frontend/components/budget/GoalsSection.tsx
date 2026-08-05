@@ -2,34 +2,21 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  GoalProgress,
-  GoalFormData,
-  NetWorthCategory,
-  GoalType,
-} from "@/types";
+import { GoalProgress, GoalFormData } from "@/types";
 import { createGoal, updateGoal, deleteGoal } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { GoalFormDialog } from "./GoalFormDialog";
 import { useToast } from "@/components/ui/Toast";
 
+// Net worth milestones tracked against snapshots. Savings/debt goals live on
+// the Budget page's Financial Roadmap instead.
+
 interface GoalsSectionProps {
   goals: GoalProgress[];
-  categories: NetWorthCategory[];
   collapsible?: boolean;
   defaultOpen?: boolean;
 }
-
-const GOAL_TYPE_LABELS: Record<string, string> = {
-  net_worth: "Net Worth",
-  savings_rate: "Savings Rate",
-  savings_goal: "Savings Goal",
-  // Backward compatibility with old goal types
-  net_worth_target: "Net Worth",
-  category_target: "Savings Goal",
-  category_rate: "Savings Rate",
-};
 
 function getProgressColor(percentage: number, isAchieved: boolean): string {
   if (isAchieved) return "bg-green-500";
@@ -38,18 +25,9 @@ function getProgressColor(percentage: number, isAchieved: boolean): string {
   return "bg-orange-500";
 }
 
-function formatValue(value: number, goalType: GoalType): string {
-  if (goalType === "savings_rate") {
-    return `${value.toFixed(1)}%`;
-  }
-  return formatCurrency(value);
-}
-
-const RATE_TYPES = ["savings_rate", "category_rate"];
-
 // Build the explanatory pace text shown on hover over the on-track/behind badge.
 function buildStatusHint(gp: GoalProgress): string | null {
-  if (RATE_TYPES.includes(gp.goal.goal_type) || !gp.status_reason) return null;
+  if (!gp.status_reason) return null;
 
   let hint = gp.status_reason;
   if (gp.recent_monthly != null && gp.required_monthly != null) {
@@ -67,7 +45,6 @@ function buildStatusHint(gp: GoalProgress): string | null {
 
 export function GoalsSection({
   goals,
-  categories,
   collapsible = false,
   defaultOpen = false,
 }: GoalsSectionProps) {
@@ -152,19 +129,15 @@ export function GoalsSection({
               <span className="text-gray-900 dark:text-gray-100 font-medium">
                 {gp.goal.name}
               </span>
-              <span className="text-sm px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
-                {GOAL_TYPE_LABELS[gp.goal.goal_type]}
-              </span>
               {/* Monthly amount still needed to hit the target on time */}
-              {!RATE_TYPES.includes(gp.goal.goal_type) &&
-                !gp.is_achieved &&
+              {!gp.is_achieved &&
                 gp.required_monthly != null &&
                 gp.required_monthly > 0 && (
                   <span className="text-sm text-gray-400 dark:text-gray-500">
                     {formatCurrency(gp.required_monthly)}/mo needed
                   </span>
                 )}
-              {gp.is_achieved && !RATE_TYPES.includes(gp.goal.goal_type) && (
+              {gp.is_achieved && (
                 <span className="text-sm px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300">
                   Achieved
                 </span>
@@ -199,12 +172,6 @@ export function GoalsSection({
               })()}
           </div>
 
-          {gp.category_name && (
-            <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-              {gp.category_name}
-            </div>
-          )}
-
           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
             <div
               className={`h-2 rounded-full ${getProgressColor(
@@ -217,31 +184,23 @@ export function GoalsSection({
 
           <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
             <span>
-              {formatValue(gp.current_value, gp.goal.goal_type)} /{" "}
-              {formatValue(gp.target_value, gp.goal.goal_type)}
+              {formatCurrency(gp.current_value)} /{" "}
+              {formatCurrency(gp.target_value)}
             </span>
             <span>{gp.progress_percentage.toFixed(1)}%</span>
           </div>
 
           {/* Setup guidance when there's no on-track/behind badge to hover */}
-          {!RATE_TYPES.includes(gp.goal.goal_type) &&
-            !gp.status &&
-            gp.status_reason && (
-              <div className="text-sm mt-1 text-gray-500 dark:text-gray-400">
-                {gp.status_reason}
-              </div>
-            )}
-
-          {gp.goal.goal_type === "savings_rate" && gp.data_months < 2 && (
-            <div className="text-sm text-amber-600 dark:text-amber-400 mt-1">
-              Needs more snapshot data
+          {!gp.status && gp.status_reason && (
+            <div className="text-sm mt-1 text-gray-500 dark:text-gray-400">
+              {gp.status_reason}
             </div>
           )}
         </div>
       ))}
       {goals.length === 0 && (
         <div className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
-          No goals yet. Create one to track your progress!
+          No net worth goals yet. Create one to track your progress!
         </div>
       )}
     </div>
@@ -251,7 +210,6 @@ export function GoalsSection({
     <GoalFormDialog
       open={editGoal !== null || isNew}
       onOpenChange={(open) => !open && closeDialog()}
-      categories={categories}
       initialValues={
         editGoal
           ? {
@@ -274,7 +232,7 @@ export function GoalsSection({
     return (
       <>
         <CollapsibleSection
-          title="Financial Goals"
+          title="Net Worth Goals"
           total={`${goals.length} goal${goals.length !== 1 ? "s" : ""}`}
           totalClassName="text-gray-500 dark:text-gray-400"
           defaultOpen={defaultOpen}
@@ -291,7 +249,7 @@ export function GoalsSection({
     <section className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
       <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
         <h2 className="font-semibold text-gray-900 dark:text-gray-100">
-          Financial Goals
+          Net Worth Goals
         </h2>
         <button
           onClick={openNew}
