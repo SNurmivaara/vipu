@@ -1,5 +1,7 @@
 """Tests for budget API endpoints."""
 
+import pytest
+
 
 class TestValidation:
     """Tests for input validation across all budget endpoints."""
@@ -735,3 +737,67 @@ class TestEdgeCases:
         )
         assert response.status_code == 201
         assert response.json["is_deduction"] is True
+
+
+class TestMonthlyNormalization:
+    """Tests for frequency-normalized monthly totals."""
+
+    def test_monthly_rates_normalize_frequencies(self, client):
+        """Quarterly/yearly bills count at a fraction; one-time items excluded."""
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "is_taxed": False},
+        )
+        client.post("/api/expenses", json={"name": "Rent", "amount": 1000})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Water",
+                "amount": 90,
+                "frequency_value": 3,
+                "frequency_unit": "months",
+            },
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Insurance",
+                "amount": 120,
+                "frequency_value": 1,
+                "frequency_unit": "years",
+            },
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "One-time tax",
+                "amount": 500,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        # 1000 + 90/3 + 120/12 = 1040; the one-time 500 is excluded
+        assert totals["monthly_expenses"] == pytest.approx(1040.0)
+        assert totals["monthly_net_income"] == pytest.approx(4000.0)
+        assert totals["monthly_surplus"] == pytest.approx(2960.0)
+        # Face-value total still counts every line once
+        assert totals["total_expenses"] == 1710.0
+
+    def test_weekly_items_normalize_up(self, client):
+        """A weekly bill counts ~4.35 times per month."""
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Groceries",
+                "amount": 70,
+                "frequency_value": 1,
+                "frequency_unit": "weeks",
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        # 70 * 30.4375/7 = 304.375
+        assert totals["monthly_expenses"] == pytest.approx(304.375)

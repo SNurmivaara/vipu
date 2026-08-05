@@ -1170,3 +1170,32 @@ class TestReorder:
         goals = client.get("/api/goals").json
         priorities = {g["name"]: g["priority"] for g in goals}
         assert priorities == {"A": 0, "B": 1}
+
+    def test_surplus_normalizes_frequencies(self, client):
+        """The roadmap surplus uses monthly-normalized income and expenses."""
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "is_taxed": False},
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Water",
+                "amount": 300,
+                "frequency_value": 3,
+                "frequency_unit": "months",
+            },
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "One-off",
+                "amount": 5000,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+
+        data = client.get("/api/goals/roadmap").json
+        # 4000 - 300/3; the ephemeral one-off doesn't drag the rate down
+        assert data["surplus_monthly"] == 3900.0

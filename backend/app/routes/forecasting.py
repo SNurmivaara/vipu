@@ -289,10 +289,10 @@ def get_forecasting_projection() -> Response:
     current_net_worth = Decimal(str(latest.net_worth)) if latest else Decimal("0")
     by_group: dict = latest.to_dict()["by_group"] if latest else {}
 
-    # Budget-derived figures (shared helper)
+    # Budget-derived figures (shared helper), frequency-normalized to monthly
+    # rates so a quarterly or yearly bill isn't counted as a monthly one
     budget_totals = compute_budget_totals(session)
-    net_income = budget_totals["net_income"]
-    total_expenses = budget_totals["total_expenses"]
+    monthly_expenses = budget_totals["monthly_expenses"]
     gross_income = budget_totals["gross_income"]
 
     group_rates = settings.group_return_rates or {}
@@ -301,12 +301,12 @@ def get_forecasting_projection() -> Response:
     monthly_savings = (
         settings.monthly_savings_override
         if settings.monthly_savings_override is not None
-        else net_income - total_expenses
+        else budget_totals["monthly_surplus"]
     )
     annual_expenses = (
         settings.annual_expenses_override
         if settings.annual_expenses_override is not None
-        else total_expenses * 12
+        else monthly_expenses * 12
     )
     pension_monthly_salary = (
         settings.pension_monthly_salary_override
