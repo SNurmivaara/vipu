@@ -205,45 +205,46 @@ def seed_data() -> Response:
         # One-time expense in the future (shows in "Future" section)
         ExpenseItem(
             name="Vacation booking",
-            amount=Decimal("2000.00"),
+            amount=Decimal("800.00"),
             due_day=in_3_months.day,
             frequency_value=1,
             frequency_unit="months",
             is_ephemeral=True,
             start_date=in_3_months,
         ),
-        # Savings goal - monthly
-        ExpenseItem(
-            name="Emergency fund",
-            amount=Decimal("300.00"),
-            is_savings_goal=True,
-            due_day=25,
-            frequency_value=1,
-            frequency_unit="months",
-        ),
-        # Savings goal - bi-weekly
-        ExpenseItem(
-            name="Investment",
-            amount=Decimal("100.00"),
-            is_savings_goal=True,
-            due_day=1,
-            frequency_value=2,
-            frequency_unit="weeks",
-        ),
-        # One-time savings goal for next month
-        ExpenseItem(
-            name="New laptop fund",
-            amount=Decimal("500.00"),
-            is_savings_goal=True,
-            due_day=15,
-            frequency_value=1,
-            frequency_unit="months",
-            is_ephemeral=True,
-            start_date=today + timedelta(days=30),
-        ),
     ]
     for expense in expenses:
         session.add(expense)
+
+    # Roadmap goals: a sequential plan funded by the monthly surplus
+    session.query(Goal).filter(
+        Goal.goal_type.in_(("savings_goal", "debt_payoff"))
+    ).delete()
+    roadmap_goals = [
+        Goal(
+            name="Pay off Visa",
+            goal_type="debt_payoff",
+            target_value=Decimal("750.00"),
+            current_amount=Decimal("0"),
+            priority=0,
+        ),
+        Goal(
+            name="Emergency fund",
+            goal_type="savings_goal",
+            target_value=Decimal("6000.00"),
+            current_amount=Decimal("2000.00"),
+            priority=1,
+        ),
+        Goal(
+            name="Travel fund",
+            goal_type="savings_goal",
+            target_value=Decimal("3000.00"),
+            current_amount=Decimal("0"),
+            priority=2,
+        ),
+    ]
+    for goal in roadmap_goals:
+        session.add(goal)
 
     session.commit()
 
@@ -366,6 +367,7 @@ def seed_data() -> Response:
                 "income_items": len(income_items),
                 "accounts": len(accounts),
                 "expenses": len(expenses),
+                "goals": len(roadmap_goals),
                 "budget_snapshots": len(snapshot_data),
             },
         }
@@ -506,6 +508,10 @@ def export_data() -> Response:
                 ),
                 "target_date": g.target_date.isoformat() if g.target_date else None,
                 "is_active": g.is_active,
+                "priority": g.priority,
+                "current_amount": (
+                    float(g.current_amount) if g.current_amount is not None else None
+                ),
             }
             for g in goals
         ],
@@ -684,6 +690,12 @@ def import_data() -> Response | tuple[Response, int]:
                 category_id=category_id,
                 target_date=target_date,
                 is_active=g.get("is_active", True),
+                priority=g.get("priority"),
+                current_amount=(
+                    Decimal(str(g["current_amount"]))
+                    if g.get("current_amount") is not None
+                    else None
+                ),
             )
             session.add(goal)
 

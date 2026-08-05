@@ -20,6 +20,7 @@ import {
   Goal,
   GoalFormData,
   GoalProgress,
+  RoadmapData,
   NetWorthForecast,
   ForecastPeriod,
   ForecastingSettingsAPI,
@@ -234,6 +235,8 @@ export interface ExportData {
     category_name: string | null;
     target_date: string | null;
     is_active: boolean;
+    priority?: number | null;
+    current_amount?: number | null;
   }[];
 }
 
@@ -375,6 +378,19 @@ export const updateGoal = async (
 
 export const deleteGoal = async (id: number): Promise<void> => {
   await api.delete(`/goals/${id}`);
+};
+
+// Roadmap
+export const fetchRoadmap = async (): Promise<RoadmapData> => {
+  const { data } = await api.get<RoadmapData>("/goals/roadmap");
+  return data;
+};
+
+export const reorderGoals = async (goalIds: number[]): Promise<Goal[]> => {
+  const { data } = await api.put<Goal[]>("/goals/reorder", {
+    goal_ids: goalIds,
+  });
+  return data;
 };
 
 // Forecasting Settings

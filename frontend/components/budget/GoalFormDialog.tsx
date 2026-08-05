@@ -2,35 +2,18 @@
 
 import { useState, useEffect } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { GoalFormData, GoalType, NetWorthCategory } from "@/types";
+import { GoalFormData } from "@/types";
+
+// Net worth goals only — roadmap goals are edited via RoadmapFormDialog.
 
 interface GoalFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  categories: NetWorthCategory[];
   initialValues?: GoalFormData;
   onSave: (data: GoalFormData) => void;
   onDelete?: () => void;
   isNew: boolean;
 }
-
-const GOAL_TYPES: { value: GoalType; label: string; description: string }[] = [
-  {
-    value: "net_worth",
-    label: "Net Worth Goal",
-    description: "Track total net worth against a target",
-  },
-  {
-    value: "savings_rate",
-    label: "Savings Rate",
-    description: "Track % of income saved monthly",
-  },
-  {
-    value: "savings_goal",
-    label: "Savings Goal",
-    description: "Track a category balance against a target",
-  },
-];
 
 const DEFAULT_VALUES: GoalFormData = {
   name: "",
@@ -44,7 +27,6 @@ const DEFAULT_VALUES: GoalFormData = {
 export function GoalFormDialog({
   open,
   onOpenChange,
-  categories,
   initialValues,
   onSave,
   onDelete,
@@ -73,26 +55,7 @@ export function GoalFormDialog({
     }
   };
 
-  const needsCategory = values.goal_type === "savings_goal";
-  const isPercentage = values.goal_type === "savings_rate";
-
-  // Group categories by their group name for the select dropdown
-  const categoriesByGroup = categories.reduce(
-    (acc, cat) => {
-      const groupName = cat.group?.name ?? "Other";
-      if (!acc[groupName]) {
-        acc[groupName] = [];
-      }
-      acc[groupName].push(cat);
-      return acc;
-    },
-    {} as Record<string, NetWorthCategory[]>
-  );
-
-  const isValid =
-    values.name.trim() !== "" &&
-    values.target_value > 0 &&
-    (!needsCategory || values.category_id !== null);
+  const isValid = values.name.trim() !== "" && values.target_value > 0;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -100,7 +63,7 @@ export function GoalFormDialog({
         <Dialog.Overlay className="fixed inset-0 bg-black/50" />
         <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white dark:bg-gray-900 rounded-lg p-6 w-full max-w-md shadow-lg">
           <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-            {isNew ? "Add Goal" : "Edit Goal"}
+            {isNew ? "Add Net Worth Goal" : "Edit Net Worth Goal"}
           </Dialog.Title>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -123,37 +86,7 @@ export function GoalFormDialog({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Goal Type
-              </label>
-              <select
-                value={values.goal_type}
-                onChange={(e) =>
-                  setValues({
-                    ...values,
-                    goal_type: e.target.value as GoalType,
-                    category_id:
-                      e.target.value === "savings_goal"
-                        ? values.category_id
-                        : null,
-                  })
-                }
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              >
-                {GOAL_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {GOAL_TYPES.find((t) => t.value === values.goal_type)
-                  ?.description}
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                {isPercentage ? "Target Percentage (%)" : "Target Amount (€)"}
+                Target Amount (€)
               </label>
               <input
                 type="number"
@@ -166,45 +99,11 @@ export function GoalFormDialog({
                 }
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 min={0}
-                max={isPercentage ? 100 : 1000000000}
-                step={isPercentage ? 0.1 : 0.01}
+                max={1000000000}
+                step={0.01}
                 required
               />
             </div>
-
-            {needsCategory && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Category
-                </label>
-                <select
-                  value={values.category_id ?? ""}
-                  onChange={(e) =>
-                    setValues({
-                      ...values,
-                      category_id: e.target.value
-                        ? parseInt(e.target.value)
-                        : null,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {Object.entries(categoriesByGroup).map(
-                    ([groupName, cats]) => (
-                      <optgroup key={groupName} label={groupName}>
-                        {cats.map((cat) => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )
-                  )}
-                </select>
-              </div>
-            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">

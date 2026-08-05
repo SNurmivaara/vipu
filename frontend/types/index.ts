@@ -114,7 +114,6 @@ export type AccountFormData = Omit<Account, "id" | "updated_at">;
 export type IncomeFormData = Omit<IncomeItem, "id">;
 export type DeductionFormData = Omit<IncomeItem, "id">;
 export type ExpenseFormData = Omit<ExpenseItem, "id">;
-export type SavingsGoalFormData = Omit<ExpenseItem, "id">;
 export type SettingsFormData = Pick<BudgetSettings, "tax_percentage" | "payday_day">;
 
 // Net Worth types
@@ -193,15 +192,9 @@ export interface GroupFormData {
 }
 
 // Goal types
-// New types: net_worth, savings_rate, savings_goal
-// Old types kept for backward compatibility: net_worth_target, category_target, category_rate
-export type GoalType =
-  | "net_worth"
-  | "savings_rate"
-  | "savings_goal"
-  | "net_worth_target"
-  | "category_target"
-  | "category_rate";
+// net_worth lives on the Wealth page; savings_goal and debt_payoff are
+// roadmap steps funded sequentially from the monthly budget surplus.
+export type GoalType = "net_worth" | "savings_goal" | "debt_payoff";
 
 export interface Goal {
   id: number;
@@ -212,6 +205,8 @@ export interface Goal {
   category?: NetWorthCategory | null;
   target_date: string | null;
   is_active: boolean;
+  priority: number | null;
+  current_amount: number | null;
   created_at: string;
 }
 
@@ -220,8 +215,27 @@ export interface GoalFormData {
   goal_type: GoalType;
   target_value: number;
   category_id: number | null;
+  current_amount?: number | null;
   target_date: string | null;
   is_active: boolean;
+}
+
+// Roadmap: sequential plan of savings/debt goals funded by the budget surplus
+export type RoadmapStepStatus = "completed" | "active" | "upcoming";
+
+export interface RoadmapStep {
+  goal: Goal;
+  current_value: number;
+  remaining: number;
+  progress_percentage: number;
+  status: RoadmapStepStatus;
+  months_to_complete: number | null;
+  projected_completion_date: string | null;
+}
+
+export interface RoadmapData {
+  surplus_monthly: number;
+  goals: RoadmapStep[];
 }
 
 export interface GoalProgress {

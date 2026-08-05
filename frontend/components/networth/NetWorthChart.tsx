@@ -267,13 +267,10 @@ export function NetWorthChart({ snapshots, netWorthGoals = [] }: NetWorthChartPr
     return historicalData;
   }, [snapshots, showForecast, forecast, timeScale]);
 
-  // Filter for net worth goals only (supports both old and new type names)
+  // Filter for net worth goals only
   const netWorthGoalLines = useMemo(() => {
     return netWorthGoals
-      .filter((g) =>
-        (g.goal.goal_type === "net_worth" || g.goal.goal_type === "net_worth_target") &&
-        g.goal.is_active
-      )
+      .filter((g) => g.goal.goal_type === "net_worth" && g.goal.is_active)
       .map((g) => ({
         name: g.goal.name,
         value: g.target_value,

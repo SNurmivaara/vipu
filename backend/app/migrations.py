@@ -154,6 +154,28 @@ MIGRATIONS: list[dict] = [
             );
         """,
     },
+    {
+        "id": "009_financial_roadmap",
+        "name": "Sequential roadmap: goal priority/current_amount, drop savings_rate, "
+        "retire savings-goal expense lines",
+        "sql": """
+            ALTER TABLE goals
+                ADD COLUMN IF NOT EXISTS priority INTEGER;
+            ALTER TABLE goals
+                ADD COLUMN IF NOT EXISTS current_amount NUMERIC(12,2);
+            DELETE FROM goals WHERE goal_type IN ('savings_rate', 'category_rate');
+            UPDATE goals SET goal_type = 'savings_goal'
+                WHERE goal_type = 'category_target';
+            UPDATE goals g SET priority = sub.rn - 1
+                FROM (
+                    SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) AS rn
+                    FROM goals WHERE goal_type = 'savings_goal'
+                ) sub
+                WHERE g.id = sub.id;
+            UPDATE expense_items SET archived_at = NOW()
+                WHERE is_savings_goal = TRUE AND archived_at IS NULL;
+        """,
+    },
 ]
 
 
