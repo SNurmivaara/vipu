@@ -57,6 +57,10 @@ export interface BudgetTotals {
   current_balance: number;
   total_expenses: number;
   net_position: number;
+  // Frequency-normalized monthly rates (one-time items excluded)
+  monthly_expenses: number;
+  monthly_net_income: number;
+  monthly_surplus: number;
   // Deadline-aware totals
   next_payday: string;
   expenses_before_payday: number;

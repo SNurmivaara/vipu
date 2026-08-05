@@ -34,12 +34,35 @@ def calculate_net_income(
     return total
 
 
+# Average month length, for normalizing day/week frequencies to monthly rates
+DAYS_PER_MONTH = Decimal("30.4375")
+
+
+def monthly_occurrences(frequency_value: int, frequency_unit: str) -> Decimal:
+    """How many times per month an item with this schedule occurs."""
+    value = Decimal(frequency_value or 1)
+    if frequency_unit == "years":
+        return 1 / (value * 12)
+    if frequency_unit == "weeks":
+        return DAYS_PER_MONTH / (value * 7)
+    if frequency_unit == "days":
+        return DAYS_PER_MONTH / value
+    return 1 / value  # months
+
+
 def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     """Compute headline budget totals from active (non-archived) items.
 
     Returns gross_income, net_income, current_balance, total_expenses and
     net_position as Decimals. Shared by the budget and forecasting endpoints so
     the same numbers are derived in one place.
+
+    total_expenses/net_income sum every active line at face value (what the
+    list sections display). monthly_expenses/monthly_net_income normalize each
+    recurring line to a per-month rate (a quarterly bill counts at a third,
+    a yearly one at a twelfth, a weekly one at ~4.35x) and exclude one-time
+    ephemeral items, giving the true monthly rate that the roadmap surplus and
+    FIRE projections are based on.
     """
     settings = session.query(BudgetSettings).first()
     tax_pct = settings.tax_percentage if settings else Decimal("25.0")
@@ -61,12 +84,33 @@ def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     current_balance = sum((a.balance for a in accounts), Decimal("0"))
     total_expenses = sum((e.amount for e in active_expenses), Decimal("0"))
 
+    monthly_expenses = sum(
+        (
+            e.amount * monthly_occurrences(e.frequency_value, e.frequency_unit)
+            for e in active_expenses
+            if not e.is_ephemeral
+        ),
+        Decimal("0"),
+    )
+    monthly_net_income = sum(
+        (
+            i.calculate_net(tax_pct)
+            * monthly_occurrences(i.frequency_value, i.frequency_unit)
+            for i in active_income
+            if not i.is_ephemeral
+        ),
+        Decimal("0"),
+    )
+
     return {
         "gross_income": gross_income,
         "net_income": net_income,
         "current_balance": current_balance,
         "total_expenses": total_expenses,
         "net_position": current_balance - total_expenses,
+        "monthly_expenses": monthly_expenses,
+        "monthly_net_income": monthly_net_income,
+        "monthly_surplus": monthly_net_income - monthly_expenses,
     }
 
 
@@ -268,6 +312,10 @@ def get_current_budget() -> Response:
                 "current_balance": float(current_balance),
                 "total_expenses": float(total_expenses),
                 "net_position": float(net_position),
+                # Frequency-normalized monthly rates (one-time items excluded)
+                "monthly_expenses": float(totals["monthly_expenses"]),
+                "monthly_net_income": float(totals["monthly_net_income"]),
+                "monthly_surplus": float(totals["monthly_surplus"]),
                 # Deadline-aware totals
                 "next_payday": next_payday.isoformat(),
                 "expenses_before_payday": float(expenses_before_payday),

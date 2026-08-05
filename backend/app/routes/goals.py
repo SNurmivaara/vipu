@@ -266,7 +266,8 @@ def get_roadmap() -> Response:
     """The sequential financial roadmap, funded by the monthly budget surplus.
 
     Active savings_goal/debt_payoff goals in priority order form a waterfall:
-    the whole surplus (net income minus expenses) flows into the first
+    the whole surplus (monthly net income minus monthly expenses, each
+    recurring line normalized to its per-month rate) flows into the first
     unfinished step until it completes, then cascades to the next. Returns
     per-step progress and projected completion dates at the current surplus.
     """
@@ -280,7 +281,7 @@ def get_roadmap() -> Response:
     )
 
     totals = compute_budget_totals(session)
-    surplus = totals["net_income"] - totals["total_expenses"]
+    surplus = totals["monthly_surplus"]
 
     snapshots = _get_snapshots(session, 1)
     latest = snapshots[0] if snapshots else None
