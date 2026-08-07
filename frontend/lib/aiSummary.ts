@@ -160,6 +160,11 @@ export function buildBudgetSummary(
     lines.push(
       `Surplus flowing into the plan: ${eur(roadmap.surplus_monthly)}/mo. The whole surplus fills the first unfinished goal, then cascades to the next.`
     );
+    if (roadmap.starting_position < 0) {
+      lines.push(
+        `The plan starts ${eur(-roadmap.starting_position)} behind (net account balances with credit cards assumed paid in full, plus ${eur(-roadmap.pending_one_time_net)} of pending one-off items). The first ${roadmap.shortfall_months} months of surplus clear that before any goal progresses.`
+      );
+    }
     roadmap.goals.forEach((step, index) => {
       const goal = step.goal;
       const kind = goal.goal_type === "debt_payoff" ? "pay off debt" : "save up";

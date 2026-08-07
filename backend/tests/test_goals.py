@@ -1,5 +1,7 @@
 """Tests for goals API endpoints."""
 
+from datetime import date, timedelta
+
 
 class TestGoalValidation:
     """Tests for goal input validation."""
@@ -1010,11 +1012,13 @@ class TestRoadmap:
         assert data["surplus_monthly"] == 3000.0
 
         first, second = data["goals"]
-        # 3000 remaining at 3000/mo -> 1 month; waterfall then takes 2 more
+        # 3000 remaining at 3000/mo -> about a month; the waterfall then takes
+        # roughly two more. Steps land on a payday rollover rather than on an
+        # exact month count, so these are ranges.
         assert first["status"] == "active"
-        assert first["months_to_complete"] == 1.0
+        assert 1.0 <= first["months_to_complete"] <= 2.0
         assert second["status"] == "upcoming"
-        assert second["months_to_complete"] == 3.0
+        assert 3.0 <= second["months_to_complete"] <= 4.0
         assert first["projected_completion_date"] is not None
         assert second["projected_completion_date"] > first["projected_completion_date"]
 
@@ -1045,7 +1049,8 @@ class TestRoadmap:
         assert first["status"] == "completed"
         assert first["months_to_complete"] is None
         assert second["status"] == "active"
-        assert second["months_to_complete"] == 1.0
+        # Gets the whole surplus: about a month, at the next payday that covers it
+        assert 1.0 <= second["months_to_complete"] <= 2.0
 
     def test_no_surplus_gives_no_dates(self, client):
         """With zero/negative surplus, steps get no projected dates."""
@@ -1104,6 +1109,223 @@ class TestRoadmap:
         step = client.get("/api/goals/roadmap").json["goals"][0]
         assert step["current_value"] == 2500.0
         assert step["progress_percentage"] == 50.0
+
+    @staticmethod
+    def _goal(client, target=3000):
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Emergency fund",
+                "goal_type": "savings_goal",
+                "target_value": target,
+                "current_amount": 0,
+            },
+        )
+
+    def test_projection_starts_from_zero_when_square(self, client):
+        """No cash and no one-time items: the plan starts from a clean zero."""
+        self._make_surplus(client)  # 3000/mo
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["starting_position"] == 0.0
+        assert data["shortfall_months"] == 0.0
+        assert 1.0 <= data["goals"][0]["months_to_complete"] <= 2.0
+
+    def test_card_debt_delays_the_plan(self, client):
+        """A negative net position is earned back before step 1 progresses."""
+        self._make_surplus(client)  # 3000/mo
+        client.post("/api/accounts", json={"name": "Checking", "balance": 500})
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "OP Gold",
+                "balance": -3500,
+                "is_credit": True,
+                "payment_due_day": 20,
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        # 500 - 3500 = -3000 shortfall: a month of surplus clears it, then
+        # about one more funds the goal.
+        assert data["starting_position"] == -3000.0
+        assert data["shortfall_months"] == 1.0
+        assert 2.0 <= data["goals"][0]["months_to_complete"] <= 3.5
+
+    def test_card_debt_counted_once_not_twice(self, client):
+        """The card is netted via current_balance, not charged again."""
+        self._make_surplus(client)
+        client.post("/api/accounts", json={"name": "Checking", "balance": 0})
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "OP Gold",
+                "balance": -3000,
+                "is_credit": True,
+                "payment_due_day": 20,
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        # -3000, not -6000: the balance is a single claim on the surplus
+        assert data["starting_position"] == -3000.0
+
+    def test_imminent_one_time_delays_the_plan(self, client):
+        """A bill landing before the goal completes pushes it out."""
+        self._make_surplus(client)  # 3000/mo
+        soon = (date.today() + timedelta(days=3)).isoformat()
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Tax bill",
+                "amount": 3000,
+                "is_ephemeral": True,
+                "start_date": soon,
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["surplus_monthly"] == 3000.0  # rate is untouched
+        assert data["pending_one_time_net"] == -3000.0
+        assert data["starting_position"] == -3000.0
+        # The bill lands first, so the goal needs a second month of surplus
+        assert data["goals"][0]["months_to_complete"] > 1.5
+
+    def test_distant_one_time_does_not_delay_an_earlier_step(self, client):
+        """A bill years out doesn't hold up a goal that finishes next month."""
+        self._make_surplus(client)  # 3000/mo
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Someday bill",
+                "amount": 3000,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)  # 3000 target, one month of surplus
+
+        data = client.get("/api/goals/roadmap").json
+        # Still counted as a pending claim...
+        assert data["pending_one_time_net"] == -3000.0
+        # ...but it lands in 2099, long after this step completes
+        assert data["goals"][0]["months_to_complete"] <= 2.0
+
+    def test_past_one_time_is_settled(self, client):
+        """A one-time item dated in the past no longer claims the surplus."""
+        self._make_surplus(client)
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Old bill",
+                "amount": 3000,
+                "is_ephemeral": True,
+                "start_date": "2000-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["pending_one_time_net"] == 0.0
+        assert data["starting_position"] == 0.0
+
+    def test_spare_cash_is_not_a_head_start(self, client):
+        """Cash outside the tracked account never pulls a goal forward."""
+        self._make_surplus(client)  # 3000/mo
+        client.post("/api/accounts", json={"name": "Checking", "balance": 50000})
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["starting_position"] == 0.0
+        # Still a full month of surplus, not "already done"
+        assert 1.0 <= data["goals"][0]["months_to_complete"] <= 2.0
+
+    def test_pending_one_time_income_offsets_a_bill(self, client):
+        """A pending bonus nets against a pending bill rather than being lost."""
+        self._make_surplus(client)
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Tax bill",
+                "amount": 3000,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        client.post(
+            "/api/income",
+            json={
+                "name": "Bonus",
+                "gross_amount": 2000,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["pending_one_time_net"] == -1000.0
+        assert data["starting_position"] == -1000.0
+
+    def test_no_projection_without_surplus_despite_shortfall(self, client):
+        """A shortfall with no surplus still yields no completion date."""
+        self._make_surplus(client, net_income_gross=1000, expense=1000)
+        client.post(
+            "/api/accounts",
+            json={"name": "OP Gold", "balance": -500, "is_credit": True},
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["surplus_monthly"] == 0.0
+        assert data["shortfall_months"] == 0.0
+        assert data["goals"][0]["projected_completion_date"] is None
+
+    def test_completion_lands_on_a_payday(self, client):
+        """The budget month rolls over on payday, so steps complete there."""
+        client.put("/api/settings", json={"payday_day": 15})
+        self._make_surplus(client)  # 3000/mo
+        self._goal(client, target=9000)
+
+        done = client.get("/api/goals/roadmap").json["goals"][0]
+        completion = date.fromisoformat(done["projected_completion_date"])
+        assert completion.day == 15
+
+    def test_payday_day_shifts_the_completion_date(self, client):
+        """A different rollover day moves the projection to that day."""
+        self._make_surplus(client)
+        self._goal(client, target=9000)
+
+        client.put("/api/settings", json={"payday_day": 5})
+        fifth = client.get("/api/goals/roadmap").json["goals"][0]
+
+        client.put("/api/settings", json={"payday_day": 25})
+        twenty_fifth = client.get("/api/goals/roadmap").json["goals"][0]
+
+        assert date.fromisoformat(fifth["projected_completion_date"]).day == 5
+        assert date.fromisoformat(twenty_fifth["projected_completion_date"]).day == 25
+        assert (
+            fifth["projected_completion_date"]
+            != twenty_fifth["projected_completion_date"]
+        )
+
+    def test_part_period_is_not_credited_a_full_month(self, client):
+        """The stub before the next payday accrues pro rata, not in full."""
+        # Roll over tomorrow: today's stub is worth ~1 day of surplus, so a
+        # one-month goal cannot complete at that first payday.
+        tomorrow = date.today() + timedelta(days=1)
+        client.put("/api/settings", json={"payday_day": tomorrow.day})
+        self._make_surplus(client)  # 3000/mo
+        self._goal(client, target=3000)
+
+        done = client.get("/api/goals/roadmap").json["goals"][0]
+        completion = date.fromisoformat(done["projected_completion_date"])
+        assert completion > tomorrow
 
 
 class TestReorder:
