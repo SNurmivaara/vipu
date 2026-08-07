@@ -50,6 +50,55 @@ def monthly_occurrences(frequency_value: int, frequency_unit: str) -> Decimal:
     return 1 / value  # months
 
 
+def pending_one_time_items(session: Session, today: date) -> list[tuple[date, Decimal]]:
+    """One-time items still ahead of us, as (due date, signed amount) pairs.
+
+    monthly_net_income/monthly_expenses deliberately exclude ephemeral items so
+    the monthly rate isn't distorted by a single bill. That means anything
+    projecting forward at that rate has to charge the one-time items separately
+    or it spends money that is already claimed.
+
+    Positive is an inflow (a pending bonus), negative an outflow (a pending tax
+    bill). Items dated in the past are treated as already settled. An ephemeral
+    item with no start_date has no unambiguous due date, so it falls due
+    immediately rather than being silently dropped.
+    """
+    tax_pct = _tax_percentage(session)
+    items: list[tuple[date, Decimal]] = []
+
+    for income in session.query(IncomeItem).all():
+        if not income.is_ephemeral or income.archived_at is not None:
+            continue
+        if income.start_date is not None and income.start_date < today:
+            continue
+        due = income.start_date or today
+        items.append((due, income.calculate_net(tax_pct)))
+
+    for expense in session.query(ExpenseItem).all():
+        if not expense.is_ephemeral or expense.archived_at is not None:
+            continue
+        if expense.start_date is not None and expense.start_date < today:
+            continue
+        due = expense.start_date or today
+        items.append((due, -expense.amount))
+
+    return sorted(items, key=lambda pair: pair[0])
+
+
+def pending_one_time_net(session: Session, today: date) -> Decimal:
+    """Net cash effect of all one-time items still ahead of us."""
+    return sum(
+        (amount for _, amount in pending_one_time_items(session, today)),
+        Decimal("0"),
+    )
+
+
+def _tax_percentage(session: Session) -> Decimal:
+    """Configured default tax rate, or the 25% fallback used elsewhere."""
+    settings = session.query(BudgetSettings).first()
+    return settings.tax_percentage if settings else Decimal("25.0")
+
+
 def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     """Compute headline budget totals from active (non-archived) items.
 

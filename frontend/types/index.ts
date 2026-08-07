@@ -239,6 +239,16 @@ export interface RoadmapStep {
 
 export interface RoadmapData {
   surplus_monthly: number;
+  /**
+   * Net cash the plan starts from: all account balances (credit cards assumed
+   * paid in full) plus pending one-time items. Clamped at zero — spare cash is
+   * never a head start, but a shortfall is paid off before any step progresses.
+   */
+  starting_position: number;
+  /** Pending one-time items, excluded from the monthly rate. Negative = owed. */
+  pending_one_time_net: number;
+  /** Months of surplus spent clearing the shortfall before step 1 progresses. */
+  shortfall_months: number;
   goals: RoadmapStep[];
 }
 

@@ -90,6 +90,9 @@ export function RoadmapSection() {
 
   const steps = data?.goals ?? [];
   const surplus = data?.surplus_monthly ?? 0;
+  const startingPosition = data?.starting_position ?? 0;
+  const pendingOneTime = data?.pending_one_time_net ?? 0;
+  const shortfallMonths = data?.shortfall_months ?? 0;
 
   const handleSave = (formData: GoalFormData) => {
     if (isNew) {
@@ -159,6 +162,18 @@ export function RoadmapSection() {
         <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
           No monthly surplus — income doesn&apos;t cover expenses, so the
           roadmap won&apos;t progress.
+        </div>
+      )}
+
+      {/* A shortfall is cleared before step 1 moves, so say why the dates slip
+          rather than leaving the delay unexplained. */}
+      {surplus > 0 && startingPosition < 0 && (
+        <div className="px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200">
+          Starting {formatCurrency(startingPosition)} behind
+          {pendingOneTime < 0 &&
+            ` (incl. ${formatCurrency(-pendingOneTime)} of one-off bills)`}
+          . The first {formatMonths(shortfallMonths)} of surplus covers that
+          before step 1 moves.
         </div>
       )}
 
