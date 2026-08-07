@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -7,12 +7,18 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import get_session
+from app.deadline_calc import get_next_payday, get_payday_after
 from app.models import (
+    BudgetSettings,
     Goal,
     NetWorthCategory,
     NetWorthSnapshot,
 )
-from app.routes.budget import compute_budget_totals
+from app.routes.budget import (
+    DAYS_PER_MONTH,
+    compute_budget_totals,
+    pending_one_time_items,
+)
 
 bp = APIBlueprint("goals", __name__, tag="Goals")
 
@@ -25,7 +31,10 @@ ROADMAP_TYPES = ("savings_goal", "debt_payoff")
 DATE_FORMAT_ERROR = "target_date must be a valid ISO date string"
 CATEGORY_TYPE_ERROR = "category_id is only supported for savings_goal type"
 
-AVG_DAYS_PER_MONTH = 30.44
+# How far the payday-to-payday walk will look before giving up on a step.
+# 100 years: long enough that any realistic plan resolves, short enough that a
+# goal the surplus can never reach returns no date instead of an absurd one.
+MAX_PROJECTION_PERIODS = 1200
 
 
 @bp.get("/api/goals")
@@ -261,6 +270,77 @@ def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decim
     return goal.current_amount if goal.current_amount is not None else Decimal("0")
 
 
+def _project_completions(
+    remaining_steps: list[Decimal],
+    surplus: Decimal,
+    opening_balance: Decimal,
+    one_times: list[tuple[date, Decimal]],
+    today: date,
+    payday_day: int,
+) -> list[date | None]:
+    """Completion date for each unfinished step, walking payday to payday.
+
+    The budget month rolls over on payday rather than on the 1st, because that
+    is when the money actually arrives. So the surplus is realized in a lump at
+    each payday instead of trickling in day by day, and a step completes on the
+    payday that first covers it. The current part-period is credited pro rata
+    for the days remaining in it, so a projection made the day before payday
+    doesn't get handed a full month of surplus it hasn't earned.
+
+    One-time items are charged on the day they actually fall due rather than all
+    up front — a step that finishes before a bill lands shouldn't be delayed by
+    it, and one that finishes after should.
+
+    Steps are funded strictly in order out of a single running balance.
+    """
+    completions: list[date | None] = [None] * len(remaining_steps)
+    if surplus <= 0 or not remaining_steps:
+        return completions
+
+    charges: dict[date, Decimal] = {}
+    balance = opening_balance
+    for due, amount in one_times:
+        if due <= today:
+            # Already due (or undated, so treated as immediate)
+            balance += amount
+        else:
+            charges[due] = charges.get(due, Decimal("0")) + amount
+
+    index = 0
+
+    def settle(on: date) -> None:
+        """Close out every step the balance now covers."""
+        nonlocal index, balance
+        while index < len(remaining_steps) and balance >= remaining_steps[index]:
+            balance -= remaining_steps[index]
+            completions[index] = on
+            index += 1
+
+    settle(today)
+
+    boundaries: list[date] = []
+    boundary = get_next_payday(today, payday_day)
+    for _ in range(MAX_PROJECTION_PERIODS):
+        boundaries.append(boundary)
+        boundary = get_payday_after(boundary, payday_day)
+
+    boundary_set = set(boundaries)
+    events = sorted(boundary_set | {d for d in charges if d <= boundaries[-1]})
+
+    previous_payday = today
+    for event in events:
+        if index >= len(remaining_steps):
+            break
+        if event in boundary_set:
+            span = Decimal((event - previous_payday).days)
+            balance += surplus * span / DAYS_PER_MONTH
+            previous_payday = event
+        balance += charges.get(event, Decimal("0"))
+        settle(event)
+
+    return completions
+
+
 @bp.get("/api/goals/roadmap")
 def get_roadmap() -> Response:
     """The sequential financial roadmap, funded by the monthly budget surplus.
@@ -287,7 +367,45 @@ def get_roadmap() -> Response:
     latest = snapshots[0] if snapshots else None
 
     today = date.today()
-    cumulative_months = Decimal("0")
+    settings = session.query(BudgetSettings).first()
+    payday_day = settings.payday_day if settings else 25
+
+    # Where the plan actually starts from, rather than an implied clean zero.
+    #
+    # current_balance sums every account, and credit cards are stored negative,
+    # so it already assumes each card is paid off in full — the same assumption
+    # calculate_cc_payments_before_payday makes. The card debt is therefore
+    # counted here exactly once and must not be subtracted again on its due day.
+    #
+    # Clamped at zero: a shortfall has to be earned back before any step can be
+    # funded (card interest makes that the only sensible order), but spare cash
+    # is deliberately NOT a head start. Money sitting outside the account a goal
+    # tracks isn't earmarked for that goal, and for a category-linked goal it
+    # would double-count against the progress read from the net worth snapshot.
+    # By the same rule a cash buffer isn't used to absorb one-time bills either:
+    # those are charged against the surplus as they fall due.
+    opening_balance = min(Decimal("0"), totals["current_balance"])
+    one_times = pending_one_time_items(session, today)
+    one_time_net = sum((amount for _, amount in one_times), Decimal("0"))
+    starting_position = min(Decimal("0"), opening_balance + one_time_net)
+
+    # Total drag expressed in months of surplus. Not a date: one-time items land
+    # on their own due dates during the walk, so this is "how much of the plan's
+    # surplus is already spoken for", which is what the UI banner reports.
+    shortfall_months = Decimal("0")
+    if starting_position < 0 and surplus > 0:
+        shortfall_months = -starting_position / surplus
+
+    unfinished = [
+        max(Decimal("0"), goal.target_value - _roadmap_current_value(goal, latest))
+        for goal in goals
+        if goal.target_value - _roadmap_current_value(goal, latest) > 0
+    ]
+    projected = _project_completions(
+        unfinished, surplus, opening_balance, one_times, today, payday_day
+    )
+
+    projection = iter(projected)
     active_seen = False
     steps = []
     for goal in goals:
@@ -307,11 +425,10 @@ def get_roadmap() -> Response:
         else:
             status = "upcoming" if active_seen else "active"
             active_seen = True
-            if surplus > 0:
-                cumulative_months += remaining / surplus
-                months_to_complete = float(cumulative_months)
-                completion_date = today + timedelta(
-                    days=float(cumulative_months) * AVG_DAYS_PER_MONTH
+            completion_date = next(projection, None)
+            if completion_date is not None:
+                months_to_complete = float(
+                    Decimal((completion_date - today).days) / DAYS_PER_MONTH
                 )
 
         steps.append(
@@ -335,6 +452,14 @@ def get_roadmap() -> Response:
     return jsonify(
         {
             "surplus_monthly": float(surplus),
+            # Starting stock the plan is projected from: net cash across all
+            # accounts (cards assumed paid in full) plus pending one-time items,
+            # clamped so spare cash is never a head start. Zero or negative.
+            "starting_position": float(starting_position),
+            "pending_one_time_net": float(one_time_net),
+            "shortfall_months": (
+                round(float(shortfall_months), 1) if shortfall_months else 0.0
+            ),
             "goals": steps,
         }
     )

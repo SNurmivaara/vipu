@@ -50,6 +50,11 @@ export interface DerivedInputs {
   pensionActive: boolean;
   byGroup: Record<string, number>;
   groupReturnRates: Record<string, number>;
+  /** monthlySavings is a manual override, not the budget's monthly surplus */
+  monthlySavingsIsOverride: boolean;
+  /** annualExpenses is a manual override, not monthly expenses x 12 */
+  annualExpensesIsOverride: boolean;
+  targetRetirementAge: number;
 }
 
 export interface ForecastingProjection {
@@ -119,6 +124,9 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       pensionActive: api.derived.pension_active,
       byGroup: api.derived.by_group,
       groupReturnRates: api.derived.group_return_rates,
+      monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
+      annualExpensesIsOverride: api.derived.annual_expenses_is_override,
+      targetRetirementAge: api.derived.target_retirement_age,
     },
   };
 }
@@ -145,6 +153,9 @@ const DEFAULT_RESULT: ForecastingProjection = {
     pensionActive: false,
     byGroup: {},
     groupReturnRates: {},
+    monthlySavingsIsOverride: false,
+    annualExpensesIsOverride: false,
+    targetRetirementAge: 0,
   },
 };
 

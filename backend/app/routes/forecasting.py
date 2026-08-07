@@ -343,6 +343,14 @@ def get_forecasting_projection() -> Response:
         "monthly_savings": monthly_savings,
         "annual_expenses": annual_expenses,
         "weighted_return_pct": weighted_return_pct,
+        # Whether the figure above is a manual override or the budget-derived
+        # default. Without this, "monthly savings" and the budget's "surplus"
+        # look like contradictory answers to the same question.
+        "monthly_savings_is_override": settings.monthly_savings_override is not None,
+        "annual_expenses_is_override": settings.annual_expenses_override is not None,
+        # The configured retirement age, so "years to FIRE" can be read against
+        # the plan rather than mistaken for a projected retirement age.
+        "target_retirement_age": settings.target_retirement_age,
         # Always exposed (used as the salary input placeholder) even when
         # pension mode is off; only fed into the FIRE inputs when active.
         "pension_monthly_salary": pension_monthly_salary,
