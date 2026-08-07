@@ -4,9 +4,8 @@ import { useState, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNetWorthSnapshots, useNetWorthCategories } from "@/hooks/useNetWorth";
-import { useForecastingProjection } from "@/hooks/useForecastingProjection";
 import { useTheme } from "@/hooks/useTheme";
-import { buildWealthSummary } from "@/lib/aiSummary";
+import { useFinancialSummary } from "@/hooks/useFinancialSummary";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
   SummaryCards,
@@ -37,7 +36,7 @@ export default function NetWorthPage() {
     queryKey: ["goals-progress"],
     queryFn: fetchGoalsProgress,
   });
-  const { result: projection } = useForecastingProjection();
+  const buildSummary = useFinancialSummary();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -135,9 +134,9 @@ export default function NetWorthPage() {
   };
 
   const handleCopyForAI = async () => {
-    const copied = await copyToClipboard(
-      buildWealthSummary(snapshots ?? [], goalsProgress, projection)
-    );
+    const summary = buildSummary();
+    if (!summary) return;
+    const copied = await copyToClipboard(summary);
     toast(
       copied
         ? { title: "Copied — paste into your AI chat", type: "success" }
