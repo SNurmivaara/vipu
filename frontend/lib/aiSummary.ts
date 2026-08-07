@@ -1,6 +1,8 @@
 import {
+  Account,
   BudgetData,
   ExpenseItem,
+  ExpenseWithOccurrence,
   GoalProgress,
   IncomeItem,
   NetWorthSnapshot,
@@ -8,16 +10,39 @@ import {
 } from "@/types";
 import { ForecastingProjection } from "@/hooks/useForecastingProjection";
 
-// Plain-text markdown summaries of the app state, meant to be pasted into an
-// LLM chat. Uses plain numbers (1234.56) instead of locale formatting so the
-// text survives copy/paste and stays unambiguous for the model.
+// One plain-text markdown summary of the whole app state, meant to be pasted
+// into an LLM chat. Budget and wealth live in a single document: they run on
+// different cadences (accounts are edited continuously, net worth is a monthly
+// snapshot), and as two separate pastes the same account read at two different
+// times looks like a contradiction. Here the As of section states the skew
+// once, up front, and every figure below is labelled with which source it came
+// from.
+//
+// Uses plain numbers (1234.56) instead of locale formatting so the text
+// survives copy/paste and stays unambiguous for the model.
+
+// Bump when the shape changes enough that a model reading an old paste
+// alongside a new one could be misled.
+const FORMAT_VERSION = "vipu-export/v1";
 
 function eur(value: number): string {
   return `${value.toFixed(2)} €`;
 }
 
+function pct(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
 function today(): string {
   return new Date().toISOString().split("T")[0];
+}
+
+function isoDate(value: string): string {
+  return value.split("T")[0];
+}
+
+function monthLabel(snapshot: { year: number; month: number }): string {
+  return `${snapshot.year}-${String(snapshot.month).padStart(2, "0")}`;
 }
 
 function schedule(item: {
@@ -37,7 +62,7 @@ function schedule(item: {
   } else {
     cadence = `every ${value} ${unit}`;
   }
-  return `${cadence}, day ${due_day}`;
+  return `${cadence}, lands on day ${due_day}`;
 }
 
 function netIncome(item: IncomeItem, defaultTaxPct: number): number {
@@ -50,17 +75,69 @@ function netIncome(item: IncomeItem, defaultTaxPct: number): number {
   return item.gross_amount * (1 - defaultTaxPct / 100);
 }
 
-export function buildBudgetSummary(
+/** Most recent edit across accounts: how fresh the budget-side cash figures are. */
+function accountsUpdatedAt(accounts: Account[]): string | null {
+  const stamps = accounts
+    .map((a) => a.updated_at)
+    .filter((s): s is string => Boolean(s))
+    .sort();
+  return stamps.length > 0 ? isoDate(stamps[stamps.length - 1]) : null;
+}
+
+function occurrenceLines(items: ExpenseWithOccurrence[]): string[] {
+  return [...items]
+    .sort((a, b) =>
+      (a.next_occurrence_date ?? "").localeCompare(b.next_occurrence_date ?? "")
+    )
+    .map(
+      (item) =>
+        `  - ${item.next_occurrence_date ?? "date unknown"}: ${item.name} ${eur(item.amount)}`
+    );
+}
+
+export function buildFinancialSummary(
   data: BudgetData,
-  roadmap?: RoadmapData
+  roadmap: RoadmapData | undefined,
+  snapshots: NetWorthSnapshot[],
+  goals: GoalProgress[],
+  projection: ForecastingProjection | null
 ): string {
   const t = data.totals;
   const s = data.settings;
   const lines: string[] = [];
+  const latest = snapshots[0] ?? null;
 
-  lines.push(`# Vipu budget snapshot (${today()})`);
+  lines.push(`# Vipu financial snapshot (${today()})`);
   lines.push("");
-  lines.push(`Currency: EUR. Default tax rate: ${s.tax_percentage}%.`);
+  lines.push(`Format: ${FORMAT_VERSION}. Currency: EUR.`);
+  lines.push("");
+
+  // ---- As of -------------------------------------------------------------
+  // The whole point of the combined export: say once, up front, why the two
+  // halves disagree about the same account.
+  lines.push("## As of");
+  const updated = accountsUpdatedAt(data.accounts);
+  lines.push(
+    `- Budget section: live account balances${updated ? `, last edited ${updated}` : ""}. Updated whenever the user edits them.`
+  );
+  if (latest) {
+    lines.push(
+      `- Wealth section: ${monthLabel(latest)} net worth snapshot. Monthly cadence, so it can lag the budget section by weeks.`
+    );
+    lines.push(
+      "- The same account may therefore show different figures in the two sections. Both are correct as of their own date; prefer the budget section for current cash."
+    );
+  } else {
+    lines.push("- Wealth section: no net worth snapshots recorded yet.");
+  }
+  lines.push("");
+
+  // ---- Budget ------------------------------------------------------------
+  lines.push("## Budget");
+  lines.push("");
+  lines.push(
+    `Default tax rate: ${s.tax_percentage}%. The budget month rolls over on payday, day ${s.payday_day} of the month, so periods below run payday to payday rather than calendar months. Individual income and expense items land on their own days, which need not be the payday.`
+  );
   lines.push("");
 
   // Mirror BudgetSummary's three projected balances
@@ -70,32 +147,46 @@ export function buildBudgetSummary(
   const nextPeriodBills = t.expenses_next_period + t.savings_next_period;
   const endOfNextPeriod = afterPayday - nextPeriodBills;
 
-  lines.push("## Current position");
-  lines.push(`- Cash across accounts now: ${eur(t.current_balance)}`);
+  lines.push("### Current position");
   lines.push(
-    `- Next payday: ${t.next_payday} (payday is day ${s.payday_day} of the month)`
+    `- Net cash across all accounts: ${eur(t.current_balance)} (cash accounts minus credit card balances, i.e. already assumes cards are paid off in full)`
   );
+  lines.push(`- Next payday: ${t.next_payday}`);
   lines.push(`- Bills still due before payday: ${eur(obligations)}`);
+  lines.push(...occurrenceLines(t.expenses_before_payday_list));
   lines.push(`- Projected balance before payday: ${eur(beforePayday)}`);
   lines.push(
     `- Projected after payday (+${eur(t.income_before_payday)} pay): ${eur(afterPayday)}`
   );
   lines.push(
-    `- Projected end of next period ${t.next_period_end} (-${eur(nextPeriodBills)} bills): ${eur(endOfNextPeriod)}`
+    `- Bills due in the next period (${t.next_payday} to ${t.next_period_end}): ${eur(nextPeriodBills)}`
+  );
+  lines.push(...occurrenceLines(t.expenses_next_period_list));
+  lines.push(
+    `- Projected end of next period ${t.next_period_end}: ${eur(endOfNextPeriod)}`
+  );
+  lines.push(
+    "- Credit card payments are excluded from the bill totals above: the card balance is already netted into net cash, so counting the payment again would double it."
   );
   lines.push("");
 
+  lines.push("### Monthly rates");
   lines.push(
-    "## Monthly rates (recurring items normalized per month, one-time items excluded)"
+    "Recurring items normalized to a per-month rate (a quarterly bill counts as a third, a yearly one as a twelfth). One-time items are excluded here and listed separately below."
   );
   lines.push(`- Net income: ${eur(t.monthly_net_income)}/mo`);
   lines.push(`- Expenses: ${eur(t.monthly_expenses)}/mo`);
-  lines.push(`- Surplus: ${eur(t.monthly_surplus)}/mo`);
+  lines.push(
+    `- Surplus: ${eur(t.monthly_surplus)}/mo (net income minus expenses; this is what funds the roadmap)`
+  );
   lines.push("");
 
   const income = data.income.filter((i) => !i.is_deduction);
   const deductions = data.income.filter((i) => i.is_deduction);
-  lines.push("## Income (gross -> net per occurrence)");
+  lines.push("### Income (gross -> net per occurrence)");
+  if (income.length === 0 && deductions.length === 0) {
+    lines.push("- (none)");
+  }
   for (const item of income) {
     const tax = item.is_taxed
       ? item.tax_percentage != null
@@ -108,14 +199,14 @@ export function buildBudgetSummary(
   }
   for (const item of deductions) {
     lines.push(
-      `- ${item.name} (deduction): ${eur(netIncome(item, s.tax_percentage))} (${schedule(item)})`
+      `- ${item.name}: ${eur(netIncome(item, s.tax_percentage))} (deduction of ${item.tax_percentage ?? 0}% of ${eur(item.gross_amount)}, subtracted from net pay after tax; ${schedule(item)})`
     );
   }
   lines.push("");
 
   const cashAccounts = data.accounts.filter((a) => !a.is_credit);
   const creditCards = data.accounts.filter((a) => a.is_credit);
-  lines.push("## Accounts");
+  lines.push("### Accounts (live)");
   if (cashAccounts.length === 0 && creditCards.length === 0) {
     lines.push("- (none)");
   }
@@ -123,12 +214,12 @@ export function buildBudgetSummary(
     lines.push(`- ${account.name}: ${eur(account.balance)}`);
   }
   if (creditCards.length > 0) {
-    lines.push("Credit cards:");
+    lines.push("Credit cards (negative balance = amount owed):");
     for (const card of creditCards) {
       const due =
         card.payment_due_day != null
           ? `, payment due day ${card.payment_due_day}`
-          : "";
+          : ", no scheduled payment day";
       lines.push(`- ${card.name}: ${eur(card.balance)}${due}`);
     }
   }
@@ -136,15 +227,18 @@ export function buildBudgetSummary(
 
   const recurring = data.expenses.filter((e: ExpenseItem) => !e.is_ephemeral);
   const oneTime = data.expenses.filter((e: ExpenseItem) => e.is_ephemeral);
-  lines.push("## Expenses");
+  lines.push("### Expenses");
   if (data.expenses.length === 0) {
     lines.push("- (none)");
   }
   for (const expense of recurring) {
-    lines.push(`- ${expense.name}: ${eur(expense.amount)} (${schedule(expense)})`);
+    const kind = expense.is_savings_goal ? " [savings transfer]" : "";
+    lines.push(
+      `- ${expense.name}: ${eur(expense.amount)}${kind} (${schedule(expense)})`
+    );
   }
   if (oneTime.length > 0) {
-    lines.push("One-time:");
+    lines.push("One-time (excluded from the monthly rates above):");
     for (const expense of oneTime) {
       lines.push(
         `- ${expense.name}: ${eur(expense.amount)} (${schedule(expense)})`
@@ -153,53 +247,40 @@ export function buildBudgetSummary(
   }
   lines.push("");
 
+  // ---- Roadmap -----------------------------------------------------------
   if (roadmap) {
+    lines.push("### Financial roadmap");
     lines.push(
-      "## Financial roadmap (sequential goals funded by the monthly surplus)"
-    );
-    lines.push(
-      `Surplus flowing into the plan: ${eur(roadmap.surplus_monthly)}/mo. The whole surplus fills the first unfinished goal, then cascades to the next.`
+      `Sequential plan funded by the monthly surplus of ${eur(roadmap.surplus_monthly)}/mo. The whole surplus fills the first unfinished goal, then cascades to the next. Steps complete on a payday, since that is when the money arrives.`
     );
     if (roadmap.starting_position < 0) {
       lines.push(
-        `The plan starts ${eur(-roadmap.starting_position)} behind (net account balances with credit cards assumed paid in full, plus ${eur(-roadmap.pending_one_time_net)} of pending one-off items). The first ${roadmap.shortfall_months} months of surplus clear that before any goal progresses.`
+        `The plan starts ${eur(-roadmap.starting_position)} behind: net account balances with credit cards assumed paid in full, plus ${eur(-roadmap.pending_one_time_net)} of pending one-time items. That is about ${roadmap.shortfall_months} months of surplus, cleared before any goal progresses.`
       );
     }
     roadmap.goals.forEach((step, index) => {
       const goal = step.goal;
       const kind = goal.goal_type === "debt_payoff" ? "pay off debt" : "save up";
       const progress = `${eur(step.current_value)} / ${eur(goal.target_value)} (${step.progress_percentage.toFixed(0)}%)`;
-      let eta = "";
+      let eta: string;
       if (step.status === "completed") {
-        eta = " — completed";
+        eta = ", completed";
       } else if (step.projected_completion_date) {
-        eta = ` — projected done ${step.projected_completion_date} (${step.months_to_complete} months from now)`;
+        eta = `, projected done ${step.projected_completion_date} (${step.months_to_complete} months from now)`;
       } else {
-        eta = " — no projection (no surplus)";
+        eta = ", no projection (no surplus)";
       }
       lines.push(`${index + 1}. ${goal.name} (${kind}): ${progress}${eta}`);
     });
     lines.push("");
   }
 
-  return lines.join("\n");
-}
-
-export function buildWealthSummary(
-  snapshots: NetWorthSnapshot[],
-  goals: GoalProgress[],
-  projection: ForecastingProjection
-): string {
-  const lines: string[] = [];
-  const latest = snapshots[0] ?? null;
-
-  lines.push(`# Vipu wealth snapshot (${today()})`);
-  lines.push("");
-  lines.push("Currency: EUR.");
+  // ---- Wealth ------------------------------------------------------------
+  lines.push("## Wealth");
   lines.push("");
 
   if (latest) {
-    lines.push(`## Net worth (latest snapshot: ${latest.year}-${String(latest.month).padStart(2, "0")})`);
+    lines.push(`### Net worth (${monthLabel(latest)} snapshot)`);
     lines.push(`- Net worth: ${eur(latest.net_worth)}`);
     lines.push(
       `- Assets: ${eur(latest.total_assets)}, liabilities: ${eur(latest.total_liabilities)}`
@@ -207,16 +288,38 @@ export function buildWealthSummary(
     lines.push(
       `- Personal: ${eur(latest.personal_wealth)}, company: ${eur(latest.company_wealth)}`
     );
-    lines.push("By group:");
-    for (const [group, amount] of Object.entries(latest.by_group)) {
-      const pct = latest.percentages[group];
-      lines.push(
-        `- ${group}: ${eur(amount)}${pct != null ? ` (${pct.toFixed(1)}% of assets)` : ""}`
-      );
+
+    const groups = Object.entries(latest.by_group).filter(
+      ([, amount]) => amount !== 0
+    );
+    if (groups.length > 0) {
+      lines.push("By group (assets only, percentages are of total assets):");
+      for (const [group, amount] of groups) {
+        // The backend keys these as "<group>_pct", not by the bare group name.
+        const share = latest.percentages[`${group}_pct`];
+        lines.push(
+          `- ${group}: ${eur(amount)}${share != null ? ` (${pct(share)})` : ""}`
+        );
+      }
     }
-    lines.push("By category:");
-    for (const entry of latest.entries) {
-      lines.push(`- ${entry.category.name}: ${eur(entry.amount)}`);
+
+    // Split so the two breakdowns aren't silently inconsistent: By group is
+    // assets-only, so listing liability categories under it invites the reader
+    // to add up columns that don't reconcile.
+    const entries = latest.entries.filter((e) => e.amount !== 0);
+    const assetEntries = entries.filter((e) => e.amount > 0);
+    const liabilityEntries = entries.filter((e) => e.amount < 0);
+    if (assetEntries.length > 0) {
+      lines.push("Asset categories:");
+      for (const entry of assetEntries) {
+        lines.push(`- ${entry.category.name}: ${eur(entry.amount)}`);
+      }
+    }
+    if (liabilityEntries.length > 0) {
+      lines.push("Liability categories (not included in By group above):");
+      for (const entry of liabilityEntries) {
+        lines.push(`- ${entry.category.name}: ${eur(entry.amount)}`);
+      }
     }
     lines.push("");
   } else {
@@ -225,73 +328,109 @@ export function buildWealthSummary(
   }
 
   if (snapshots.length > 1) {
-    lines.push("## Trend (newest first)");
+    lines.push("### Trend (newest first)");
     for (const snapshot of snapshots.slice(0, 12)) {
-      const month = `${snapshot.year}-${String(snapshot.month).padStart(2, "0")}`;
       const change =
         snapshot.change_from_previous !== 0
-          ? ` (${snapshot.change_from_previous > 0 ? "+" : ""}${eur(snapshot.change_from_previous)}, ${snapshot.change_percent.toFixed(1)}%)`
+          ? ` (${snapshot.change_from_previous > 0 ? "+" : ""}${eur(snapshot.change_from_previous)}, ${pct(snapshot.change_percent)})`
           : "";
-      lines.push(`- ${month}: ${eur(snapshot.net_worth)}${change}`);
+      lines.push(
+        `- ${monthLabel(snapshot)}: ${eur(snapshot.net_worth)}${change}`
+      );
     }
     lines.push("");
   }
 
   const netWorthGoals = goals.filter((g) => g.goal.goal_type === "net_worth");
   if (netWorthGoals.length > 0) {
-    lines.push("## Net worth goals");
+    lines.push("### Net worth goals");
+    lines.push(
+      "Progress and required-monthly figures below are zero-growth linear: they assume no investment return. The FIRE section compounds instead, so the two can disagree about whether a target is reachable."
+    );
     for (const gp of netWorthGoals) {
       const deadline = gp.goal.target_date
-        ? `, deadline ${gp.goal.target_date.split("T")[0]}`
+        ? `, deadline ${isoDate(gp.goal.target_date)}`
         : "";
       const status = gp.status
-        ? `, ${gp.status === "on_track" ? "on track" : "behind"}`
+        ? `, ${gp.status === "on_track" ? "on track" : "behind"} (linear)`
         : "";
       const needed =
         gp.required_monthly != null && gp.required_monthly > 0
-          ? `, needs ${eur(gp.required_monthly)}/mo`
+          ? `, needs ${eur(gp.required_monthly)}/mo at zero growth`
           : "";
       lines.push(
-        `- ${gp.goal.name}: ${eur(gp.current_value)} / ${eur(gp.target_value)} (${gp.progress_percentage.toFixed(1)}%)${deadline}${status}${needed}`
+        `- ${gp.goal.name}: ${eur(gp.current_value)} / ${eur(gp.target_value)} (${pct(gp.progress_percentage)})${deadline}${status}${needed}`
       );
     }
     lines.push("");
   }
 
-  const d = projection.derived;
-  lines.push("## FIRE projection (backend-derived)");
-  lines.push(`- Monthly savings: ${eur(d.monthlySavings)}/mo`);
-  lines.push(`- Annual expenses: ${eur(d.annualExpenses)}/yr`);
-  lines.push(
-    `- Weighted expected return: ${d.weightedReturnPct.toFixed(1)}%/yr (from asset allocation and per-group return assumptions)`
-  );
-  lines.push(`- FIRE number (at target retirement age): ${eur(projection.fireNumber)}`);
-  lines.push(`- FIRE number if retiring now: ${eur(projection.fireNumberNow)}`);
-  lines.push(
-    `- Coast FIRE number: ${eur(projection.coastFireNumber)} (${projection.coastFireReached ? "reached" : "not reached"})`
-  );
-  if (projection.yearsToFire != null) {
+  // ---- FIRE --------------------------------------------------------------
+  if (projection) {
+    const d = projection.derived;
+    lines.push("## FIRE projection");
     lines.push(
-      `- Years to FIRE: ${projection.yearsToFire}${projection.fireAge != null ? ` (age ${projection.fireAge})` : ""}`
+      `Compounding at the weighted expected return below. Target retirement age is ${d.targetRetirementAge}.`
     );
-  } else {
-    lines.push("- Years to FIRE: not reachable with current inputs");
-  }
-  if (projection.pension) {
-    const p = projection.pension;
     lines.push(
-      `- Pension mode active: projected pension ${eur(p.projectedMonthlyPension)}/mo` +
-        (p.guaranteeActive
-          ? ` (guarantee pension ${eur(p.guaranteeAmount)}/mo applies)`
-          : "")
+      `- Monthly savings input: ${eur(d.monthlySavings)}/mo ${
+        d.monthlySavingsIsOverride
+          ? `(manual override; the budget's own surplus is ${eur(t.monthly_surplus)}/mo)`
+          : "(the budget's monthly surplus)"
+      }`
     );
-    for (const scenario of p.scenarios) {
+    lines.push(
+      `- Annual expenses input: ${eur(d.annualExpenses)}/yr ${
+        d.annualExpensesIsOverride
+          ? "(manual override)"
+          : "(monthly expenses x 12)"
+      }`
+    );
+    lines.push(
+      `- Weighted expected return: ${pct(d.weightedReturnPct)}/yr, from the allocation and per-group assumptions:`
+    );
+    for (const [group, rate] of Object.entries(d.groupReturnRates)) {
+      const amount = d.byGroup[group];
       lines.push(
-        `  - ${scenario.label} retirement at ${scenario.pensionStartAge}: pension ${eur(scenario.monthlyPension)}/mo, FIRE number ${eur(scenario.pensionFireNumber)}`
+        `  - ${group}: ${pct(rate)}/yr${amount != null ? ` on ${eur(amount)}` : ""}`
       );
     }
+    lines.push(
+      `- FIRE number (at target retirement age ${d.targetRetirementAge}): ${eur(projection.fireNumber)}`
+    );
+    lines.push(`- FIRE number if retiring now: ${eur(projection.fireNumberNow)}`);
+    lines.push(
+      `- Coast FIRE number: ${eur(projection.coastFireNumber)} (${projection.coastFireReached ? "reached" : "not reached"})`
+    );
+    if (projection.yearsToFire != null) {
+      lines.push(
+        `- Years until the portfolio covers expenses: ${projection.yearsToFire}${
+          projection.fireAge != null
+            ? ` (at age ${projection.fireAge}; this is when work becomes optional, not the planned retirement age of ${d.targetRetirementAge})`
+            : ""
+        }`
+      );
+    } else {
+      lines.push(
+        "- Years until the portfolio covers expenses: not reachable with current inputs"
+      );
+    }
+    if (projection.pension) {
+      const p = projection.pension;
+      lines.push(
+        `- Pension mode active: projected pension ${eur(p.projectedMonthlyPension)}/mo` +
+          (p.guaranteeActive
+            ? ` (guarantee pension ${eur(p.guaranteeAmount)}/mo applies)`
+            : "")
+      );
+      for (const scenario of p.scenarios) {
+        lines.push(
+          `  - ${scenario.label} retirement at ${scenario.pensionStartAge}: pension ${eur(scenario.monthlyPension)}/mo, FIRE number ${eur(scenario.pensionFireNumber)}`
+        );
+      }
+    }
+    lines.push("");
   }
-  lines.push("");
 
   return lines.join("\n");
 }

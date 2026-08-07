@@ -743,6 +743,31 @@ class TestForecastingProjection:
         derived = resp.json["derived"]
         assert derived["monthly_savings"] == 1500
         assert derived["annual_expenses"] == 20000
+        # Flagged so a reader can tell these apart from the budget's own figures
+        assert derived["monthly_savings_is_override"] is True
+        assert derived["annual_expenses_is_override"] is True
+
+    def test_override_flags_false_when_budget_derived(self, client):
+        """Without overrides the flags say the figures came from the budget."""
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "is_taxed": False},
+        )
+        client.post("/api/expenses", json={"name": "Rent", "amount": 1000})
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+        assert derived["monthly_savings"] == 3000
+        assert derived["monthly_savings_is_override"] is False
+        assert derived["annual_expenses_is_override"] is False
+
+    def test_target_retirement_age_exposed(self, client):
+        """The configured retirement age rides along for reporting."""
+        client.put(
+            "/api/forecasting/settings",
+            json={"target_retirement_age": 62},
+        )
+        derived = client.get("/api/forecasting/projection").json["derived"]
+        assert derived["target_retirement_age"] == 62
 
     def test_pension_mode_activated(self, client):
         """Setting pension_accrued_monthly activates pension mode."""

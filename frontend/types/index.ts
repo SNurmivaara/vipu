@@ -400,6 +400,9 @@ export interface ForecastingDerivedAPI {
   pension_active: boolean;
   by_group: Record<string, number>;
   group_return_rates: Record<string, number>;
+  monthly_savings_is_override: boolean;
+  annual_expenses_is_override: boolean;
+  target_retirement_age: number;
 }
 
 // Response of GET /api/forecasting/projection: FIRE result + the derived inputs

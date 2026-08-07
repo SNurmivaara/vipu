@@ -3,9 +3,8 @@
 import { useState, useRef } from "react";
 import { useBudget } from "@/hooks/useBudget";
 import { useBudgetSnapshots } from "@/hooks/useBudgetSnapshots";
-import { useRoadmap } from "@/hooks/useGoals";
 import { useTheme } from "@/hooks/useTheme";
-import { buildBudgetSummary } from "@/lib/aiSummary";
+import { useFinancialSummary } from "@/hooks/useFinancialSummary";
 import { copyToClipboard } from "@/lib/clipboard";
 import {
   IncomeSection,
@@ -33,8 +32,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 export default function BudgetPage() {
   const { data, isLoading, error } = useBudget();
-  const { data: roadmapData } = useRoadmap();
   const { data: snapshotsData } = useBudgetSnapshots();
+  const buildSummary = useFinancialSummary();
   const budgetSnapshots = snapshotsData?.snapshots ?? [];
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
@@ -130,8 +129,9 @@ export default function BudgetPage() {
   };
 
   const handleCopyForAI = async () => {
-    if (!data) return;
-    const copied = await copyToClipboard(buildBudgetSummary(data, roadmapData));
+    const summary = buildSummary();
+    if (!summary) return;
+    const copied = await copyToClipboard(summary);
     toast(
       copied
         ? { title: "Copied — paste into your AI chat", type: "success" }
