@@ -190,6 +190,17 @@ export default function BudgetPage() {
     data.accounts.length === 0 &&
     data.expenses.length === 0;
 
+  // Archived items have no live occurrence to tick off, so they carry the
+  // occurrence fields empty rather than being a separate row shape.
+  const noOccurrence = {
+    next_occurrence_date: null,
+    is_settled: false,
+    can_settle: false,
+  };
+  const archivedIncome = showArchived
+    ? data.archived_income.map((i) => ({ ...i, ...noOccurrence }))
+    : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -295,7 +306,7 @@ export default function BudgetPage() {
           <IncomeSection
             income={[
               ...data.income.filter((i) => !i.is_deduction),
-              ...(showArchived ? data.archived_income.filter((i) => !i.is_deduction) : []),
+              ...archivedIncome.filter((i) => !i.is_deduction),
             ]}
             settings={data.settings}
             collapsible
@@ -303,7 +314,7 @@ export default function BudgetPage() {
           <DeductionsSection
             deductions={[
               ...data.income.filter((i) => i.is_deduction),
-              ...(showArchived ? data.archived_income.filter((i) => i.is_deduction) : []),
+              ...archivedIncome.filter((i) => i.is_deduction),
             ]}
             collapsible
           />
@@ -322,7 +333,11 @@ export default function BudgetPage() {
             expensesAfterPayday={data.totals.expenses_next_period_list}
             expensesFuture={[
               ...data.totals.expenses_future_list,
-              ...(showArchived ? data.archived_expenses.filter((e) => !e.is_savings_goal).map(e => ({ ...e, next_occurrence_date: null })) : []),
+              ...(showArchived
+                ? data.archived_expenses
+                    .filter((e) => !e.is_savings_goal)
+                    .map((e) => ({ ...e, ...noOccurrence }))
+                : []),
             ]}
           />
         </div>

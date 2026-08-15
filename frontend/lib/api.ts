@@ -102,6 +102,39 @@ export const deleteExpense = async (id: number): Promise<void> => {
   await api.delete(`/expenses/${id}`);
 };
 
+// Occurrence overrides: tick a single payment off as already made, or flag one
+// whose due day passed without the money moving. Only that occurrence changes —
+// the schedule, and everything projected from it, stays as it is.
+export interface OccurrenceInput {
+  id: number;
+  occurrenceDate: string;
+  settled: boolean;
+}
+
+export const setExpenseOccurrence = async ({
+  id,
+  occurrenceDate,
+  settled,
+}: OccurrenceInput): Promise<ExpenseItem> => {
+  const { data } = await api.put<ExpenseItem>(`/expenses/${id}/occurrence`, {
+    occurrence_date: occurrenceDate,
+    settled,
+  });
+  return data;
+};
+
+export const setIncomeOccurrence = async ({
+  id,
+  occurrenceDate,
+  settled,
+}: OccurrenceInput): Promise<IncomeItem> => {
+  const { data } = await api.put<IncomeItem>(`/income/${id}/occurrence`, {
+    occurrence_date: occurrenceDate,
+    settled,
+  });
+  return data;
+};
+
 // Settings
 export const updateSettings = async (
   settings: SettingsFormData

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IncomeItem, DeductionFormData } from "@/types";
+import { IncomeItem, IncomeWithOccurrence, DeductionFormData } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatOccurrenceDate } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -12,10 +12,11 @@ import {
 } from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { SettleToggle, settleableOccurrence } from "./SettleToggle";
 import { useToast } from "@/components/ui/Toast";
 
 interface DeductionsSectionProps {
-  deductions: IncomeItem[];
+  deductions: IncomeWithOccurrence[];
   collapsible?: boolean;
   defaultOpen?: boolean;
 }
@@ -203,16 +204,50 @@ export function DeductionsSection({
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
       {deductions.map((item) => {
         const netAmount = calculateNetAmount(item);
+        // A deduction rides along with the pay it comes out of, so it ticks off
+        // the same way — leaving it unticked would count it on its own.
+        const occurrence = settleableOccurrence(item);
+        const settled = occurrence?.settled ?? false;
         return (
           <div
             key={item.id}
             onClick={() => openEdit(item)}
-            className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
           >
-            <span className="text-gray-900 dark:text-gray-100 text-sm">
+            {occurrence ? (
+              <SettleToggle
+                kind="income"
+                itemId={item.id}
+                occurrenceDate={occurrence.occurrenceDate}
+                settled={settled}
+                name={item.name}
+              />
+            ) : (
+              <span className="w-4 shrink-0" aria-hidden="true" />
+            )}
+            <span
+              className={cn(
+                "flex-1 min-w-0 text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
               {item.name}
+              {occurrence && (
+                <span className="text-gray-400 dark:text-gray-500 ml-1.5">
+                  ({formatOccurrenceDate(occurrence.occurrenceDate)})
+                </span>
+              )}
             </span>
-            <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
+            <span
+              className={cn(
+                "text-right text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
               {formatCurrency(netAmount)}
             </span>
           </div>

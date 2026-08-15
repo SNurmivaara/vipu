@@ -9,7 +9,18 @@ export interface Account {
 
 export type FrequencyUnit = "days" | "weeks" | "months" | "years";
 
-export interface IncomeItem {
+/**
+ * One-off corrections to the "money moves on its due day" assumption, each
+ * holding a single occurrence date so only that occurrence shifts:
+ * settled = already paid/received ahead of the day, pending = the day passed
+ * without the money moving. Later occurrences, and the forecast, are unaffected.
+ */
+export interface OccurrenceOverrides {
+  settled_occurrence: string | null;
+  pending_occurrence: string | null;
+}
+
+export interface IncomeItem extends OccurrenceOverrides {
   id: number;
   name: string;
   gross_amount: number;
@@ -25,7 +36,7 @@ export interface IncomeItem {
   archived_at: string | null;
 }
 
-export interface ExpenseItem {
+export interface ExpenseItem extends OccurrenceOverrides {
   id: number;
   name: string;
   amount: number;
@@ -39,10 +50,23 @@ export interface ExpenseItem {
   archived_at: string | null;
 }
 
-/** ExpenseItem with computed next occurrence date for period display */
-export interface ExpenseWithOccurrence extends ExpenseItem {
+/**
+ * A single dated occurrence of an item, as the period lists return it.
+ * is_settled is the effective state of that occurrence (default plus any
+ * override); can_settle marks the occurrences whose state may still be
+ * corrected — the next one up and the last one to have come due this period.
+ */
+export interface OccurrenceState {
   next_occurrence_date: string | null;
+  is_settled: boolean;
+  can_settle: boolean;
 }
+
+/** ExpenseItem with computed next occurrence date for period display */
+export interface ExpenseWithOccurrence extends ExpenseItem, OccurrenceState {}
+
+/** IncomeItem with the one occurrence whose state is currently in question */
+export interface IncomeWithOccurrence extends IncomeItem, OccurrenceState {}
 
 export interface BudgetSettings {
   id: number;
@@ -85,7 +109,7 @@ export interface BudgetTotals {
 
 export interface BudgetData {
   settings: BudgetSettings;
-  income: IncomeItem[];
+  income: IncomeWithOccurrence[];
   accounts: Account[];
   expenses: ExpenseItem[];
   totals: BudgetTotals;
@@ -114,10 +138,12 @@ export interface BudgetSnapshot {
   entries: BudgetBalanceEntry[];
 }
 
+// Occurrence overrides are set by ticking a payment off, never by the edit
+// form, so they are not part of the form payloads.
 export type AccountFormData = Omit<Account, "id" | "updated_at">;
-export type IncomeFormData = Omit<IncomeItem, "id">;
-export type DeductionFormData = Omit<IncomeItem, "id">;
-export type ExpenseFormData = Omit<ExpenseItem, "id">;
+export type IncomeFormData = Omit<IncomeItem, "id" | keyof OccurrenceOverrides>;
+export type DeductionFormData = IncomeFormData;
+export type ExpenseFormData = Omit<ExpenseItem, "id" | keyof OccurrenceOverrides>;
 export type SettingsFormData = Pick<BudgetSettings, "tax_percentage" | "payday_day">;
 
 // Net Worth types

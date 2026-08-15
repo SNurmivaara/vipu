@@ -32,10 +32,15 @@ export function ExpensesGroupSection({
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const totalBeforePayday = expensesBeforePayday.reduce((sum, e) => sum + e.amount, 0);
-  const totalAfterPayday = expensesAfterPayday.reduce((sum, e) => sum + e.amount, 0);
-  const totalFuture = expensesFuture.reduce((sum, e) => sum + e.amount, 0);
-  const totalExpenses = totalBeforePayday + totalAfterPayday + totalFuture;
+  // Occurrences already ticked off are money that has moved, so they don't
+  // count towards what is still ahead of us.
+  const stillDue = (items: ExpenseWithOccurrence[]) =>
+    items.reduce((sum, e) => (e.is_settled ? sum : sum + e.amount), 0);
+
+  const totalExpenses =
+    stillDue(expensesBeforePayday) +
+    stillDue(expensesAfterPayday) +
+    stillDue(expensesFuture);
 
   const createMutation = useMutation({
     mutationFn: createExpense,
