@@ -1244,6 +1244,49 @@ class TestRoadmap:
         # Still a full month of surplus, not "already done"
         assert 1.0 <= data["goals"][0]["months_to_complete"] <= 2.0
 
+    def test_cash_covers_a_pending_one_time_bill(self, client):
+        """A one-off bill the balance plainly covers is not a shortfall.
+
+        Spare cash still isn't a head start, so the plan starts from zero rather
+        than from the balance — but it does mean the user isn't behind.
+        """
+        self._make_surplus(client)
+        client.post("/api/accounts", json={"name": "Checking", "balance": 10000})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Vacation",
+                "amount": 800,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["pending_one_time_net"] == -800.0
+        assert data["starting_position"] == 0.0
+        assert data["shortfall_months"] == 0.0
+
+    def test_one_time_bill_beyond_the_balance_is_a_shortfall(self, client):
+        """Only the part the balance can't cover counts as starting behind."""
+        self._make_surplus(client)  # 3000/mo
+        client.post("/api/accounts", json={"name": "Checking", "balance": 500})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Tax bill",
+                "amount": 3500,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["starting_position"] == -3000.0
+        assert data["shortfall_months"] == 1.0
+
     def test_pending_one_time_income_offsets_a_bill(self, client):
         """A pending bonus nets against a pending bill rather than being lost."""
         self._make_surplus(client)

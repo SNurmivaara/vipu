@@ -377,17 +377,22 @@ def get_roadmap() -> Response:
     # calculate_cc_payments_before_payday makes. The card debt is therefore
     # counted here exactly once and must not be subtracted again on its due day.
     #
-    # Clamped at zero: a shortfall has to be earned back before any step can be
-    # funded (card interest makes that the only sensible order), but spare cash
-    # is deliberately NOT a head start. Money sitting outside the account a goal
-    # tracks isn't earmarked for that goal, and for a category-linked goal it
-    # would double-count against the progress read from the net worth snapshot.
-    # By the same rule a cash buffer isn't used to absorb one-time bills either:
-    # those are charged against the surplus as they fall due.
+    # The projection walks from opening_balance, clamped at zero: a shortfall has
+    # to be earned back before any step can be funded (card interest makes that
+    # the only sensible order), but spare cash is deliberately NOT a head start.
+    # Money sitting outside the account a goal tracks isn't earmarked for that
+    # goal, and for a category-linked goal it would double-count against the
+    # progress read from the net worth snapshot.
+    #
+    # The reported starting position clamps once, after the pending one-time
+    # items are netted in, so money genuinely in the account covers a one-off
+    # bill. Clamping the balance first meant any net-negative one-off flow read
+    # as "starting behind" with five figures in the bank: a 50 € bill against a
+    # 10 550 € balance is not a shortfall.
     opening_balance = min(Decimal("0"), totals["current_balance"])
     one_times = pending_one_time_items(session, today)
     one_time_net = sum((amount for _, amount in one_times), Decimal("0"))
-    starting_position = min(Decimal("0"), opening_balance + one_time_net)
+    starting_position = min(Decimal("0"), totals["current_balance"] + one_time_net)
 
     # Total drag expressed in months of surplus. Not a date: one-time items land
     # on their own due dates during the walk, so this is "how much of the plan's
