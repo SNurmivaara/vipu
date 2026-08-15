@@ -18,6 +18,7 @@ import {
 } from "@/components/networth";
 import { GoalsSection } from "@/components/budget";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { useToast } from "@/components/ui/Toast";
 import {
   seedCategories,
@@ -39,6 +40,7 @@ export default function NetWorthPage() {
   const buildSummary = useFinancialSummary();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const [formOpen, setFormOpen] = useState(false);
@@ -94,7 +96,7 @@ export default function NetWorthPage() {
   const importMutation = useMutation({
     mutationFn: importBudget,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       queryClient.invalidateQueries({ queryKey: ["networth-groups"] });
       queryClient.invalidateQueries({ queryKey: ["networth-categories"] });
       queryClient.invalidateQueries({ queryKey: ["networth-snapshots"] });

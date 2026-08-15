@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { Account, AccountFormData } from "@/types";
 import { createAccount, updateAccount, deleteAccount } from "@/lib/api";
 import { formatCurrency, getBalanceColor } from "@/lib/utils";
@@ -42,14 +43,14 @@ export function CreditCardsSection({
 }: CreditCardsSectionProps) {
   const [editItem, setEditItem] = useState<Account | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const createMutation = useMutation({
     mutationFn: (data: AccountFormData) =>
       createAccount({ ...data, is_credit: true }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Credit card created", type: "success" });
     },
     onError: () => {
@@ -61,7 +62,7 @@ export function CreditCardsSection({
     mutationFn: ({ id, data }: { id: number; data: AccountFormData }) =>
       updateAccount(id, { ...data, is_credit: true }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Credit card updated", type: "success" });
     },
     onError: () => {
@@ -72,7 +73,7 @@ export function CreditCardsSection({
   const deleteMutation = useMutation({
     mutationFn: deleteAccount,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Credit card deleted", type: "success" });
     },
     onError: () => {

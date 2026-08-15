@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { ExpenseItem, ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
 import { cn, formatCurrency, formatOccurrenceDate } from "@/lib/utils";
@@ -104,13 +105,13 @@ export function ExpensesSection({
 }: ExpensesSectionProps) {
   const [editItem, setEditItem] = useState<ExpenseItem | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const createMutation = useMutation({
     mutationFn: createExpense,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Expense created", type: "success" });
     },
     onError: () => {
@@ -122,7 +123,7 @@ export function ExpensesSection({
     mutationFn: ({ id, data }: { id: number; data: ExpenseFormData }) =>
       updateExpense(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Expense updated", type: "success" });
     },
     onError: () => {
@@ -133,7 +134,7 @@ export function ExpensesSection({
   const deleteMutation = useMutation({
     mutationFn: deleteExpense,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Expense deleted", type: "success" });
     },
     onError: () => {

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { BudgetSettings } from "@/types";
 import { updateSettings } from "@/lib/api";
 import { formatPercentage } from "@/lib/utils";
@@ -34,13 +35,13 @@ const settingsFields = [
 
 export function SettingsCard({ settings }: SettingsCardProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const updateMutation = useMutation({
     mutationFn: updateSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Settings updated", type: "success" });
     },
     onError: () => {

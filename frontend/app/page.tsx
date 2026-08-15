@@ -26,6 +26,7 @@ import {
   createBudgetSnapshot,
   ExportData,
 } from "@/lib/api";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { useToast } from "@/components/ui/Toast";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -37,6 +38,7 @@ export default function BudgetPage() {
   const budgetSnapshots = snapshotsData?.snapshots ?? [];
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [confirmImportOpen, setConfirmImportOpen] = useState(false);
@@ -51,7 +53,7 @@ export default function BudgetPage() {
   const seedMutation = useMutation({
     mutationFn: seedData,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Example data loaded", type: "success" });
     },
     onError: () => {
@@ -62,7 +64,7 @@ export default function BudgetPage() {
   const resetMutation = useMutation({
     mutationFn: resetBudget,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Budget reset successfully", type: "success" });
       setConfirmResetOpen(false);
     },
@@ -74,7 +76,7 @@ export default function BudgetPage() {
   const importMutation = useMutation({
     mutationFn: importBudget,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       // Invalidate net worth queries for version 2 imports
       queryClient.invalidateQueries({ queryKey: ["networth-groups"] });
       queryClient.invalidateQueries({ queryKey: ["networth-categories"] });

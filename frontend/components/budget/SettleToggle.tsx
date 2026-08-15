@@ -1,8 +1,9 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import axios from "axios";
 import { setExpenseOccurrence, setIncomeOccurrence } from "@/lib/api";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { OccurrenceState } from "@/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
@@ -50,7 +51,7 @@ export function SettleToggle({
   settled,
   name,
 }: SettleToggleProps) {
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const verb = kind === "expense" ? "paid" : "received";
@@ -63,9 +64,7 @@ export function SettleToggle({
         : setIncomeOccurrence(input);
     },
     onSuccess: (_data, next) => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
-      // A one-time item ticked off changes what the roadmap starts from
-      queryClient.invalidateQueries({ queryKey: ["roadmap"] });
+      invalidateBudget();
       toast({
         title: next ? `Marked ${verb}` : `Marked not ${verb} yet`,
         type: "success",
