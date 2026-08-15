@@ -16,6 +16,8 @@ import { useToast } from "@/components/ui/Toast";
 
 interface ExpensesGroupSectionProps {
   expensesBeforePayday: ExpenseWithOccurrence[];
+  /** Bills falling due in the next pay period */
+  nextPeriodTotal: number;
   expensesAfterPayday: ExpenseWithOccurrence[];
   /** Expenses that don't fall in either period (future scheduled) */
   expensesFuture?: ExpenseWithOccurrence[];
@@ -24,6 +26,7 @@ interface ExpensesGroupSectionProps {
 
 export function ExpensesGroupSection({
   expensesBeforePayday,
+  nextPeriodTotal,
   expensesAfterPayday,
   expensesFuture = [],
   defaultOpen = false,
@@ -33,15 +36,10 @@ export function ExpensesGroupSection({
   const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
-  // Occurrences already ticked off are money that has moved, so they don't
-  // count towards what is still ahead of us.
-  const stillDue = (items: ExpenseWithOccurrence[]) =>
-    items.reduce((sum, e) => (e.is_settled ? sum : sum + e.amount), 0);
-
-  const totalExpenses =
-    stillDue(expensesBeforePayday) +
-    stillDue(expensesAfterPayday) +
-    stillDue(expensesFuture);
+  // The header reports one period, the same one the summary card and the
+  // roadmap talk about. Adding the three subsections up instead would count an
+  // item once per period it appears in and produce a number describing no
+  // stretch of time at all.
 
   const createMutation = useMutation({
     mutationFn: createExpense,
@@ -99,8 +97,13 @@ export function ExpensesGroupSection({
           </span>
         </button>
         <div className="flex items-center gap-3">
-          <span className="font-medium text-red-600 dark:text-red-400">
-            {formatCurrency(-totalExpenses)}
+          <span className="flex items-baseline gap-1.5">
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              next period
+            </span>
+            <span className="font-medium text-red-600 dark:text-red-400">
+              {formatCurrency(-nextPeriodTotal)}
+            </span>
           </span>
           <button
             type="button"

@@ -9,13 +9,12 @@ from sqlalchemy.orm import Session
 
 from app import get_session
 from app.deadline_calc import (
-    calculate_expenses_before_payday,
-    calculate_income_before_payday,
-    expense_window_start,
+    calculate_period_flow,
     get_next_payday,
     get_payday_after,
 )
 from app.models import (
+    Account,
     BudgetSettings,
     ExpenseItem,
     Goal,
@@ -283,52 +282,32 @@ def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decim
 def _make_period_flow(
     session: Session, today: date, payday_day: int
 ) -> Callable[[date, date], Decimal]:
-    """Build "what does [start, end) actually net out to" for the projection.
+    """Build "what does [start, end) net out to" for the projection.
 
-    Money in less the bills and savings transfers falling due in it, from the
-    same deadline calculations the front page is built on, so a projected date
-    and the summary card can't tell different stories about the same period.
-
-    Card payments are the one thing deliberately left out. The walk opens from
-    the netted balance, where every card is already assumed paid off in full, so
-    charging the payment again on its due day would subtract the same debt
-    twice. The summary card does subtract it, because that one opens from cash.
+    The same calculator the summary card and the section headers read, so a
+    projected date can't tell a different story about a period than the page
+    showing that period does. What funds the plan is exactly what the card calls
+    unallocated: money in, less the bills, savings transfers and card payments
+    falling due in it.
     """
     tax_pct = _tax_percentage(session)
     income_items = [i for i in session.query(IncomeItem).all() if i.archived_at is None]
     expense_items = [
         e for e in session.query(ExpenseItem).all() if e.archived_at is None
     ]
+    accounts = session.query(Account).all()
 
     def period_flow(start: date, end: date) -> Decimal:
-        # Only the part-period we are standing in has occurrences behind us that
-        # the user may have flagged as not yet paid; later periods are all ahead.
-        is_current = start == today
-        expense_start = expense_window_start(today) if is_current else start
-
-        income = calculate_income_before_payday(
+        return calculate_period_flow(
             income_items,
+            expense_items,
+            accounts,
+            tax_pct,
+            payday_day,
+            today,
             start,
             end,
-            tax_pct,
-            payday_day=payday_day,
-            include_pending=is_current,
-        )
-        bills = calculate_expenses_before_payday(
-            expense_items,
-            expense_start,
-            end,
-            include_savings=False,
-            include_pending=is_current,
-        )
-        savings = calculate_expenses_before_payday(
-            expense_items,
-            expense_start,
-            end,
-            include_savings=True,
-            include_pending=is_current,
-        )
-        return income - bills - savings
+        ).net
 
     return period_flow
 
@@ -418,24 +397,26 @@ def get_roadmap() -> Response:
 
     # Where the plan actually starts from, rather than an implied clean zero.
     #
-    # current_balance sums every account, and credit cards are stored negative,
-    # so it already assumes each card is paid off in full — the same assumption
-    # calculate_cc_payments_before_payday makes. The card debt is therefore
-    # counted here exactly once and must not be subtracted again on its due day.
-    #
-    # The projection walks from opening_balance, clamped at zero: a shortfall has
-    # to be earned back before any step can be funded (card interest makes that
-    # the only sensible order), but spare cash is deliberately NOT a head start.
-    # Money sitting outside the account a goal tracks isn't earmarked for that
+    # The walk opens from cash, clamped at zero, and the periods it walks charge
+    # each card on its own due day. Cash rather than the netted balance, because
+    # netting would subtract the card debt here and the period would subtract it
+    # again. Clamped at zero because an overdraft has to be earned back before
+    # any step can be funded, while spare cash is deliberately NOT a head start:
+    # money sitting outside the account a goal tracks isn't earmarked for that
     # goal, and for a category-linked goal it would double-count against the
     # progress read from the net worth snapshot.
     #
-    # The reported starting position clamps once, after the pending one-time
-    # items are netted in, so money genuinely in the account covers a one-off
-    # bill. Clamping the balance first meant any net-negative one-off flow read
-    # as "starting behind" with five figures in the bank: a 50 € bill against a
-    # 10 550 € balance is not a shortfall.
-    opening_balance = min(Decimal("0"), totals["current_balance"])
+    # The reported starting position is a different question — "am I underwater
+    # right now, counting what is already committed" — so it nets the cards and
+    # the pending one-time items, and clamps once at the end. Clamping the
+    # balance first meant any net-negative one-off flow read as "starting
+    # behind" with five figures in the bank: a 50 € bill against a 10 550 €
+    # balance is not a shortfall.
+    cash_balance = sum(
+        (a.balance for a in session.query(Account).all() if not a.is_credit),
+        Decimal("0"),
+    )
+    opening_balance = min(Decimal("0"), cash_balance)
     one_times = pending_one_time_items(session, today)
     one_time_net = sum((amount for _, amount in one_times), Decimal("0"))
     starting_position = min(Decimal("0"), totals["current_balance"] + one_time_net)

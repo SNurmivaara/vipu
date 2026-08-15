@@ -19,32 +19,15 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     cash_balance,
     card_debt,
     current_balance,
-    expenses_before_payday,
-    income_before_payday,
-    savings_before_payday,
-    cc_payments_before_payday,
-    next_payday,
-    next_period_end,
-    expenses_next_period,
-    savings_next_period,
-    cc_payments_next_period,
-    income_next_period,
-    unallocated_next_period,
+    period_current: current,
+    period_next: next,
   } = data.totals;
 
   // Cash on hand carried forward through each period. Card debt is not netted
   // off up front: it leaves the account on the card's due day, which is when it
   // actually stops being spendable.
-  const billsBeforePayday = expenses_before_payday + savings_before_payday;
-  const atPayday =
-    cash_balance +
-    income_before_payday -
-    billsBeforePayday -
-    cc_payments_before_payday;
-
-  const billsNextPeriod = expenses_next_period + savings_next_period;
-  const endOfNextPeriod =
-    atPayday + income_next_period - billsNextPeriod - cc_payments_next_period;
+  const atPayday = cash_balance + current.money_in - current.money_out;
+  const endOfNextPeriod = atPayday + next.money_in - next.money_out;
 
   // Owing more on the cards than there is cash to cover them is worth saying
   // out loud: every projection below is being paid for out of a hole.
@@ -96,25 +79,25 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
         <div className="pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
           <PositionRow
             label="At payday"
-            date={next_payday}
+            date={current.end}
             value={atPayday}
             detail={flowDetail([
-              [income_before_payday, "pay"],
-              [-billsBeforePayday, "bills"],
-              [-cc_payments_before_payday, "cards"],
+              [current.money_in, "pay"],
+              [-(current.bills + current.savings), "bills"],
+              [-current.card_payments, "cards"],
             ])}
           />
           <PositionRow
             label="End of next period"
-            date={next_period_end}
+            date={next.end}
             value={endOfNextPeriod}
             valueClassName={
               endOfNextPeriod < 0 ? getBalanceColor(endOfNextPeriod) : undefined
             }
             detail={flowDetail([
-              [income_next_period, "pay"],
-              [-billsNextPeriod, "bills"],
-              [-cc_payments_next_period, "cards"],
+              [next.money_in, "pay"],
+              [-(next.bills + next.savings), "bills"],
+              [-next.card_payments, "cards"],
             ])}
           />
         </div>
@@ -129,7 +112,7 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
               Unallocated next period
             </div>
             <div className="text-xs text-gray-400 dark:text-gray-500">
-              {unallocated_next_period <= 0
+              {next.net <= 0
                 ? "next period doesn't cover itself"
                 : sweepable
                   ? "free to move to savings on payday"
@@ -139,14 +122,14 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
           <span
             className={cn(
               "text-sm font-semibold whitespace-nowrap",
-              unallocated_next_period <= 0
-                ? getBalanceColor(unallocated_next_period)
+              next.net <= 0
+                ? getBalanceColor(next.net)
                 : sweepable
                   ? "text-emerald-700 dark:text-emerald-400"
                   : "text-gray-600 dark:text-gray-400"
             )}
           >
-            {formatCurrency(unallocated_next_period)}
+            {formatCurrency(next.net)}
           </span>
         </div>
       </div>

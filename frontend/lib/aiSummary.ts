@@ -158,33 +158,36 @@ export function buildFinancialSummary(
   );
   lines.push("");
 
-  // Mirror BudgetSummary's three projected balances
-  const obligations = t.expenses_before_payday + t.savings_before_payday;
-  const beforePayday = t.current_balance - obligations;
-  const afterPayday = beforePayday + t.income_before_payday;
-  const nextPeriodBills = t.expenses_next_period + t.savings_next_period;
-  const endOfNextPeriod = afterPayday - nextPeriodBills;
+  // The same two periods the summary card walks, off the same calculator, so a
+  // paste can't disagree with what the user is looking at.
+  const current = t.period_current;
+  const next = t.period_next;
+  const atPayday = t.cash_balance + current.money_in - current.money_out;
+  const endOfNextPeriod = atPayday + next.money_in - next.money_out;
 
   lines.push("### Current position");
   lines.push(
-    `- Net cash across all accounts: ${eur(t.current_balance)} (cash accounts minus credit card balances, i.e. already assumes cards are paid off in full)`
+    `- Cash across all non-credit accounts: ${eur(t.cash_balance)}`
+  );
+  lines.push(
+    `- Owed on credit cards: ${eur(t.card_debt)}, leaving each card on its own due day. Net of the two: ${eur(t.current_balance)}${t.current_balance < 0 ? ", so the cards owe more than there is cash to cover them" : ""}`
   );
   lines.push(`- Next payday: ${t.next_payday}`);
-  lines.push(`- Bills still due before payday: ${eur(obligations)}`);
-  lines.push(...occurrenceLines(t.expenses_before_payday_list));
-  lines.push(`- Projected balance before payday: ${eur(beforePayday)}`);
   lines.push(
-    `- Projected after payday (+${eur(t.income_before_payday)} pay): ${eur(afterPayday)}`
+    `- Still to happen before payday: +${eur(current.money_in)} pay, ${eur(current.bills + current.savings)} of bills, ${eur(current.card_payments)} of card payments`
   );
+  lines.push(...occurrenceLines(t.expenses_before_payday_list));
+  lines.push(`- Projected cash at payday: ${eur(atPayday)}`);
   lines.push(
-    `- Bills due in the next period (${t.next_payday} to ${t.next_period_end}): ${eur(nextPeriodBills)}`
+    `- Next period (${next.start} to ${next.end}): +${eur(next.money_in)} pay, ${eur(next.bills + next.savings)} of bills, ${eur(next.card_payments)} of card payments`
   );
   lines.push(...occurrenceLines(t.expenses_next_period_list));
+  lines.push(`- Projected cash at the end of it: ${eur(endOfNextPeriod)}`);
   lines.push(
-    `- Projected end of next period ${t.next_period_end}: ${eur(endOfNextPeriod)}`
+    `- Unallocated next period: ${eur(next.net)}. That is next period's own money less what next period needs, so it is the amount that can be swept to savings on payday without touching the balance already in the account.`
   );
   lines.push(
-    "- Credit card payments are excluded from the bill totals above: the card balance is already netted into net cash, so counting the payment again would double it."
+    "- A card balance is charged once, on its first due day from today, not in every period."
   );
   lines.push("");
 

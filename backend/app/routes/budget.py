@@ -7,9 +7,8 @@ from sqlalchemy.orm import Session
 
 from app import get_session
 from app.deadline_calc import (
-    calculate_cc_payments_in_window,
-    calculate_expenses_before_payday,
-    calculate_income_before_payday,
+    PeriodFlow,
+    calculate_period_flow,
     expense_window_start,
     get_checkpoint_occurrence,
     get_item_occurrences,
@@ -210,6 +209,22 @@ def clear_stale_overrides(
             item.pending_occurrence = None
 
 
+def period_dict(period: PeriodFlow) -> dict:
+    """One period's cash flow, as the front page reads it."""
+    return {
+        "start": period.start.isoformat(),
+        "end": period.end.isoformat(),
+        "income": float(period.income),
+        "deductions": float(period.deductions),
+        "bills": float(period.bills),
+        "savings": float(period.savings),
+        "card_payments": float(period.card_payments),
+        "money_in": float(period.money_in),
+        "money_out": float(period.money_out),
+        "net": float(period.net),
+    }
+
+
 def occurrence_entry(
     item: ExpenseItem,
     occurrence: date,
@@ -302,67 +317,24 @@ def get_current_budget() -> Response:
     next_payday = get_next_payday(today, settings.payday_day)
     next_period_end = get_payday_after(next_payday, settings.payday_day)
 
-    # A bill is assumed paid once its due day arrives — bills usually debit at the
-    # start of the day and are then reflected in current_balance. So the current
-    # period starts the day AFTER today: anything due today (or earlier) has cleared
-    # and no longer counts as still-due (mirrors the income-on-payday handling in
-    # calculate_income_before_payday). A bill the user has flagged as not debited
-    # yet is added back by include_pending.
-    current_period_start = expenses_settled_before
+    # Both periods come out of the one calculator, so the summary card, the
+    # section headers and the roadmap can't tell different stories about the
+    # same days. A bill flagged as not debited yet is added back by the current
+    # period; a payment ticked off early drops out of whichever period it is in.
+    def flow(start: date, end: date) -> PeriodFlow:
+        return calculate_period_flow(
+            active_income,
+            active_expenses,
+            accounts,
+            settings.tax_percentage,
+            settings.payday_day,
+            today,
+            start,
+            end,
+        )
 
-    expenses_before_payday = calculate_expenses_before_payday(
-        active_expenses,
-        current_period_start,
-        next_payday,
-        include_savings=False,
-        include_pending=True,
-    )
-    savings_before_payday = calculate_expenses_before_payday(
-        active_expenses,
-        current_period_start,
-        next_payday,
-        include_savings=True,
-        include_pending=True,
-    )
-    income_before_payday = calculate_income_before_payday(
-        active_income,
-        today,
-        next_payday,
-        settings.tax_percentage,
-        payday_day=settings.payday_day,
-        include_pending=True,
-    )
-    cc_payments_before_payday = calculate_cc_payments_in_window(
-        accounts, today, today, next_payday
-    )
-
-    # Calculate next period totals (payday to following payday)
-    expenses_next_period = calculate_expenses_before_payday(
-        active_expenses, next_payday, next_period_end, include_savings=False
-    )
-    savings_next_period = calculate_expenses_before_payday(
-        active_expenses, next_payday, next_period_end, include_savings=True
-    )
-    cc_payments_next_period = calculate_cc_payments_in_window(
-        accounts, today, next_payday, next_period_end
-    )
-    income_next_period = calculate_income_before_payday(
-        active_income,
-        next_payday,
-        next_period_end,
-        settings.tax_percentage,
-        payday_day=settings.payday_day,
-    )
-
-    # What next period's own money leaves once that period's obligations are
-    # met: the amount that can be swept out to savings on payday without
-    # touching the balance already in the account.
-    unallocated_next_period = (
-        income_next_period
-        - expenses_next_period
-        - savings_next_period
-        - cc_payments_next_period
-    )
+    current_period = flow(today, next_payday)
+    next_period = flow(next_payday, next_period_end)
 
     # Cash and card debt separately: the projection spends actual cash, and card
     # debt leaves it on the card's own due day rather than being netted off up
@@ -492,20 +464,23 @@ def get_current_budget() -> Response:
                 "monthly_expenses": float(totals["monthly_expenses"]),
                 "monthly_net_income": float(totals["monthly_net_income"]),
                 "monthly_surplus": float(totals["monthly_surplus"]),
-                # Deadline-aware totals
+                # The two periods, each straight off the shared calculator
+                "period_current": period_dict(current_period),
+                "period_next": period_dict(next_period),
+                # Deadline-aware totals, flattened from the same two periods
                 "next_payday": next_payday.isoformat(),
-                "expenses_before_payday": float(expenses_before_payday),
-                "income_before_payday": float(income_before_payday),
-                "savings_before_payday": float(savings_before_payday),
-                "cc_payments_before_payday": float(cc_payments_before_payday),
+                "expenses_before_payday": float(current_period.bills),
+                "income_before_payday": float(current_period.money_in),
+                "savings_before_payday": float(current_period.savings),
+                "cc_payments_before_payday": float(current_period.card_payments),
                 # Next period totals (payday to following payday)
                 "next_period_end": next_period_end.isoformat(),
-                "expenses_next_period": float(expenses_next_period),
-                "savings_next_period": float(savings_next_period),
-                "cc_payments_next_period": float(cc_payments_next_period),
-                "income_next_period": float(income_next_period),
+                "expenses_next_period": float(next_period.bills),
+                "savings_next_period": float(next_period.savings),
+                "cc_payments_next_period": float(next_period.card_payments),
+                "income_next_period": float(next_period.money_in),
                 # Next period's own money, less next period's obligations
-                "unallocated_next_period": float(unallocated_next_period),
+                "unallocated_next_period": float(next_period.net),
                 # Expense IDs for each period (for frontend filtering) - backward compat
                 "expenses_before_payday_ids": expenses_before_payday_ids,
                 "expenses_next_period_ids": expenses_next_period_ids,

@@ -1124,9 +1124,14 @@ class TestRoadmap:
 
     @staticmethod
     def _freeze(monkeypatch, year, month, day):
-        """Freeze today so payday-to-payday dates are deterministic."""
+        """Freeze today so payday-to-payday dates are deterministic.
+
+        Both modules, or the roadmap and the budget endpoint answer for
+        different days and comparing their figures compares nothing.
+        """
         import datetime
 
+        from app.routes import budget as budget_route
         from app.routes import goals as goals_route
 
         class _FixedDate(datetime.date):
@@ -1134,7 +1139,8 @@ class TestRoadmap:
             def today(cls):
                 return cls(year, month, day)
 
-        monkeypatch.setattr(goals_route, "date", _FixedDate)
+        for module in (goals_route, budget_route):
+            monkeypatch.setattr(module, "date", _FixedDate)
 
     def _annual_bill_budget(self, client):
         """4 000/mo pay on the 25th, 1 000 rent on the 1st, 6 000 insurance
@@ -1167,6 +1173,51 @@ class TestRoadmap:
                 "start_date": "2026-07-01",
             },
         )
+
+    def test_the_roadmap_is_funded_by_what_the_front_page_shows(
+        self, client, monkeypatch
+    ):
+        """The plan advances by exactly the figure the summary card reports.
+
+        Both come out of the one period calculator. Computed separately they
+        drifted apart, most visibly over card payments: the card counted them as
+        money leaving and the projection did not.
+        """
+        self._freeze(monkeypatch, 2026, 6, 10)
+        self._annual_bill_budget(client)
+        client.post("/api/accounts", json={"name": "Checking", "balance": 2000})
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "Visa",
+                "balance": -400,
+                "is_credit": True,
+                "payment_due_day": 5,
+            },
+        )
+
+        card = client.get("/api/budget/current").json["totals"]["period_next"]
+
+        # The card's own arithmetic, from its own figures
+        assert card["net"] == (
+            card["money_in"] - card["bills"] - card["savings"] - card["card_payments"]
+        )
+        # The card payment is in there, not quietly dropped
+        assert card["card_payments"] == 400.0
+        # ...as is the annual bill that falls due in this period
+        assert card["bills"] == 7000.0
+
+        # ...and the roadmap advances by that same amount over that same period
+        from app import get_session
+        from app.routes.goals import _make_period_flow
+
+        with client.application.app_context():
+            flow = _make_period_flow(get_session(), date(2026, 6, 10), 25)
+            funding = flow(
+                date.fromisoformat(card["start"]), date.fromisoformat(card["end"])
+            )
+
+        assert float(funding) == card["net"]
 
     def test_a_step_completes_when_the_money_actually_lands(self, client, monkeypatch):
         """The next paycheck covers the step, so it completes on that payday.
