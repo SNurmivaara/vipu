@@ -1,5 +1,7 @@
 """Tests for budget API endpoints."""
 
+from datetime import date
+
 import pytest
 
 
@@ -727,6 +729,38 @@ class TestOccurrenceOverrides:
         response = self.settle(client, "expenses", expense_id, "2026-06-24", True)
         assert response.status_code == 400
         assert "occurrence" in response.json["error"]
+
+    def test_weekly_cadence_is_continuous_across_the_period_boundary(
+        self, client, monkeypatch
+    ):
+        """A weekly bill keeps its 7-day rhythm from one pay period into the
+        next. It used to be generated relative to each window, so it showed
+        8-12 and 8-19 in one period and then jumped to 8-29 in the next,
+        skipping 8-26 — and no row in the next period could be ticked off,
+        because the item's real next occurrence wasn't among them."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Groceries",
+                "amount": 80,
+                "frequency_value": 1,
+                "frequency_unit": "weeks",
+                "due_day": 15,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        dates = [
+            date.fromisoformat(row["next_occurrence_date"])
+            for row in totals["expenses_before_payday_list"]
+            + totals["expenses_next_period_list"]
+        ]
+
+        assert dates == sorted(dates)
+        gaps = {(b - a).days for a, b in zip(dates, dates[1:], strict=False)}
+        assert gaps == {7}, f"cadence broke across the period boundary: {dates}"
 
     def test_weekly_item_without_a_start_date_ticks_off_a_listed_occurrence(
         self, client, monkeypatch

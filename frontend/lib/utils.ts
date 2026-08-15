@@ -64,6 +64,22 @@ export function parseEuropeanNumber(value: string): number {
 }
 
 /**
+ * Format an occurrence date the way the period lists show it: "25.8.", or
+ * "25.8.2027" when it falls outside the current year.
+ */
+export function formatOccurrenceDate(isoDate: string): string {
+  const date = new Date(isoDate);
+  const day = date.getDate();
+  const month = date.getMonth() + 1;
+  const year = date.getFullYear();
+
+  if (year !== new Date().getFullYear()) {
+    return `${day}.${month}.${year}`;
+  }
+  return `${day}.${month}.`;
+}
+
+/**
  * Format a date string (ISO) to a short format (e.g., "Mar 25")
  */
 export function formatDateShort(isoDate: string): string {

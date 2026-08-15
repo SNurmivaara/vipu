@@ -190,6 +190,44 @@ MIGRATIONS: list[dict] = [
                 ADD COLUMN IF NOT EXISTS pending_occurrence DATE;
         """,
     },
+    {
+        "id": "011_anchor_day_week_recurrence",
+        "name": "Pin day/week schedules to a start_date so their phase is stable",
+        # A "day 15, every 2 weeks" schedule says nothing about which day 15 the
+        # count runs from, so these items were generated relative to whichever
+        # window asked for them: a weekly bill showed 8-12 and 8-19 in one pay
+        # period, then jumped to 8-29 in the next, skipping 8-26. Pinning the
+        # count to due_day of the current month fixes the cadence for good.
+        "sql": """
+            UPDATE expense_items
+            SET start_date = date_trunc('month', CURRENT_DATE)::date + (
+                LEAST(
+                    due_day,
+                    EXTRACT(DAY FROM (
+                        date_trunc('month', CURRENT_DATE)
+                        + INTERVAL '1 month' - INTERVAL '1 day'
+                    ))::int
+                ) - 1
+            )
+            WHERE frequency_unit IN ('days', 'weeks')
+                AND start_date IS NULL
+                AND is_ephemeral = FALSE;
+
+            UPDATE income_items
+            SET start_date = date_trunc('month', CURRENT_DATE)::date + (
+                LEAST(
+                    due_day,
+                    EXTRACT(DAY FROM (
+                        date_trunc('month', CURRENT_DATE)
+                        + INTERVAL '1 month' - INTERVAL '1 day'
+                    ))::int
+                ) - 1
+            )
+            WHERE frequency_unit IN ('days', 'weeks')
+                AND start_date IS NULL
+                AND is_ephemeral = FALSE;
+        """,
+    },
 ]
 
 

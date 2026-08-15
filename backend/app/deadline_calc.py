@@ -223,7 +223,10 @@ def get_occurrences_in_window(
         if start_date:
             reference = start_date
         else:
-            # Use due_day of current month as reference
+            # Last-resort fallback for rows that predate the anchoring migration:
+            # due_day of the window's own month, which makes the phase depend on
+            # where the window happens to start. Anything created since is given
+            # a start_date (see needs_anchor), so both windows agree.
             ref_day = normalize_day(due_day, window_start.year, window_start.month)
             reference = date(window_start.year, window_start.month, ref_day)
 
@@ -247,6 +250,32 @@ def get_occurrences_in_window(
 # How far ahead get_next_occurrence looks for the following occurrence. Long
 # enough to catch multi-year schedules; the search is a cheap walk over dates.
 OCCURRENCE_HORIZON_DAYS = 5 * 366
+
+
+# Cadences that need an explicit anchor date. A "day 15, every 2 weeks" schedule
+# says nothing about which day 15 the count starts from, so without a start_date
+# the grid is generated relative to whichever window asks for it and the same
+# item lands on different dates in different periods. Month and year cadences
+# carry their own phase in due_day, so they don't need this.
+ANCHORED_UNITS = ("days", "weeks")
+
+
+def default_start_date(due_day: int, today: date) -> date:
+    """Anchor for a day/week cadence created without a start_date.
+
+    Pins the count to due_day of the current month, fixing the cadence once so
+    every window afterwards agrees on it.
+    """
+    return date(
+        today.year, today.month, normalize_day(due_day, today.year, today.month)
+    )
+
+
+def needs_anchor(
+    frequency_unit: str, start_date: date | None, is_ephemeral: bool
+) -> bool:
+    """Whether this schedule would otherwise be left without a stable phase."""
+    return frequency_unit in ANCHORED_UNITS and start_date is None and not is_ephemeral
 
 
 def expense_window_start(today: date) -> date:

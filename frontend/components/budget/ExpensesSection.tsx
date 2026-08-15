@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExpenseItem, ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatOccurrenceDate } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -202,25 +202,12 @@ export function ExpensesSection({
     return a.name.localeCompare(b.name);
   });
 
-  // Format due date for display: "dd.mm." or "dd.mm.yyyy" if not current year
-  const formatDueDate = (expense: ExpenseWithOccurrence) => {
-    const occurrenceDate = expense.next_occurrence_date;
-
-    if (occurrenceDate) {
-      const date = new Date(occurrenceDate);
-      const day = date.getDate();
-      const month = date.getMonth() + 1;
-      const year = date.getFullYear();
-      const currentYear = new Date().getFullYear();
-
-      if (year !== currentYear) {
-        return `${day}.${month}.${year}`;
-      }
-      return `${day}.${month}.`;
-    }
-    // Fallback for expenses without occurrence date
-    return `${expense.due_day}.`;
-  };
+  // Format due date for display, falling back to the bare day of month for
+  // expenses with no occurrence date (archived ones, or nothing left to come)
+  const formatDueDate = (expense: ExpenseWithOccurrence) =>
+    expense.next_occurrence_date
+      ? formatOccurrenceDate(expense.next_occurrence_date)
+      : `${expense.due_day}.`;
 
   // Generate unique key for expense (handles multiple occurrences of same expense)
   const getExpenseKey = (expense: ExpenseWithOccurrence) => {

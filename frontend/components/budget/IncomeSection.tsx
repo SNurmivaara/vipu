@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { IncomeItem, IncomeWithOccurrence, IncomeFormData, BudgetSettings } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatOccurrenceDate } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -234,6 +234,11 @@ export function IncomeSection({
               )}
             >
               {item.name}
+              {occurrence && (
+                <span className="text-gray-400 dark:text-gray-500 ml-1.5">
+                  ({formatOccurrenceDate(occurrence.occurrenceDate)})
+                </span>
+              )}
               {item.is_taxed && (
                 <span className="text-gray-400 dark:text-gray-500 ml-1.5">
                   (taxed)

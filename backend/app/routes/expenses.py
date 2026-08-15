@@ -7,8 +7,10 @@ from flask import Response, jsonify, request
 from app import get_session
 from app.deadline_calc import (
     apply_occurrence_override,
+    default_start_date,
     expense_window_start,
     get_previous_payday,
+    needs_anchor,
 )
 from app.models import ExpenseItem
 from app.routes.budget import configured_payday_day
@@ -87,6 +89,13 @@ def create_expense() -> Response | tuple[Response, int]:
     except ValueError:
         return jsonify({"error": "Invalid date format (use YYYY-MM-DD)"}), 400
 
+    is_ephemeral = bool(data.get("is_ephemeral", False))
+
+    # A day/week cadence needs an anchor, or its dates depend on the window
+    # they're generated in rather than on the schedule itself.
+    if needs_anchor(frequency_unit, start_date, is_ephemeral):
+        start_date = default_start_date(due_day, date.today())
+
     item = ExpenseItem(
         name=name,
         amount=amount,
@@ -96,7 +105,7 @@ def create_expense() -> Response | tuple[Response, int]:
         frequency_unit=frequency_unit,
         start_date=start_date,
         end_date=end_date,
-        is_ephemeral=bool(data.get("is_ephemeral", False)),
+        is_ephemeral=is_ephemeral,
     )
     session.add(item)
     session.commit()
@@ -172,6 +181,11 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
             item.archived_at = parse_datetime(data["archived_at"])
         except ValueError:
             return jsonify({"error": "Invalid archived_at format. Use ISO format"}), 400
+
+    # Switching to a day/week cadence without giving it a start date leaves the
+    # schedule with no phase of its own, so anchor it here too.
+    if needs_anchor(item.frequency_unit, item.start_date, item.is_ephemeral):
+        item.start_date = default_start_date(item.due_day, date.today())
 
     session.commit()
     return jsonify(item.to_dict())
