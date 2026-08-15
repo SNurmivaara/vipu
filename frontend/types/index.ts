@@ -99,7 +99,14 @@ export interface PeriodFlow {
   net: number;
 }
 
+/** The lowest the cash gets while the projected periods play out */
+export interface CashLowPoint {
+  date: string;
+  balance: number;
+}
+
 export interface BudgetTotals {
+  cash_low_point: CashLowPoint;
   /** Today through the next payday, the part-period we are standing in */
   period_current: PeriodFlow;
   /** Payday to the following payday */

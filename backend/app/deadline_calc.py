@@ -456,7 +456,32 @@ def calculate_income_before_payday(
     Returns:
         Total net income due through next payday
     """
-    total = Decimal("0")
+    return sum(
+        (
+            movement.amount
+            for movement in income_movements(
+                income_items,
+                today,
+                next_payday,
+                default_tax_pct,
+                payday_day=payday_day,
+                include_pending=include_pending,
+            )
+        ),
+        Decimal("0"),
+    )
+
+
+def income_movements(
+    income_items: list["IncomeItem"],
+    today: date,
+    next_payday: date,
+    default_tax_pct: Decimal,
+    payday_day: int | None = None,
+    include_pending: bool = False,
+) -> list["CashMovement"]:
+    """Each pay occurrence landing through next payday, on the day it lands."""
+    movements: list[CashMovement] = []
 
     # Include income arriving ON payday (window_end is exclusive, so +1 day)
     inclusive_end = next_payday + timedelta(days=1)
@@ -473,19 +498,23 @@ def calculate_income_before_payday(
         ]
 
         # A payment marked "not received yet" sits before the window (its day has
-        # passed), so it is added back rather than filtered in.
+        # passed), so it is added back rather than filtered in. It is dated to the
+        # start of the window: it is owed now, not on a day behind us.
         if (
             include_pending
             and item.pending_occurrence is not None
             and item.pending_occurrence < window_start
         ):
-            occurrences.append(item.pending_occurrence)
+            occurrences.append(window_start)
 
-        if occurrences:
-            net_per_occurrence = item.calculate_net(default_tax_pct)
-            total += net_per_occurrence * len(occurrences)
+        amount = item.calculate_net(default_tax_pct)
+        kind = "deduction" if item.is_deduction else "pay"
+        movements.extend(
+            CashMovement(occurrence, amount, item.name, kind)
+            for occurrence in occurrences
+        )
 
-    return total
+    return movements
 
 
 def calculate_expenses_before_payday(
@@ -510,32 +539,104 @@ def calculate_expenses_before_payday(
     Returns:
         Total expenses due before next payday
     """
-    total = Decimal("0")
+    kind = "savings" if include_savings else "bill"
+    return -sum(
+        (
+            movement.amount
+            for movement in expense_movements(
+                expense_items, today, next_payday, include_pending=include_pending
+            )
+            if movement.kind == kind
+        ),
+        Decimal("0"),
+    )
+
+
+def expense_movements(
+    expense_items: list["ExpenseItem"],
+    window_start: date,
+    window_end: date,
+    include_pending: bool = False,
+) -> list["CashMovement"]:
+    """Each bill and savings transfer due in the window, on the day it debits."""
+    movements: list[CashMovement] = []
 
     for item in expense_items:
-        # Filter by savings goal flag
-        if item.is_savings_goal != include_savings:
-            continue
-
         occurrences = [
             occurrence
-            for occurrence in get_item_occurrences(item, today, next_payday)
+            for occurrence in get_item_occurrences(item, window_start, window_end)
             if occurrence != item.settled_occurrence
         ]
 
         # A bill marked "not paid yet" sits before the window (its due day has
-        # passed), so it is added back rather than filtered in.
+        # passed), so it is added back rather than filtered in. It is dated to
+        # the start of the window: it is owed now, not on a day behind us.
         if (
             include_pending
             and item.pending_occurrence is not None
-            and item.pending_occurrence < today
+            and item.pending_occurrence < window_start
         ):
-            occurrences.append(item.pending_occurrence)
+            occurrences.append(window_start)
 
-        if occurrences:
-            total += item.amount * len(occurrences)
+        kind = "savings" if item.is_savings_goal else "bill"
+        movements.extend(
+            CashMovement(occurrence, -item.amount, item.name, kind)
+            for occurrence in occurrences
+        )
 
-    return total
+    return movements
+
+
+@dataclass(frozen=True)
+class CashMovement:
+    """One dated movement of money, signed: positive in, negative out.
+
+    The primitive the period totals are built from. A total is the sum of the
+    movements behind it, so a figure on the page and the day-by-day walk that
+    finds the low point can't describe different money.
+    """
+
+    date: date
+    amount: Decimal
+    label: str
+    #: "pay", "deduction", "bill", "savings" or "card"
+    kind: str
+
+
+def find_low_point(
+    opening_balance: Decimal, movements: list[CashMovement], start: date
+) -> tuple[date, Decimal]:
+    """The lowest the balance gets while these movements play out.
+
+    A period that ends comfortably can still go through the floor in the middle
+    of itself: bills land on their own days and pay usually lands on one. Only
+    walking it day by day shows that.
+
+    A day is taken as a whole rather than ordered within itself: pay generally
+    clears before the debits here, and a payment that does bounce in the morning
+    can simply be retried once the day's money has landed. So a bill sharing a
+    day with the pay that covers it is not a shortfall.
+
+    Never worse than the balance you start with, so an account that is already
+    overdrawn reports today rather than some later date.
+    """
+    by_day: dict[date, Decimal] = {}
+    for movement in movements:
+        by_day[movement.date] = (
+            by_day.get(movement.date, Decimal("0")) + movement.amount
+        )
+
+    balance = opening_balance
+    low_date = start
+    low_balance = balance
+
+    for day in sorted(by_day):
+        balance += by_day[day]
+        if balance < low_balance:
+            low_balance = balance
+            low_date = day
+
+    return low_date, low_balance
 
 
 @dataclass(frozen=True)
@@ -550,13 +651,33 @@ class PeriodFlow:
 
     start: date
     end: date
-    #: Net pay arriving in the period, before payroll deductions
-    income: Decimal
-    #: Payroll deductions, negative, taken out of that pay
-    deductions: Decimal
-    bills: Decimal
-    savings: Decimal
-    card_payments: Decimal
+    #: Every dated movement in the period, the totals below summed from them
+    movements: tuple[CashMovement, ...]
+
+    def _by_kind(self, kind: str) -> Decimal:
+        return sum((m.amount for m in self.movements if m.kind == kind), Decimal("0"))
+
+    @property
+    def income(self) -> Decimal:
+        """Net pay arriving in the period, before payroll deductions."""
+        return self._by_kind("pay")
+
+    @property
+    def deductions(self) -> Decimal:
+        """Payroll deductions, negative, taken out of that pay."""
+        return self._by_kind("deduction")
+
+    @property
+    def bills(self) -> Decimal:
+        return -self._by_kind("bill")
+
+    @property
+    def savings(self) -> Decimal:
+        return -self._by_kind("savings")
+
+    @property
+    def card_payments(self) -> Decimal:
+        return -self._by_kind("card")
 
     @property
     def money_in(self) -> Decimal:
@@ -597,44 +718,22 @@ def calculate_period_flow(
     # falls after today; a later period owes everything in it.
     expense_start = expense_window_start(today) if is_current else start
 
-    pay = [i for i in income_items if not i.is_deduction]
-    deductions = [i for i in income_items if i.is_deduction]
+    movements = [
+        *income_movements(
+            income_items,
+            start,
+            end,
+            default_tax_pct,
+            payday_day=payday_day,
+            include_pending=is_current,
+        ),
+        *expense_movements(
+            expense_items, expense_start, end, include_pending=is_current
+        ),
+        *card_movements(accounts, today, start, end),
+    ]
 
-    return PeriodFlow(
-        start=start,
-        end=end,
-        income=calculate_income_before_payday(
-            pay,
-            start,
-            end,
-            default_tax_pct,
-            payday_day=payday_day,
-            include_pending=is_current,
-        ),
-        deductions=calculate_income_before_payday(
-            deductions,
-            start,
-            end,
-            default_tax_pct,
-            payday_day=payday_day,
-            include_pending=is_current,
-        ),
-        bills=calculate_expenses_before_payday(
-            expense_items,
-            expense_start,
-            end,
-            include_savings=False,
-            include_pending=is_current,
-        ),
-        savings=calculate_expenses_before_payday(
-            expense_items,
-            expense_start,
-            end,
-            include_savings=True,
-            include_pending=is_current,
-        ),
-        card_payments=calculate_cc_payments_in_window(accounts, today, start, end),
-    )
+    return PeriodFlow(start=start, end=end, movements=tuple(movements))
 
 
 def get_card_payment_date(account: "Account", today: date) -> date:
@@ -673,14 +772,32 @@ def calculate_cc_payments_in_window(
     payment date, so consecutive periods can be added up without the same
     balance being subtracted twice.
     """
-    total = Decimal("0")
+    return -sum(
+        (
+            movement.amount
+            for movement in card_movements(accounts, today, window_start, window_end)
+        ),
+        Decimal("0"),
+    )
+
+
+def card_movements(
+    accounts: list["Account"],
+    today: date,
+    window_start: date,
+    window_end: date,
+) -> list["CashMovement"]:
+    """Each card balance coming off the account, on the day it is paid."""
+    movements: list[CashMovement] = []
 
     for account in accounts:
-        if not account.is_credit:
+        if not account.is_credit or account.balance == 0:
             continue
 
         payment_date = get_card_payment_date(account, today)
         if window_start <= payment_date < window_end:
-            total += abs(account.balance)
+            movements.append(
+                CashMovement(payment_date, -abs(account.balance), account.name, "card")
+            )
 
-    return total
+    return movements
