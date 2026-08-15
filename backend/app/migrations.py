@@ -176,6 +176,20 @@ MIGRATIONS: list[dict] = [
                 WHERE is_savings_goal = TRUE AND archived_at IS NULL;
         """,
     },
+    {
+        "id": "010_occurrence_overrides",
+        "name": "Add settled/pending occurrence overrides to income and expenses",
+        "sql": """
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS settled_occurrence DATE;
+            ALTER TABLE income_items
+                ADD COLUMN IF NOT EXISTS pending_occurrence DATE;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS settled_occurrence DATE;
+            ALTER TABLE expense_items
+                ADD COLUMN IF NOT EXISTS pending_occurrence DATE;
+        """,
+    },
 ]
 
 

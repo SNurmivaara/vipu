@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 
 from apiflask import APIBlueprint
@@ -10,9 +10,16 @@ from app.deadline_calc import (
     calculate_cc_payments_before_payday,
     calculate_expenses_before_payday,
     calculate_income_before_payday,
+    expense_window_start,
+    get_checkpoint_occurrence,
+    get_item_occurrences,
+    get_latest_due_occurrence,
+    get_next_occurrence,
     get_next_payday,
-    get_occurrences_in_window,
     get_payday_after,
+    get_previous_payday,
+    income_window_start,
+    is_occurrence_settled,
 )
 from app.models import (
     Account,
@@ -59,28 +66,36 @@ def pending_one_time_items(session: Session, today: date) -> list[tuple[date, De
     or it spends money that is already claimed.
 
     Positive is an inflow (a pending bonus), negative an outflow (a pending tax
-    bill). Items dated in the past are treated as already settled. An ephemeral
-    item with no start_date has no unambiguous due date, so it falls due
-    immediately rather than being silently dropped.
+    bill). Items dated in the past are treated as already settled, unless the
+    user marked the occurrence as not yet moved. An ephemeral item with no
+    start_date has no unambiguous due date, so it falls due immediately rather
+    than being silently dropped.
     """
     tax_pct = _tax_percentage(session)
     items: list[tuple[date, Decimal]] = []
 
+    def still_owed(item: IncomeItem | ExpenseItem, due: date) -> bool:
+        """Whether this one-time item's money has yet to move."""
+        if item.settled_occurrence == due:
+            return False
+        return due >= today or item.pending_occurrence == due
+
     for income in session.query(IncomeItem).all():
         if not income.is_ephemeral or income.archived_at is not None:
             continue
-        if income.start_date is not None and income.start_date < today:
-            continue
         due = income.start_date or today
-        items.append((due, income.calculate_net(tax_pct)))
+        if not still_owed(income, due):
+            continue
+        # A pending item's own date is behind us; it falls due now.
+        items.append((max(due, today), income.calculate_net(tax_pct)))
 
     for expense in session.query(ExpenseItem).all():
         if not expense.is_ephemeral or expense.archived_at is not None:
             continue
-        if expense.start_date is not None and expense.start_date < today:
-            continue
         due = expense.start_date or today
-        items.append((due, -expense.amount))
+        if not still_owed(expense, due):
+            continue
+        items.append((max(due, today), -expense.amount))
 
     return sorted(items, key=lambda pair: pair[0])
 
@@ -97,6 +112,12 @@ def _tax_percentage(session: Session) -> Decimal:
     """Configured default tax rate, or the 25% fallback used elsewhere."""
     settings = session.query(BudgetSettings).first()
     return settings.tax_percentage if settings else Decimal("25.0")
+
+
+def configured_payday_day(session: Session) -> int:
+    """Configured payday day of month, or the 25th fallback used elsewhere."""
+    settings = session.query(BudgetSettings).first()
+    return settings.payday_day if settings else 25
 
 
 def compute_budget_totals(session: Session) -> dict[str, Decimal]:
@@ -163,6 +184,46 @@ def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     }
 
 
+def clear_stale_overrides(
+    item: IncomeItem | ExpenseItem,
+    today: date,
+    settled_before: date,
+    period_start: date,
+) -> None:
+    """Drop occurrence overrides that no longer describe anything.
+
+    A settled mark expires once its day arrives: from then on the default
+    assumption (money moves on its due day) says the same thing, and keeping the
+    mark would block the user from flagging that day as pending after all.
+
+    A pending mark deliberately outlives its own due day — that is the point —
+    but only while it is still the last occurrence to have come due this pay
+    period. Once a newer one falls due, or the period rolls over, the mark
+    refers to closed history and would silently inflate what is still owed.
+    """
+    if item.settled_occurrence is not None and item.settled_occurrence < today:
+        item.settled_occurrence = None
+    if item.pending_occurrence is not None:
+        if item.pending_occurrence != get_latest_due_occurrence(
+            item, settled_before, period_start
+        ):
+            item.pending_occurrence = None
+
+
+def occurrence_entry(
+    item: ExpenseItem,
+    occurrence: date,
+    settled_before: date,
+    settleable: tuple[date | None, ...],
+) -> dict:
+    """One row of a period list: the item, dated, with its settled state."""
+    entry = item.to_dict()
+    entry["next_occurrence_date"] = occurrence.isoformat()
+    entry["is_settled"] = is_occurrence_settled(item, occurrence, settled_before)
+    entry["can_settle"] = occurrence in settleable
+    return entry
+
+
 @bp.get("/api/budget/current")
 def get_current_budget() -> Response:
     """Get current budget state with calculated totals.
@@ -184,16 +245,42 @@ def get_current_budget() -> Response:
     accounts = session.query(Account).order_by(Account.name).all()
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
-    # Auto-archive past ephemeral items
     today = date.today()
     now = datetime.now()
+    period_start = get_previous_payday(today, settings.payday_day)
+
+    # The day from which money still counts as unmoved. Bills clear on their due
+    # day; pay only does so on payday itself, so the two boundaries differ by a
+    # day and each item type has to be judged against its own.
+    expenses_settled_before = expense_window_start(today)
+    income_settled_before = income_window_start(today, settings.payday_day)
+
+    # Retire occurrence overrides the calendar has caught up with, then
+    # auto-archive past ephemeral items. A one-time item still marked pending is
+    # left alone: its money hasn't actually moved, so it isn't history yet.
     for income_item in income_items:
+        if income_item.archived_at is None:
+            clear_stale_overrides(
+                income_item, today, income_settled_before, period_start
+            )
         if income_item.archived_at is None and income_item.is_ephemeral:
-            if income_item.start_date and income_item.start_date < today:
+            if (
+                income_item.start_date
+                and income_item.start_date < today
+                and income_item.pending_occurrence is None
+            ):
                 income_item.archived_at = now
     for expense_item in expenses:
+        if expense_item.archived_at is None:
+            clear_stale_overrides(
+                expense_item, today, expenses_settled_before, period_start
+            )
         if expense_item.archived_at is None and expense_item.is_ephemeral:
-            if expense_item.start_date and expense_item.start_date < today:
+            if (
+                expense_item.start_date
+                and expense_item.start_date < today
+                and expense_item.pending_occurrence is None
+            ):
                 expense_item.archived_at = now
     session.commit()
 
@@ -219,14 +306,23 @@ def get_current_budget() -> Response:
     # start of the day and are then reflected in current_balance. So the current
     # period starts the day AFTER today: anything due today (or earlier) has cleared
     # and no longer counts as still-due (mirrors the income-on-payday handling in
-    # calculate_income_before_payday).
-    current_period_start = today + timedelta(days=1)
+    # calculate_income_before_payday). A bill the user has flagged as not debited
+    # yet is added back by include_pending.
+    current_period_start = expenses_settled_before
 
     expenses_before_payday = calculate_expenses_before_payday(
-        active_expenses, current_period_start, next_payday, include_savings=False
+        active_expenses,
+        current_period_start,
+        next_payday,
+        include_savings=False,
+        include_pending=True,
     )
     savings_before_payday = calculate_expenses_before_payday(
-        active_expenses, current_period_start, next_payday, include_savings=True
+        active_expenses,
+        current_period_start,
+        next_payday,
+        include_savings=True,
+        include_pending=True,
     )
     income_before_payday = calculate_income_before_payday(
         active_income,
@@ -234,6 +330,7 @@ def get_current_budget() -> Response:
         next_payday,
         settings.tax_percentage,
         payday_day=settings.payday_day,
+        include_pending=True,
     )
     cc_payments_before_payday = calculate_cc_payments_before_payday(
         accounts, today, next_payday
@@ -277,79 +374,90 @@ def get_current_budget() -> Response:
         if expense.is_savings_goal:
             continue
 
-        # Check both periods in single iteration
-        occurrences_before_payday = get_occurrences_in_window(
-            due_day=expense.due_day,
-            frequency_value=expense.frequency_value,
-            frequency_unit=expense.frequency_unit,
-            start_date=expense.start_date,
-            end_date=expense.end_date,
-            is_ephemeral=expense.is_ephemeral,
-            archived_at=expense.archived_at,
-            window_start=today,
-            window_end=next_payday,
+        # The current period runs from the payday that opened it, not from today:
+        # bills that already came due stay visible (ticked off) so a debit that
+        # hasn't actually landed can be flagged as still pending.
+        occurrences_before_payday = get_item_occurrences(
+            expense, period_start, next_payday
+        )
+        occurrences_next_period = get_item_occurrences(
+            expense, next_payday, next_period_end
         )
 
-        occurrences_next_period = get_occurrences_in_window(
-            due_day=expense.due_day,
-            frequency_value=expense.frequency_value,
-            frequency_unit=expense.frequency_unit,
-            start_date=expense.start_date,
-            end_date=expense.end_date,
-            is_ephemeral=expense.is_ephemeral,
-            archived_at=expense.archived_at,
-            window_start=next_payday,
-            window_end=next_period_end,
+        # The two occurrences whose state the user can still change: the next one
+        # ahead of us and the last one to have come due this period. Anything
+        # further out is a schedule edit, not a one-off timing correction.
+        settleable = (
+            get_next_occurrence(expense, expenses_settled_before, period_start),
+            get_latest_due_occurrence(expense, expenses_settled_before, period_start),
         )
 
-        # Auto-clear: a bill due today (or earlier) is assumed paid — don't list it
-        # as still-due. The today-inclusive `occurrences_before_payday` is still used
-        # for the Future-bucket check below so a due-today bill isn't misrouted there.
-        occurrences_before_payday_unpaid = [
-            occurrence for occurrence in occurrences_before_payday if occurrence > today
+        # Older occurrences of the period are closed history — listing them would
+        # only be noise, since nothing about them can be changed any more.
+        rows_before_payday = [
+            occurrence
+            for occurrence in occurrences_before_payday
+            if occurrence >= expenses_settled_before or occurrence in settleable
         ]
 
         # Add one entry per occurrence in "this month" and "next month"
-        if occurrences_before_payday_unpaid:
+        if rows_before_payday:
             expenses_before_payday_ids.append(expense.id)
-            for occurrence in occurrences_before_payday_unpaid:
-                expense_dict = expense.to_dict()
-                expense_dict["next_occurrence_date"] = occurrence.isoformat()
-                expenses_before_payday_list.append(expense_dict)
+            for occurrence in rows_before_payday:
+                expenses_before_payday_list.append(
+                    occurrence_entry(
+                        expense, occurrence, expenses_settled_before, settleable
+                    )
+                )
 
         if occurrences_next_period:
             expenses_next_period_ids.append(expense.id)
             for occurrence in occurrences_next_period:
-                expense_dict = expense.to_dict()
-                expense_dict["next_occurrence_date"] = occurrence.isoformat()
-                expenses_next_period_list.append(expense_dict)
+                expenses_next_period_list.append(
+                    occurrence_entry(
+                        expense, occurrence, expenses_settled_before, settleable
+                    )
+                )
 
         if not occurrences_before_payday and not occurrences_next_period:
             # Expense doesn't occur in either period - show only first future occurrence
             expenses_future_ids.append(expense.id)
-            occurrences_future = get_occurrences_in_window(
-                due_day=expense.due_day,
-                frequency_value=expense.frequency_value,
-                frequency_unit=expense.frequency_unit,
-                start_date=expense.start_date,
-                end_date=expense.end_date,
-                is_ephemeral=expense.is_ephemeral,
-                archived_at=expense.archived_at,
-                window_start=next_period_end,
-                window_end=future_window_end,
+            occurrences_future = get_item_occurrences(
+                expense, next_period_end, future_window_end
             )
-            expense_dict = expense.to_dict()
             if occurrences_future:
                 # Only first occurrence for "future" (open-ended window)
-                expense_dict["next_occurrence_date"] = occurrences_future[0].isoformat()
+                expense_dict = occurrence_entry(
+                    expense, occurrences_future[0], expenses_settled_before, settleable
+                )
             else:
+                expense_dict = expense.to_dict()
                 expense_dict["next_occurrence_date"] = None
+                expense_dict["is_settled"] = False
+                expense_dict["can_settle"] = False
             expenses_future_list.append(expense_dict)
+
+    # Income is listed one row per item rather than one per occurrence, so each
+    # row carries the single occurrence whose state is currently in question.
+    income_list: list[dict] = []
+    for income_item in active_income:
+        entry = income_item.to_dict()
+        checkpoint = get_checkpoint_occurrence(
+            income_item, income_settled_before, period_start
+        )
+        entry["next_occurrence_date"] = checkpoint.isoformat() if checkpoint else None
+        entry["is_settled"] = (
+            is_occurrence_settled(income_item, checkpoint, income_settled_before)
+            if checkpoint
+            else False
+        )
+        entry["can_settle"] = checkpoint is not None
+        income_list.append(entry)
 
     return jsonify(
         {
             "settings": settings.to_dict(),
-            "income": [i.to_dict() for i in active_income],
+            "income": income_list,
             "accounts": [a.to_dict() for a in accounts],
             "expenses": [e.to_dict() for e in active_expenses],
             "archived_income": [i.to_dict() for i in archived_income],

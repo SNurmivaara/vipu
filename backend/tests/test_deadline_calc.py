@@ -3,9 +3,17 @@
 from datetime import UTC, date, datetime
 
 from app.deadline_calc import (
+    apply_occurrence_override,
+    expense_window_start,
+    get_checkpoint_occurrence,
     get_last_day_of_month,
+    get_latest_due_occurrence,
+    get_next_occurrence,
     get_next_payday,
     get_occurrences_in_window,
+    get_previous_payday,
+    income_window_start,
+    is_occurrence_settled,
     normalize_day,
 )
 
@@ -80,6 +88,202 @@ class TestGetNextPayday:
         today = date(2026, 1, 31)
         result = get_next_payday(today, 31)
         assert result == date(2026, 2, 28)
+
+
+class TestGetPreviousPayday:
+    """Tests for get_previous_payday function."""
+
+    def test_payday_earlier_this_month(self):
+        # Today is 26th, payday is 25th -> this month's payday opened the period
+        assert get_previous_payday(date(2026, 3, 26), 25) == date(2026, 3, 25)
+
+    def test_payday_still_ahead(self):
+        # Today is 10th, payday is 25th -> the period opened last month
+        assert get_previous_payday(date(2026, 3, 10), 25) == date(2026, 2, 25)
+
+    def test_payday_is_today(self):
+        # On payday the new period starts today (get_next_payday moves on too)
+        assert get_previous_payday(date(2026, 3, 25), 25) == date(2026, 3, 25)
+
+    def test_january_to_december(self):
+        assert get_previous_payday(date(2026, 1, 10), 25) == date(2025, 12, 25)
+
+    def test_payday_31_in_short_month(self):
+        # Payday 31st, but the period opened on February's last day
+        assert get_previous_payday(date(2026, 3, 1), 31) == date(2026, 2, 28)
+
+
+class TestOccurrenceState:
+    """Tests for the settled/pending state of a single occurrence.
+
+    is_occurrence_settled decides whether the money for one occurrence has
+    already moved, which is what lets a payment be corrected in either direction
+    without touching the schedule.
+
+    The second argument is the boundary the money totals use, not today: an
+    occurrence before it has moved, one at or after it has not. For bills that
+    boundary is tomorrow (they debit on their due day); for income it is today
+    (pay is only assumed in the balance on payday itself).
+    """
+
+    class _Item:
+        """Minimal stand-in with the scheduling fields the helpers read."""
+
+        def __init__(self, **overrides):
+            self.due_day = 15
+            self.frequency_value = 1
+            self.frequency_unit = "months"
+            self.start_date = None
+            self.end_date = None
+            self.is_ephemeral = False
+            self.archived_at = None
+            self.settled_occurrence = None
+            self.pending_occurrence = None
+            self.__dict__.update(overrides)
+
+    def test_upcoming_occurrence_is_not_settled(self):
+        item = self._Item()
+        assert not is_occurrence_settled(item, date(2026, 3, 15), date(2026, 3, 10))
+
+    def test_past_occurrence_is_settled(self):
+        item = self._Item()
+        assert is_occurrence_settled(item, date(2026, 3, 15), date(2026, 3, 20))
+
+    def test_bill_due_today_is_settled_but_pay_due_today_is_not(self):
+        item = self._Item()
+        # Bills: boundary is tomorrow, so today's debit counts as gone
+        assert is_occurrence_settled(
+            item, date(2026, 3, 15), expense_window_start(date(2026, 3, 15))
+        )
+        # Income: boundary is today, so today's pay is still expected
+        assert not is_occurrence_settled(
+            item, date(2026, 3, 15), income_window_start(date(2026, 3, 15), 25)
+        )
+        # ...except on payday, when it is assumed to be in the balance already
+        assert is_occurrence_settled(
+            item, date(2026, 3, 15), income_window_start(date(2026, 3, 15), 15)
+        )
+
+    def test_settled_mark_covers_an_upcoming_occurrence(self):
+        item = self._Item(settled_occurrence=date(2026, 3, 15))
+        assert is_occurrence_settled(item, date(2026, 3, 15), date(2026, 3, 10))
+        # Only that one date: the next month's occurrence is still owed.
+        assert not is_occurrence_settled(item, date(2026, 4, 15), date(2026, 3, 10))
+
+    def test_pending_mark_covers_a_past_occurrence(self):
+        item = self._Item(pending_occurrence=date(2026, 3, 15))
+        assert not is_occurrence_settled(item, date(2026, 3, 15), date(2026, 3, 17))
+        assert is_occurrence_settled(item, date(2026, 2, 15), date(2026, 3, 17))
+
+    def test_next_occurrence(self):
+        item = self._Item()
+        assert get_next_occurrence(item, date(2026, 3, 10), date(2026, 2, 25)) == date(
+            2026, 3, 15
+        )
+        # Once the boundary is past it, the next one is a month out
+        assert get_next_occurrence(item, date(2026, 3, 16), date(2026, 2, 25)) == date(
+            2026, 4, 15
+        )
+
+    def test_next_occurrence_of_a_yearly_item(self):
+        item = self._Item(
+            frequency_unit="years", start_date=date(2020, 9, 1), due_day=1
+        )
+        assert get_next_occurrence(item, date(2026, 3, 10), date(2026, 2, 25)) == date(
+            2026, 9, 1
+        )
+
+    def test_next_occurrence_none_after_end_date(self):
+        item = self._Item(end_date=date(2026, 2, 1))
+        assert get_next_occurrence(item, date(2026, 3, 10), date(2026, 2, 25)) is None
+
+    def test_latest_due_occurrence(self):
+        item = self._Item()
+        latest = get_latest_due_occurrence(item, date(2026, 3, 20), date(2026, 2, 25))
+        assert latest == date(2026, 3, 15)
+
+    def test_latest_due_occurrence_outside_the_period(self):
+        item = self._Item()
+        # The February occurrence came due before this period opened
+        latest = get_latest_due_occurrence(item, date(2026, 3, 10), date(2026, 2, 25))
+        assert latest is None
+
+    def test_checkpoint_prefers_the_nearer_occurrence(self):
+        item = self._Item()
+        # Just after the due day the question is whether it landed
+        assert get_checkpoint_occurrence(
+            item, date(2026, 3, 17), date(2026, 2, 25)
+        ) == date(2026, 3, 15)
+        # Closer to the next one it becomes whether it was paid early
+        assert get_checkpoint_occurrence(
+            item, date(2026, 4, 10), date(2026, 3, 25)
+        ) == date(2026, 4, 15)
+
+    def test_checkpoint_follows_an_override(self):
+        item = self._Item(settled_occurrence=date(2026, 4, 15))
+        # An override always stays visible, so it can always be undone
+        assert get_checkpoint_occurrence(
+            item, date(2026, 3, 17), date(2026, 2, 25)
+        ) == date(2026, 4, 15)
+
+
+class TestApplyOccurrenceOverride:
+    """Tests for recording that one occurrence has or hasn't moved yet."""
+
+    def item(self, **overrides):
+        return TestOccurrenceState._Item(**overrides)
+
+    def test_settle_the_next_occurrence(self):
+        item = self.item()
+        applied = apply_occurrence_override(
+            item, date(2026, 3, 15), True, date(2026, 3, 10), date(2026, 2, 25)
+        )
+        assert applied
+        assert item.settled_occurrence == date(2026, 3, 15)
+        assert item.pending_occurrence is None
+
+    def test_unsettle_the_next_occurrence(self):
+        item = self.item(settled_occurrence=date(2026, 3, 15))
+        applied = apply_occurrence_override(
+            item, date(2026, 3, 15), False, date(2026, 3, 10), date(2026, 2, 25)
+        )
+        assert applied
+        assert item.settled_occurrence is None
+
+    def test_flag_the_last_due_occurrence_as_pending(self):
+        item = self.item()
+        applied = apply_occurrence_override(
+            item, date(2026, 3, 15), False, date(2026, 3, 17), date(2026, 2, 25)
+        )
+        assert applied
+        assert item.pending_occurrence == date(2026, 3, 15)
+
+    def test_settling_a_due_occurrence_clears_both_marks(self):
+        item = self.item(
+            settled_occurrence=date(2026, 3, 15), pending_occurrence=date(2026, 3, 15)
+        )
+        applied = apply_occurrence_override(
+            item, date(2026, 3, 15), True, date(2026, 3, 17), date(2026, 2, 25)
+        )
+        assert applied
+        assert item.pending_occurrence is None
+        assert item.settled_occurrence is None
+
+    def test_a_later_occurrence_is_rejected(self):
+        item = self.item()
+        applied = apply_occurrence_override(
+            item, date(2026, 4, 15), True, date(2026, 3, 10), date(2026, 2, 25)
+        )
+        assert not applied
+        assert item.settled_occurrence is None
+
+    def test_a_date_that_is_not_an_occurrence_is_rejected(self):
+        item = self.item()
+        applied = apply_occurrence_override(
+            item, date(2026, 3, 16), True, date(2026, 3, 10), date(2026, 2, 25)
+        )
+        assert not applied
+        assert item.settled_occurrence is None
 
 
 class TestGetOccurrencesInWindow:

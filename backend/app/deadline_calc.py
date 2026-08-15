@@ -51,6 +51,32 @@ def get_next_payday(today: date, payday_day: int) -> date:
         return date(next_year, next_month, normalized_day)
 
 
+def get_previous_payday(today: date, payday_day: int) -> date:
+    """Calculate the payday that opened the pay period containing today.
+
+    On payday itself the period is considered to start today, mirroring
+    get_next_payday, which points at the following month once payday arrives.
+
+    Args:
+        today: Current date
+        payday_day: Day of month for payday (1-31)
+
+    Returns:
+        The most recent payday at or before today
+    """
+    normalized_day = normalize_day(payday_day, today.year, today.month)
+
+    if today.day >= normalized_day:
+        return date(today.year, today.month, normalized_day)
+
+    if today.month == 1:
+        prev_month, prev_year = 12, today.year - 1
+    else:
+        prev_month, prev_year = today.month - 1, today.year
+    normalized_day = normalize_day(payday_day, prev_year, prev_month)
+    return date(prev_year, prev_month, normalized_day)
+
+
 def get_payday_after(payday: date, payday_day: int) -> date:
     """Calculate the payday following a given payday.
 
@@ -218,12 +244,168 @@ def get_occurrences_in_window(
     return occurrences
 
 
+# How far ahead get_next_occurrence looks for the following occurrence. Long
+# enough to catch multi-year schedules; the search is a cheap walk over dates.
+OCCURRENCE_HORIZON_DAYS = 5 * 366
+
+
+def expense_window_start(today: date) -> date:
+    """First day from which a bill still counts as due.
+
+    Bills debit at the start of their due day and are then reflected in the
+    account balance, so anything dated today or earlier has cleared.
+    """
+    return today + timedelta(days=1)
+
+
+def income_window_start(today: date, payday_day: int | None) -> date:
+    """First day from which income still counts as on its way.
+
+    Unlike a bill, pay dated today is not assumed to have landed — except on
+    payday itself, when it is taken to be in the balance already.
+    """
+    if payday_day is not None:
+        normalized = normalize_day(payday_day, today.year, today.month)
+        if today.day == normalized:
+            return today + timedelta(days=1)
+    return today
+
+
+def get_item_occurrences(
+    item: "ExpenseItem | IncomeItem", window_start: date, window_end: date
+) -> list[date]:
+    """Dates the item is scheduled to occur in [window_start, window_end).
+
+    The raw schedule: settled/pending overrides are not applied here, since the
+    display lists need the occurrence itself in order to show its state.
+    """
+    return get_occurrences_in_window(
+        due_day=item.due_day,
+        frequency_value=item.frequency_value,
+        frequency_unit=item.frequency_unit,
+        start_date=item.start_date,
+        end_date=item.end_date,
+        is_ephemeral=item.is_ephemeral,
+        archived_at=item.archived_at,
+        window_start=window_start,
+        window_end=window_end,
+    )
+
+
+def get_next_occurrence(
+    item: "ExpenseItem | IncomeItem", settled_before: date, period_start: date
+) -> date | None:
+    """The item's first occurrence still ahead of us, or None if it has none.
+
+    "Ahead of us" is the window start the money totals use (expense_window_start
+    or income_window_start), so the occurrence the user can tick off is exactly
+    the one those totals are still counting.
+
+    Searched from period_start rather than from that boundary, because a day or
+    week cadence without a start_date takes its phase from where the window
+    begins: a search starting elsewhere would put the item on a different set of
+    dates than the period list the user is ticking off.
+    """
+    occurrences = get_item_occurrences(
+        item,
+        period_start,
+        period_start + timedelta(days=OCCURRENCE_HORIZON_DAYS),
+    )
+    return next((o for o in occurrences if o >= settled_before), None)
+
+
+def get_latest_due_occurrence(
+    item: "ExpenseItem | IncomeItem", settled_before: date, period_start: date
+) -> date | None:
+    """The item's most recent occurrence already behind us this pay period."""
+    occurrences = get_item_occurrences(item, period_start, settled_before)
+    return occurrences[-1] if occurrences else None
+
+
+def is_occurrence_settled(
+    item: "ExpenseItem | IncomeItem", occurrence: date, settled_before: date
+) -> bool:
+    """Whether the money for this occurrence has already moved.
+
+    By default an occurrence is assumed to have moved once its day is behind us:
+    settled_before is the same boundary the money totals use, so an occurrence
+    counts as settled exactly when those totals have stopped counting it. Either
+    direction can be overridden for a single occurrence — settled_occurrence for
+    one paid or received early, pending_occurrence for one whose day has passed
+    without the money moving (a debit that waits for the next banking day).
+    """
+    if occurrence >= settled_before:
+        return occurrence == item.settled_occurrence
+    return occurrence != item.pending_occurrence
+
+
+def get_checkpoint_occurrence(
+    item: "ExpenseItem | IncomeItem", settled_before: date, period_start: date
+) -> date | None:
+    """The single occurrence whose settled state is currently in question.
+
+    Used where an item is shown as one row rather than one row per occurrence
+    (income). An override always wins, so the user can always undo it.
+    Otherwise it is whichever of the last occurrence this pay period and the
+    next one up is nearer: just after a due day the question is "did it actually
+    land?", and as the next one approaches it becomes "has it come early?".
+    """
+    if item.pending_occurrence is not None:
+        return item.pending_occurrence
+    if item.settled_occurrence is not None:
+        return item.settled_occurrence
+
+    upcoming = get_next_occurrence(item, settled_before, period_start)
+    latest = get_latest_due_occurrence(item, settled_before, period_start)
+
+    if latest is None:
+        return upcoming
+    if upcoming is None:
+        return latest
+    return (
+        latest if (settled_before - latest) <= (upcoming - settled_before) else upcoming
+    )
+
+
+def apply_occurrence_override(
+    item: "ExpenseItem | IncomeItem",
+    occurrence: date,
+    settled: bool,
+    settled_before: date,
+    period_start: date,
+) -> bool:
+    """Record whether the money for one occurrence has moved yet.
+
+    Only two occurrences can be overridden, which is what keeps the correction a
+    one-off: the next one ahead of us (paid or received early) and the last one
+    to have come due this pay period (its day passed, the money didn't move).
+    Everything after them keeps running on the item's own schedule, so the
+    forecast is untouched.
+
+    Returns False if the date is neither of those, leaving the item unchanged.
+    """
+    if occurrence == get_next_occurrence(item, settled_before, period_start):
+        item.settled_occurrence = occurrence if settled else None
+        return True
+
+    if occurrence == get_latest_due_occurrence(item, settled_before, period_start):
+        item.pending_occurrence = None if settled else occurrence
+        # An occurrence that has come due no longer needs a settled mark: the
+        # default assumption already says its money has moved.
+        if item.settled_occurrence == occurrence:
+            item.settled_occurrence = None
+        return True
+
+    return False
+
+
 def calculate_income_before_payday(
     income_items: list["IncomeItem"],
     today: date,
     next_payday: date,
     default_tax_pct: Decimal,
     payday_day: int | None = None,
+    include_pending: bool = False,
 ) -> Decimal:
     """Calculate total net income arriving through next payday.
 
@@ -237,6 +419,9 @@ def calculate_income_before_payday(
         next_payday: Next payday date
         default_tax_pct: Default tax percentage for taxed income
         payday_day: Day of month for payday (used to detect if today is payday)
+        include_pending: Add back occurrences whose day has passed but which the
+                         user marked as not received yet. Only for the current
+                         period — a later window would count them twice.
 
     Returns:
         Total net income due through next payday
@@ -248,24 +433,23 @@ def calculate_income_before_payday(
 
     # If today is payday, that income is already reflected in the account
     # balance — start from tomorrow to avoid double-counting
-    window_start = today
-    if payday_day is not None:
-        normalized = normalize_day(payday_day, today.year, today.month)
-        if today.day == normalized:
-            window_start = today + timedelta(days=1)
+    window_start = income_window_start(today, payday_day)
 
     for item in income_items:
-        occurrences = get_occurrences_in_window(
-            due_day=item.due_day,
-            frequency_value=item.frequency_value,
-            frequency_unit=item.frequency_unit,
-            start_date=item.start_date,
-            end_date=item.end_date,
-            is_ephemeral=item.is_ephemeral,
-            archived_at=item.archived_at,
-            window_start=window_start,
-            window_end=inclusive_end,
-        )
+        occurrences = [
+            occurrence
+            for occurrence in get_item_occurrences(item, window_start, inclusive_end)
+            if occurrence != item.settled_occurrence
+        ]
+
+        # A payment marked "not received yet" sits before the window (its day has
+        # passed), so it is added back rather than filtered in.
+        if (
+            include_pending
+            and item.pending_occurrence is not None
+            and item.pending_occurrence < window_start
+        ):
+            occurrences.append(item.pending_occurrence)
 
         if occurrences:
             net_per_occurrence = item.calculate_net(default_tax_pct)
@@ -279,6 +463,7 @@ def calculate_expenses_before_payday(
     today: date,
     next_payday: date,
     include_savings: bool = False,
+    include_pending: bool = False,
 ) -> Decimal:
     """Calculate total expenses due before next payday.
 
@@ -288,6 +473,9 @@ def calculate_expenses_before_payday(
         next_payday: Next payday date
         include_savings: If True, only include savings goals.
                         If False, only include regular expenses.
+        include_pending: Add back occurrences whose due day has passed but which
+                         the user marked as not debited yet. Only for the current
+                         period — a later window would count them twice.
 
     Returns:
         Total expenses due before next payday
@@ -299,17 +487,20 @@ def calculate_expenses_before_payday(
         if item.is_savings_goal != include_savings:
             continue
 
-        occurrences = get_occurrences_in_window(
-            due_day=item.due_day,
-            frequency_value=item.frequency_value,
-            frequency_unit=item.frequency_unit,
-            start_date=item.start_date,
-            end_date=item.end_date,
-            is_ephemeral=item.is_ephemeral,
-            archived_at=item.archived_at,
-            window_start=today,
-            window_end=next_payday,
-        )
+        occurrences = [
+            occurrence
+            for occurrence in get_item_occurrences(item, today, next_payday)
+            if occurrence != item.settled_occurrence
+        ]
+
+        # A bill marked "not paid yet" sits before the window (its due day has
+        # passed), so it is added back rather than filtered in.
+        if (
+            include_pending
+            and item.pending_occurrence is not None
+            and item.pending_occurrence < today
+        ):
+            occurrences.append(item.pending_occurrence)
 
         if occurrences:
             total += item.amount * len(occurrences)

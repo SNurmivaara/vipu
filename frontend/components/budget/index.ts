@@ -6,6 +6,7 @@ export { AccountsSection } from "./AccountsSection";
 export { CreditCardsSection } from "./CreditCardsSection";
 export { ExpensesSection } from "./ExpensesSection";
 export { ExpensesGroupSection } from "./ExpensesGroupSection";
+export { SettleToggle } from "./SettleToggle";
 export { RoadmapSection } from "./RoadmapSection";
 export { GoalsSection } from "./GoalsSection";
 export { TotalsCard } from "./TotalsCard";

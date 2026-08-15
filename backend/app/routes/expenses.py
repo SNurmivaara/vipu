@@ -5,7 +5,13 @@ from apiflask import APIBlueprint
 from flask import Response, jsonify, request
 
 from app import get_session
+from app.deadline_calc import (
+    apply_occurrence_override,
+    expense_window_start,
+    get_previous_payday,
+)
 from app.models import ExpenseItem
+from app.routes.budget import configured_payday_day
 
 bp = APIBlueprint("expenses", __name__, tag="Expenses")
 
@@ -166,6 +172,62 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
             item.archived_at = parse_datetime(data["archived_at"])
         except ValueError:
             return jsonify({"error": "Invalid archived_at format. Use ISO format"}), 400
+
+    session.commit()
+    return jsonify(item.to_dict())
+
+
+@bp.put("/api/expenses/<int:expense_id>/occurrence")
+def set_expense_occurrence(expense_id: int) -> Response | tuple[Response, int]:
+    """Mark one occurrence of an expense as paid, or as not paid after all.
+
+    Body: occurrence_date (YYYY-MM-DD) and settled (bool). Covers a bill paid
+    ahead of its due day and one whose debit lands late, without moving the
+    schedule: only that occurrence changes, later ones are unaffected.
+
+    The date must be either the item's next occurrence or the most recent one
+    that has come due in the current pay period.
+    """
+    session = get_session()
+    item = session.query(ExpenseItem).filter_by(id=expense_id).first()
+
+    if not item:
+        return jsonify({"error": "Expense item not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    if "occurrence_date" not in data:
+        return jsonify({"error": "occurrence_date is required"}), 400
+    if "settled" not in data:
+        return jsonify({"error": "settled is required"}), 400
+
+    try:
+        occurrence = parse_date(str(data["occurrence_date"]))
+    except ValueError:
+        return jsonify({"error": "Invalid occurrence_date (use YYYY-MM-DD)"}), 400
+    if occurrence is None:
+        return jsonify({"error": "occurrence_date is required"}), 400
+
+    today = date.today()
+    applied = apply_occurrence_override(
+        item,
+        occurrence,
+        bool(data["settled"]),
+        expense_window_start(today),
+        get_previous_payday(today, configured_payday_day(session)),
+    )
+    if not applied:
+        return (
+            jsonify(
+                {
+                    "error": "occurrence_date must be this item's next occurrence "
+                    "or its most recent one this pay period"
+                }
+            ),
+            400,
+        )
 
     session.commit()
     return jsonify(item.to_dict())

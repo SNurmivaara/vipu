@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ExpenseItem, ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense, updateExpense, deleteExpense } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -12,10 +12,11 @@ import {
 } from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { SettleToggle, settleableOccurrence } from "./SettleToggle";
 import { useToast } from "@/components/ui/Toast";
 
 interface ExpensesSectionProps {
-  expenses: ExpenseItem[] | ExpenseWithOccurrence[];
+  expenses: ExpenseWithOccurrence[];
   title?: string;
   collapsible?: boolean;
   defaultOpen?: boolean;
@@ -179,16 +180,16 @@ export function ExpensesSection({
     setIsNew(false);
   };
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-
-  // Helper to check if expense has occurrence date
-  const hasOccurrence = (e: ExpenseItem | ExpenseWithOccurrence): e is ExpenseWithOccurrence =>
-    "next_occurrence_date" in e && e.next_occurrence_date !== null;
+  // Occurrences already paid are excluded: this total is what is still due.
+  const totalExpenses = expenses.reduce(
+    (sum, e) => (e.is_settled ? sum : sum + e.amount),
+    0
+  );
 
   // Sort by occurrence date, then by name
   const sortedExpenses = [...expenses].sort((a, b) => {
-    const aDate = hasOccurrence(a) ? a.next_occurrence_date : null;
-    const bDate = hasOccurrence(b) ? b.next_occurrence_date : null;
+    const aDate = a.next_occurrence_date;
+    const bDate = b.next_occurrence_date;
 
     if (aDate && bDate) {
       const cmp = aDate.localeCompare(bDate);
@@ -202,8 +203,8 @@ export function ExpensesSection({
   });
 
   // Format due date for display: "dd.mm." or "dd.mm.yyyy" if not current year
-  const formatDueDate = (expense: ExpenseItem | ExpenseWithOccurrence) => {
-    const occurrenceDate = hasOccurrence(expense) ? expense.next_occurrence_date : null;
+  const formatDueDate = (expense: ExpenseWithOccurrence) => {
+    const occurrenceDate = expense.next_occurrence_date;
 
     if (occurrenceDate) {
       const date = new Date(occurrenceDate);
@@ -222,31 +223,62 @@ export function ExpensesSection({
   };
 
   // Generate unique key for expense (handles multiple occurrences of same expense)
-  const getExpenseKey = (expense: ExpenseItem | ExpenseWithOccurrence) => {
-    const occurrenceDate = hasOccurrence(expense) ? expense.next_occurrence_date : null;
+  const getExpenseKey = (expense: ExpenseWithOccurrence) => {
+    const occurrenceDate = expense.next_occurrence_date;
     return occurrenceDate ? `${expense.id}-${occurrenceDate}` : `${expense.id}`;
   };
 
   // Simplified content for subsections (no header row, no total row)
+  // Each occurrence carries a tick box where its state can still be corrected;
+  // ticked ones are struck through and drop out of the subsection total.
   const subsectionContent = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
-      {sortedExpenses.map((expense) => (
-        <div
-          key={getExpenseKey(expense)}
-          onClick={() => openEdit(expense)}
-          className="grid grid-cols-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-        >
-          <span className="text-gray-900 dark:text-gray-100 text-sm">
-            {expense.name}
-            <span className="text-gray-400 dark:text-gray-500 ml-1.5">
-              ({formatDueDate(expense)})
+      {sortedExpenses.map((expense) => {
+        const settled = expense.is_settled;
+        const occurrence = settleableOccurrence(expense);
+        return (
+          <div
+            key={getExpenseKey(expense)}
+            onClick={() => openEdit(expense)}
+            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+          >
+            {occurrence ? (
+              <SettleToggle
+                kind="expense"
+                itemId={expense.id}
+                occurrenceDate={occurrence.occurrenceDate}
+                settled={settled}
+                name={expense.name}
+              />
+            ) : (
+              <span className="w-4 shrink-0" aria-hidden="true" />
+            )}
+            <span
+              className={cn(
+                "flex-1 min-w-0 text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500 line-through"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
+              {expense.name}
+              <span className="text-gray-400 dark:text-gray-500 ml-1.5">
+                ({formatDueDate(expense)})
+              </span>
             </span>
-          </span>
-          <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
-            {formatCurrency(-expense.amount)}
-          </span>
-        </div>
-      ))}
+            <span
+              className={cn(
+                "text-right text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500 line-through"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
+              {formatCurrency(-expense.amount)}
+            </span>
+          </div>
+        );
+      })}
       {expenses.length === 0 && (
         <div className="px-4 py-4 text-center text-gray-500 dark:text-gray-400 text-sm">
           No expenses

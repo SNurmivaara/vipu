@@ -65,6 +65,19 @@ function schedule(item: {
   return `${cadence}, lands on day ${due_day}`;
 }
 
+// One-off timing corrections the user has made. Worth stating explicitly: they
+// are why a period figure can disagree with the item's own schedule, and they
+// deliberately do not touch the monthly rates or anything projected from them.
+function occurrenceOverride(item: IncomeItem | ExpenseItem): string {
+  if (item.settled_occurrence) {
+    return ` [${item.settled_occurrence} occurrence already settled ahead of its day, so it is in the balance and excluded from the period figures]`;
+  }
+  if (item.pending_occurrence) {
+    return ` [${item.pending_occurrence} occurrence has not moved yet despite its day passing, so it still counts in the period figures]`;
+  }
+  return "";
+}
+
 function netIncome(item: IncomeItem, defaultTaxPct: number): number {
   if (item.is_deduction) {
     return (-item.gross_amount * (item.tax_percentage ?? 0)) / 100;
@@ -84,6 +97,9 @@ function accountsUpdatedAt(accounts: Account[]): string | null {
   return stamps.length > 0 ? isoDate(stamps[stamps.length - 1]) : null;
 }
 
+// Settled occurrences stay on the list but are labelled, since they are
+// excluded from the totals above them: without the label the lines would look
+// like they should add up to the total and don't.
 function occurrenceLines(items: ExpenseWithOccurrence[]): string[] {
   return [...items]
     .sort((a, b) =>
@@ -91,7 +107,9 @@ function occurrenceLines(items: ExpenseWithOccurrence[]): string[] {
     )
     .map(
       (item) =>
-        `  - ${item.next_occurrence_date ?? "date unknown"}: ${item.name} ${eur(item.amount)}`
+        `  - ${item.next_occurrence_date ?? "date unknown"}: ${item.name} ${eur(item.amount)}${
+          item.is_settled ? " (already paid, not counted above)" : ""
+        }`
     );
 }
 
@@ -194,12 +212,12 @@ export function buildFinancialSummary(
         : `taxed at default ${s.tax_percentage}%`
       : "untaxed";
     lines.push(
-      `- ${item.name}: ${eur(item.gross_amount)} -> ${eur(netIncome(item, s.tax_percentage))} (${tax}; ${schedule(item)})`
+      `- ${item.name}: ${eur(item.gross_amount)} -> ${eur(netIncome(item, s.tax_percentage))} (${tax}; ${schedule(item)})${occurrenceOverride(item)}`
     );
   }
   for (const item of deductions) {
     lines.push(
-      `- ${item.name}: ${eur(netIncome(item, s.tax_percentage))} (deduction of ${item.tax_percentage ?? 0}% of ${eur(item.gross_amount)}, subtracted from net pay after tax; ${schedule(item)})`
+      `- ${item.name}: ${eur(netIncome(item, s.tax_percentage))} (deduction of ${item.tax_percentage ?? 0}% of ${eur(item.gross_amount)}, subtracted from net pay after tax; ${schedule(item)})${occurrenceOverride(item)}`
     );
   }
   lines.push("");
@@ -234,14 +252,14 @@ export function buildFinancialSummary(
   for (const expense of recurring) {
     const kind = expense.is_savings_goal ? " [savings transfer]" : "";
     lines.push(
-      `- ${expense.name}: ${eur(expense.amount)}${kind} (${schedule(expense)})`
+      `- ${expense.name}: ${eur(expense.amount)}${kind} (${schedule(expense)})${occurrenceOverride(expense)}`
     );
   }
   if (oneTime.length > 0) {
     lines.push("One-time (excluded from the monthly rates above):");
     for (const expense of oneTime) {
       lines.push(
-        `- ${expense.name}: ${eur(expense.amount)} (${schedule(expense)})`
+        `- ${expense.name}: ${eur(expense.amount)} (${schedule(expense)})${occurrenceOverride(expense)}`
       );
     }
   }

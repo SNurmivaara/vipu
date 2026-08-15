@@ -344,7 +344,8 @@ class TestBudget:
 
     def test_due_today_bill_auto_clears(self, client, monkeypatch):
         """A bill due today is assumed paid: it drops out of the 'before payday'
-        totals and the still-due list, but moves to next period rather than vanishing.
+        totals, and stays on this period's list ticked off (so a debit that hasn't
+        landed can be flagged) as well as showing up again next period.
         A bill due tomorrow is still counted as due."""
         import datetime
 
@@ -386,8 +387,16 @@ class TestBudget:
         # Savings transfer due today auto-clears too.
         assert totals["savings_before_payday"] == 0.0
 
-        before_names = {e["name"] for e in totals["expenses_before_payday_list"]}
-        assert before_names == {"DueTomorrow", "DueLater"}
+        before = {e["name"]: e for e in totals["expenses_before_payday_list"]}
+        assert set(before) == {"DueToday", "DueTomorrow", "DueLater"}
+
+        # DueToday stays listed as already settled; the others are still due.
+        assert before["DueToday"]["is_settled"] is True
+        assert before["DueTomorrow"]["is_settled"] is False
+        assert before["DueLater"]["is_settled"] is False
+
+        # Each is its own item's nearest occurrence, so each can be corrected.
+        assert all(e["can_settle"] is True for e in before.values())
 
         # The due-today bill isn't lost: its next occurrence shows in the next
         # period, and it must NOT be misrouted into the "future" bucket.
@@ -397,8 +406,9 @@ class TestBudget:
         assert "DueToday" not in future_names
 
     def test_one_time_bill_due_today_clears(self, client, monkeypatch):
-        """A one-time bill due exactly today clears and is not shown anywhere
-        (regression guard: it must not land in the 'future' bucket)."""
+        """A one-time bill due exactly today stops counting as due, and is listed
+        only as this period's settled item (regression guard: it must not land in
+        the 'next period' or 'future' buckets)."""
         import datetime
 
         from app.routes import budget as budget_route
@@ -424,12 +434,359 @@ class TestBudget:
         totals = client.get("/api/budget/current").json["totals"]
 
         assert totals["expenses_before_payday"] == 0.0
-        all_listed = (
-            totals["expenses_before_payday_list"]
-            + totals["expenses_next_period_list"]
-            + totals["expenses_future_list"]
+
+        before = totals["expenses_before_payday_list"]
+        assert [e["name"] for e in before] == ["OneTimeToday"]
+        assert before[0]["is_settled"] is True
+
+        later = totals["expenses_next_period_list"] + totals["expenses_future_list"]
+        assert all(e["name"] != "OneTimeToday" for e in later)
+
+
+class TestOccurrenceOverrides:
+    """Tests for marking a single occurrence paid/received early or still pending.
+
+    Both corrections are one-offs: they move the money for one occurrence only
+    and never touch the schedule, so every later occurrence still lands on its
+    own day and the monthly rates behind the forecast stay put.
+
+    Default payday_day is 25, so with today frozen to 2026-06-10 the current pay
+    period runs 2026-05-25 -> 2026-06-25, and the next to 2026-07-25.
+    """
+
+    def freeze(self, monkeypatch, year, month, day):
+        """Freeze today across every module that reads the clock."""
+        import datetime
+
+        from app.routes import budget as budget_route
+        from app.routes import expenses as expenses_route
+        from app.routes import income as income_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(year, month, day)
+
+        for module in (budget_route, expenses_route, income_route):
+            monkeypatch.setattr(module, "date", _FixedDate)
+
+    def settle(self, client, path, item_id, occurrence_date, settled):
+        return client.put(
+            f"/api/{path}/{item_id}/occurrence",
+            json={"occurrence_date": occurrence_date, "settled": settled},
         )
-        assert all(e["name"] != "OneTimeToday" for e in all_listed)
+
+    def test_bill_paid_early_skips_only_that_occurrence(self, client, monkeypatch):
+        """Marking the next occurrence paid drops it from what's still due, and
+        leaves the following month's occurrence and the monthly rate alone."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 300, "due_day": 20}
+        ).json["id"]
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 300.0
+        assert totals["expenses_next_period"] == 300.0
+
+        response = self.settle(client, "expenses", expense_id, "2026-06-20", True)
+        assert response.status_code == 200
+        assert response.json["settled_occurrence"] == "2026-06-20"
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 0.0
+        # The n+1 occurrence and the forecast rate are untouched.
+        assert totals["expenses_next_period"] == 300.0
+        assert totals["monthly_expenses"] == 300.0
+
+        row = totals["expenses_before_payday_list"][0]
+        assert row["next_occurrence_date"] == "2026-06-20"
+        assert row["is_settled"] is True
+
+    def test_bill_paid_early_can_be_undone(self, client, monkeypatch):
+        """Un-ticking a bill marked paid early puts it back on the books."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 300, "due_day": 20}
+        ).json["id"]
+
+        self.settle(client, "expenses", expense_id, "2026-06-20", True)
+        response = self.settle(client, "expenses", expense_id, "2026-06-20", False)
+        assert response.status_code == 200
+        assert response.json["settled_occurrence"] is None
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 300.0
+
+    def test_bill_not_debited_yet_keeps_counting(self, client, monkeypatch):
+        """A bill whose due day fell on a weekend can be flagged as not paid, and
+        then still counts as due even though its day has passed."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Loan", "amount": 250, "due_day": 10}
+        ).json["id"]
+
+        # Auto-cleared on its due day by default.
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 0.0
+
+        response = self.settle(client, "expenses", expense_id, "2026-06-10", False)
+        assert response.status_code == 200
+        assert response.json["pending_occurrence"] == "2026-06-10"
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 250.0
+        assert totals["expenses_next_period"] == 250.0
+        assert totals["monthly_expenses"] == 250.0
+
+        row = totals["expenses_before_payday_list"][0]
+        assert row["next_occurrence_date"] == "2026-06-10"
+        assert row["is_settled"] is False
+
+    def test_bill_still_pending_after_its_day(self, client, monkeypatch):
+        """The pending mark outlives its own due day — that is the point — so a
+        Saturday bill debited on Monday keeps showing until it is ticked off."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Loan", "amount": 250, "due_day": 10}
+        ).json["id"]
+        self.settle(client, "expenses", expense_id, "2026-06-10", False)
+
+        self.freeze(monkeypatch, 2026, 6, 12)
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 250.0
+
+        # Ticking it off once the debit lands clears the mark.
+        response = self.settle(client, "expenses", expense_id, "2026-06-10", True)
+        assert response.status_code == 200
+        assert response.json["pending_occurrence"] is None
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["expenses_before_payday"] == 0.0
+
+    def test_settled_mark_expires_on_its_day(self, client, monkeypatch):
+        """Once the settled occurrence's day arrives the default assumption says
+        the same thing, so the mark is dropped rather than left to linger."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 300, "due_day": 20}
+        ).json["id"]
+        self.settle(client, "expenses", expense_id, "2026-06-20", True)
+
+        self.freeze(monkeypatch, 2026, 6, 21)
+        client.get("/api/budget/current")
+
+        expense = client.get("/api/expenses").json[0]
+        assert expense["settled_occurrence"] is None
+
+    def test_pending_mark_expires_when_superseded(self, client, monkeypatch):
+        """A pending mark is scoped to the current pay period: once a newer
+        occurrence has come due it refers to closed history and is dropped."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Loan", "amount": 250, "due_day": 10}
+        ).json["id"]
+        self.settle(client, "expenses", expense_id, "2026-06-10", False)
+
+        self.freeze(monkeypatch, 2026, 7, 10)
+        totals = client.get("/api/budget/current").json["totals"]
+
+        assert client.get("/api/expenses").json[0]["pending_occurrence"] is None
+        assert totals["expenses_before_payday"] == 0.0
+
+    def test_pending_one_time_bill_is_not_archived(self, client, monkeypatch):
+        """A one-time bill flagged as not debited yet survives the auto-archive:
+        its money hasn't moved, so it isn't history."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+        expense_id = client.post(
+            "/api/expenses",
+            json={
+                "name": "TaxBill",
+                "amount": 400,
+                "is_ephemeral": True,
+                "start_date": "2026-06-10",
+                "due_day": 10,
+            },
+        ).json["id"]
+        self.settle(client, "expenses", expense_id, "2026-06-10", False)
+
+        self.freeze(monkeypatch, 2026, 6, 15)
+        data = client.get("/api/budget/current").json
+
+        assert [e["name"] for e in data["expenses"]] == ["TaxBill"]
+        assert data["archived_expenses"] == []
+        assert data["totals"]["expenses_before_payday"] == 400.0
+
+        # It is charged against the roadmap as falling due now, not in the past.
+        roadmap = client.get("/api/goals/roadmap").json
+        assert roadmap["pending_one_time_net"] == -400.0
+
+        # Come the next pay period it is stale either way, and archives as usual.
+        self.freeze(monkeypatch, 2026, 6, 26)
+        data = client.get("/api/budget/current").json
+        assert [e["name"] for e in data["archived_expenses"]] == ["TaxBill"]
+
+    def test_income_received_early(self, client, monkeypatch):
+        """Pay that landed before payday is already in the balance, so it stops
+        being counted as still to arrive."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        income_id = client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "due_day": 25},
+        ).json["id"]
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 3000.0
+        assert data["income"][0]["next_occurrence_date"] == "2026-06-25"
+        assert data["income"][0]["is_settled"] is False
+
+        response = self.settle(client, "income", income_id, "2026-06-25", True)
+        assert response.status_code == 200
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 0.0
+        assert data["income"][0]["is_settled"] is True
+        # Next month's paycheck and the monthly rate are unaffected.
+        assert data["totals"]["income_next_period"] == 3000.0
+        assert data["totals"]["monthly_net_income"] == 3000.0
+
+    def test_income_not_received_yet(self, client, monkeypatch):
+        """Pay that hasn't landed on its day still counts as incoming."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        income_id = client.post(
+            "/api/income",
+            json={"name": "Freelance", "gross_amount": 1000, "due_day": 5},
+        ).json["id"]
+
+        data = client.get("/api/budget/current").json
+        # The 5th has passed, so by default it is assumed to be in the balance.
+        assert data["totals"]["income_before_payday"] == 0.0
+        assert data["income"][0]["next_occurrence_date"] == "2026-06-05"
+        assert data["income"][0]["is_settled"] is True
+
+        response = self.settle(client, "income", income_id, "2026-06-05", False)
+        assert response.status_code == 200
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 750.0
+        assert data["income"][0]["is_settled"] is False
+
+    def test_income_due_today_is_still_expected(self, client, monkeypatch):
+        """Pay dated today has not been assumed into the balance (only payday
+        itself is), so it shows as still expected and the tick box agrees with
+        the total rather than contradicting it."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        income_id = client.post(
+            "/api/income",
+            json={"name": "Rent income", "gross_amount": 1000, "due_day": 10},
+        ).json["id"]
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 750.0
+        assert data["income"][0]["next_occurrence_date"] == "2026-06-10"
+        assert data["income"][0]["is_settled"] is False
+
+        response = self.settle(client, "income", income_id, "2026-06-10", True)
+        assert response.status_code == 200
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 0.0
+        assert data["income"][0]["is_settled"] is True
+
+    def test_only_the_nearest_occurrences_can_be_overridden(self, client, monkeypatch):
+        """A weekly bill occurs several times before payday, but only the two
+        around today can be marked — the one just gone by (did it debit?) and the
+        next one up (paid early?). Later ones are a schedule change, not a timing
+        fix."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses",
+            json={
+                "name": "Weekly",
+                "amount": 50,
+                "frequency_value": 1,
+                "frequency_unit": "weeks",
+                "start_date": "2026-06-03",
+                "due_day": 3,
+            },
+        ).json["id"]
+
+        rows = client.get("/api/budget/current").json["totals"][
+            "expenses_before_payday_list"
+        ]
+        settleable = [r["next_occurrence_date"] for r in rows if r["can_settle"]]
+        assert settleable == ["2026-06-10", "2026-06-17"]
+        assert "2026-06-24" in [r["next_occurrence_date"] for r in rows]
+
+        response = self.settle(client, "expenses", expense_id, "2026-06-24", True)
+        assert response.status_code == 400
+        assert "occurrence" in response.json["error"]
+
+    def test_weekly_item_without_a_start_date_ticks_off_a_listed_occurrence(
+        self, client, monkeypatch
+    ):
+        """A day/week cadence with no start_date takes its phase from the window
+        it is generated in, so the tick box has to be resolved against the same
+        window as the list — otherwise it lands on a date that isn't shown."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses",
+            json={
+                "name": "Groceries",
+                "amount": 80,
+                "frequency_value": 1,
+                "frequency_unit": "weeks",
+                "due_day": 10,
+            },
+        ).json["id"]
+
+        rows = client.get("/api/budget/current").json["totals"][
+            "expenses_before_payday_list"
+        ]
+        upcoming = [r for r in rows if not r["is_settled"]]
+        assert upcoming[0]["can_settle"] is True
+
+        response = self.settle(
+            client, "expenses", expense_id, upcoming[0]["next_occurrence_date"], True
+        )
+        assert response.status_code == 200
+
+    def test_occurrence_validation(self, client, monkeypatch):
+        """Bad requests are rejected rather than silently stored."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 300, "due_day": 20}
+        ).json["id"]
+
+        assert (
+            self.settle(client, "expenses", 999, "2026-06-20", True).status_code == 404
+        )
+        assert (
+            self.settle(client, "expenses", expense_id, "not-a-date", True).status_code
+            == 400
+        )
+        assert (
+            client.put(
+                f"/api/expenses/{expense_id}/occurrence", json={"settled": True}
+            ).status_code
+            == 400
+        )
+        assert (
+            client.put(
+                f"/api/expenses/{expense_id}/occurrence",
+                json={"occurrence_date": "2026-06-20"},
+            ).status_code
+            == 400
+        )
+        assert self.settle(client, "income", 999, "2026-06-25", True).status_code == 404
 
 
 class TestSeed:

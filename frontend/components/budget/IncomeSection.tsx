@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { IncomeItem, IncomeFormData, BudgetSettings } from "@/types";
+import { IncomeItem, IncomeWithOccurrence, IncomeFormData, BudgetSettings } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import {
   parseSchedulingFormValues,
   getSchedulingInitialValues,
@@ -12,10 +12,11 @@ import {
 } from "@/lib/schedulingMode";
 import { EditDialog } from "./EditDialog";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { SettleToggle, settleableOccurrence } from "./SettleToggle";
 import { useToast } from "@/components/ui/Toast";
 
 interface IncomeSectionProps {
-  income: IncomeItem[];
+  income: IncomeWithOccurrence[];
   settings: BudgetSettings;
   collapsible?: boolean;
   defaultOpen?: boolean;
@@ -203,13 +204,35 @@ export function IncomeSection({
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
       {income.map((item) => {
         const netAmount = calculateNetAmount(item, settings.tax_percentage);
+        // Pay that has already landed is ticked off, so it stops being counted
+        // as still to arrive — the same tick can be undone when it hasn't.
+        const occurrence = settleableOccurrence(item);
+        const settled = occurrence?.settled ?? false;
         return (
           <div
             key={item.id}
             onClick={() => openEdit(item)}
-            className="grid grid-cols-[1fr_5.5rem_5.5rem] px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
           >
-            <span className="text-gray-900 dark:text-gray-100 text-sm">
+            {occurrence ? (
+              <SettleToggle
+                kind="income"
+                itemId={item.id}
+                occurrenceDate={occurrence.occurrenceDate}
+                settled={settled}
+                name={item.name}
+              />
+            ) : (
+              <span className="w-4 shrink-0" aria-hidden="true" />
+            )}
+            <span
+              className={cn(
+                "flex-1 min-w-0 text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
               {item.name}
               {item.is_taxed && (
                 <span className="text-gray-400 dark:text-gray-500 ml-1.5">
@@ -217,10 +240,17 @@ export function IncomeSection({
                 </span>
               )}
             </span>
-            <span className="text-right text-gray-400 dark:text-gray-500 text-sm">
+            <span className="w-[5.5rem] text-right text-gray-400 dark:text-gray-500 text-sm">
               {formatCurrency(item.gross_amount)}
             </span>
-            <span className="text-right text-gray-900 dark:text-gray-100 text-sm">
+            <span
+              className={cn(
+                "w-[5.5rem] text-right text-sm",
+                settled
+                  ? "text-gray-400 dark:text-gray-500"
+                  : "text-gray-900 dark:text-gray-100"
+              )}
+            >
               {formatCurrency(netAmount)}
             </span>
           </div>

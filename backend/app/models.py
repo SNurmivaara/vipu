@@ -80,6 +80,14 @@ class IncomeItem(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Per-occurrence overrides of the "cleared on its due day" assumption, each
+    # holding a single occurrence date so only that one occurrence moves — the
+    # schedule and every later occurrence (and with them the forecast) stay put.
+    # settled: an upcoming occurrence already received (paid ahead of a banking
+    # holiday, say), so it is skipped. pending: an occurrence whose day has come
+    # and gone without the money moving, so it still counts as owed/expected.
+    settled_occurrence: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pending_occurrence: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -99,6 +107,12 @@ class IncomeItem(Base):
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "is_ephemeral": self.is_ephemeral,
             "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "settled_occurrence": (
+                self.settled_occurrence.isoformat() if self.settled_occurrence else None
+            ),
+            "pending_occurrence": (
+                self.pending_occurrence.isoformat() if self.pending_occurrence else None
+            ),
         }
 
     def calculate_net(self, default_tax_percentage: Decimal) -> Decimal:
@@ -153,6 +167,11 @@ class ExpenseItem(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Per-occurrence overrides of the "cleared on its due day" assumption — see
+    # IncomeItem for the full note. settled: paid early, skip it. pending: due
+    # day passed but the debit hasn't landed yet, so it still counts as owed.
+    settled_occurrence: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pending_occurrence: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -168,6 +187,12 @@ class ExpenseItem(Base):
             "end_date": self.end_date.isoformat() if self.end_date else None,
             "is_ephemeral": self.is_ephemeral,
             "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "settled_occurrence": (
+                self.settled_occurrence.isoformat() if self.settled_occurrence else None
+            ),
+            "pending_occurrence": (
+                self.pending_occurrence.isoformat() if self.pending_occurrence else None
+            ),
         }
 
 
