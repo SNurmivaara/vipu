@@ -5,14 +5,16 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { GoalFormData, RoadmapStep } from "@/types";
 import { createGoal, updateGoal, deleteGoal, reorderGoals } from "@/lib/api";
 import { useRoadmap } from "@/hooks/useGoals";
+import { useBudget } from "@/hooks/useBudget";
 import { useNetWorthCategories } from "@/hooks/useNetWorth";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/ui/Toast";
 import { RoadmapFormDialog } from "./RoadmapFormDialog";
 
-// The sequential financial plan: "pay off X" -> "save 6k" -> "do Y", funded
-// by the monthly budget surplus. Each step shows how fast it completes at the
-// current surplus; the whole surplus flows into the first unfinished step.
+// The sequential financial plan: "pay off X" -> "save 6k" -> "do Y", funded by
+// what each pay period leaves over. The whole of it flows into the first
+// unfinished step, and the projection walks real periods, so a yearly bill
+// delays the step it lands on instead of shaving a twelfth off every step.
 
 function formatMonthYear(isoDate: string): string {
   return new Date(isoDate).toLocaleDateString("en-GB", {
@@ -34,6 +36,7 @@ const STEP_TYPE_LABELS: Record<string, string> = {
 
 export function RoadmapSection() {
   const { data, isLoading } = useRoadmap();
+  const { data: budget } = useBudget();
   const { data: categories } = useNetWorthCategories();
   const [editStep, setEditStep] = useState<RoadmapStep | null>(null);
   const [isNew, setIsNew] = useState(false);
@@ -90,6 +93,9 @@ export function RoadmapSection() {
 
   const steps = data?.goals ?? [];
   const surplus = data?.surplus_monthly ?? 0;
+  // The money the next period leaves over, straight from the summary card, so
+  // the two can't advertise different figures for the same period.
+  const unallocatedNextPeriod = budget?.totals.unallocated_next_period ?? 0;
   const startingPosition = data?.starting_position ?? 0;
   const pendingOneTime = data?.pending_one_time_net ?? 0;
   const shortfallMonths = data?.shortfall_months ?? 0;
@@ -138,15 +144,18 @@ export function RoadmapSection() {
           <h2 className="font-semibold text-gray-900 dark:text-gray-100">
             Financial Roadmap
           </h2>
+          {/* What the plan is actually funded by next, rather than a smoothed
+              monthly rate: the roadmap walks real periods, and a yearly bill
+              lands in the period it falls due in. */}
           {data && (
             <span
               className={`text-sm ${
-                surplus > 0
+                unallocatedNextPeriod > 0
                   ? "text-emerald-600 dark:text-emerald-400"
                   : "text-red-600 dark:text-red-400"
               }`}
             >
-              {formatCurrency(surplus)}/mo surplus
+              {formatCurrency(unallocatedNextPeriod)} next period
             </span>
           )}
         </div>

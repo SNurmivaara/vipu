@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -7,15 +8,24 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import get_session
-from app.deadline_calc import get_next_payday, get_payday_after
+from app.deadline_calc import (
+    calculate_expenses_before_payday,
+    calculate_income_before_payday,
+    expense_window_start,
+    get_next_payday,
+    get_payday_after,
+)
 from app.models import (
     BudgetSettings,
+    ExpenseItem,
     Goal,
+    IncomeItem,
     NetWorthCategory,
     NetWorthSnapshot,
 )
 from app.routes.budget import (
     DAYS_PER_MONTH,
+    _tax_percentage,
     compute_budget_totals,
     pending_one_time_items,
 )
@@ -270,26 +280,80 @@ def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decim
     return goal.current_amount if goal.current_amount is not None else Decimal("0")
 
 
+def _make_period_flow(
+    session: Session, today: date, payday_day: int
+) -> Callable[[date, date], Decimal]:
+    """Build "what does [start, end) actually net out to" for the projection.
+
+    Money in less the bills and savings transfers falling due in it, from the
+    same deadline calculations the front page is built on, so a projected date
+    and the summary card can't tell different stories about the same period.
+
+    Card payments are the one thing deliberately left out. The walk opens from
+    the netted balance, where every card is already assumed paid off in full, so
+    charging the payment again on its due day would subtract the same debt
+    twice. The summary card does subtract it, because that one opens from cash.
+    """
+    tax_pct = _tax_percentage(session)
+    income_items = [i for i in session.query(IncomeItem).all() if i.archived_at is None]
+    expense_items = [
+        e for e in session.query(ExpenseItem).all() if e.archived_at is None
+    ]
+
+    def period_flow(start: date, end: date) -> Decimal:
+        # Only the part-period we are standing in has occurrences behind us that
+        # the user may have flagged as not yet paid; later periods are all ahead.
+        is_current = start == today
+        expense_start = expense_window_start(today) if is_current else start
+
+        income = calculate_income_before_payday(
+            income_items,
+            start,
+            end,
+            tax_pct,
+            payday_day=payday_day,
+            include_pending=is_current,
+        )
+        bills = calculate_expenses_before_payday(
+            expense_items,
+            expense_start,
+            end,
+            include_savings=False,
+            include_pending=is_current,
+        )
+        savings = calculate_expenses_before_payday(
+            expense_items,
+            expense_start,
+            end,
+            include_savings=True,
+            include_pending=is_current,
+        )
+        return income - bills - savings
+
+    return period_flow
+
+
 def _project_completions(
     remaining_steps: list[Decimal],
     surplus: Decimal,
     opening_balance: Decimal,
-    one_times: list[tuple[date, Decimal]],
+    period_flow: Callable[[date, date], Decimal],
     today: date,
     payday_day: int,
 ) -> list[date | None]:
     """Completion date for each unfinished step, walking payday to payday.
 
     The budget month rolls over on payday rather than on the 1st, because that
-    is when the money actually arrives. So the surplus is realized in a lump at
-    each payday instead of trickling in day by day, and a step completes on the
-    payday that first covers it. The current part-period is credited pro rata
-    for the days remaining in it, so a projection made the day before payday
-    doesn't get handed a full month of surplus it hasn't earned.
+    is when the money actually arrives. So each period's money is realized in a
+    lump at its payday and a step completes on the payday that first covers it.
 
-    One-time items are charged on the day they actually fall due rather than all
-    up front — a step that finishes before a bill lands shouldn't be delayed by
-    it, and one that finishes after should.
+    What lands at each payday is that period's actual cash flow, not a smoothed
+    monthly rate: the bills that genuinely fall due in it, the card balances that
+    come off in it, and any one-time item dated in it. A yearly insurance bill
+    therefore delays the step it lands on rather than shaving a twelfth off every
+    step, and the current part-period contributes only what is genuinely left in
+    it. The surplus rate is still used as the viability check, since a plan with
+    no monthly surplus never converges and shouldn't be walked to the horizon.
 
     Steps are funded strictly in order out of a single running balance.
     """
@@ -297,15 +361,7 @@ def _project_completions(
     if surplus <= 0 or not remaining_steps:
         return completions
 
-    charges: dict[date, Decimal] = {}
     balance = opening_balance
-    for due, amount in one_times:
-        if due <= today:
-            # Already due (or undated, so treated as immediate)
-            balance += amount
-        else:
-            charges[due] = charges.get(due, Decimal("0")) + amount
-
     index = 0
 
     def settle(on: date) -> None:
@@ -318,25 +374,15 @@ def _project_completions(
 
     settle(today)
 
-    boundaries: list[date] = []
+    previous = today
     boundary = get_next_payday(today, payday_day)
     for _ in range(MAX_PROJECTION_PERIODS):
-        boundaries.append(boundary)
-        boundary = get_payday_after(boundary, payday_day)
-
-    boundary_set = set(boundaries)
-    events = sorted(boundary_set | {d for d in charges if d <= boundaries[-1]})
-
-    previous_payday = today
-    for event in events:
         if index >= len(remaining_steps):
             break
-        if event in boundary_set:
-            span = Decimal((event - previous_payday).days)
-            balance += surplus * span / DAYS_PER_MONTH
-            previous_payday = event
-        balance += charges.get(event, Decimal("0"))
-        settle(event)
+        balance += period_flow(previous, boundary)
+        settle(boundary)
+        previous = boundary
+        boundary = get_payday_after(boundary, payday_day)
 
     return completions
 
@@ -407,7 +453,12 @@ def get_roadmap() -> Response:
         if goal.target_value - _roadmap_current_value(goal, latest) > 0
     ]
     projected = _project_completions(
-        unfinished, surplus, opening_balance, one_times, today, payday_day
+        unfinished,
+        surplus,
+        opening_balance,
+        _make_period_flow(session, today, payday_day),
+        today,
+        payday_day,
     )
 
     projection = iter(projected)

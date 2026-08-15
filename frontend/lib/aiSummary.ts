@@ -269,7 +269,7 @@ export function buildFinancialSummary(
   if (roadmap) {
     lines.push("### Financial roadmap");
     lines.push(
-      `Sequential plan funded by the monthly surplus of ${eur(roadmap.surplus_monthly)}/mo. The whole surplus fills the first unfinished goal, then cascades to the next. Steps complete on a payday, since that is when the money arrives.`
+      `Sequential plan funded by whatever each pay period leaves over: ${eur(t.unallocated_next_period)} next period, against a smoothed rate of ${eur(roadmap.surplus_monthly)}/mo. The whole of it fills the first unfinished goal, then cascades to the next. Projected dates walk real periods rather than that rate, so a yearly bill delays the step it lands on instead of being spread across every month, and steps complete on a payday, since that is when the money arrives.`
     );
     if (roadmap.starting_position < 0) {
       lines.push(
