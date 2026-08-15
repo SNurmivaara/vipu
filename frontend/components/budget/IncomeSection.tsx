@@ -19,6 +19,8 @@ import { useToast } from "@/components/ui/Toast";
 interface IncomeSectionProps {
   income: IncomeWithOccurrence[];
   settings: BudgetSettings;
+  /** Pay arriving in the next pay period, before deductions */
+  nextPeriodTotal: number;
   collapsible?: boolean;
   defaultOpen?: boolean;
 }
@@ -113,6 +115,7 @@ function calculateNetAmount(
 export function IncomeSection({
   income,
   settings,
+  nextPeriodTotal,
   collapsible = false,
   defaultOpen = false,
 }: IncomeSectionProps) {
@@ -196,10 +199,6 @@ export function IncomeSection({
     setIsNew(false);
   };
 
-  const totalNet = income.reduce(
-    (sum, item) => sum + calculateNetAmount(item, settings.tax_percentage),
-    0
-  );
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -302,7 +301,8 @@ export function IncomeSection({
       <>
         <CollapsibleSection
           title="Income"
-          total={formatCurrency(totalNet)}
+          total={formatCurrency(nextPeriodTotal)}
+          totalCaption="next period"
           totalClassName="text-green-600 dark:text-green-400"
           defaultOpen={defaultOpen}
           onAdd={openNew}

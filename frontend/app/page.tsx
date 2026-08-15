@@ -199,6 +199,9 @@ export default function BudgetPage() {
     is_settled: false,
     can_settle: false,
   };
+  // Every section header reports the same period the summary card does
+  const nextPeriod = data.totals.period_next;
+
   const archivedIncome = showArchived
     ? data.archived_income.map((i) => ({ ...i, ...noOccurrence }))
     : [];
@@ -311,6 +314,7 @@ export default function BudgetPage() {
               ...archivedIncome.filter((i) => !i.is_deduction),
             ]}
             settings={data.settings}
+            nextPeriodTotal={nextPeriod.income}
             collapsible
           />
           <DeductionsSection
@@ -318,6 +322,7 @@ export default function BudgetPage() {
               ...data.income.filter((i) => i.is_deduction),
               ...archivedIncome.filter((i) => i.is_deduction),
             ]}
+            nextPeriodTotal={nextPeriod.deductions}
             collapsible
           />
           <AccountsSection
@@ -332,6 +337,7 @@ export default function BudgetPage() {
         <div className="space-y-4">
           <ExpensesGroupSection
             expensesBeforePayday={data.totals.expenses_before_payday_list}
+            nextPeriodTotal={nextPeriod.bills}
             expensesAfterPayday={data.totals.expenses_next_period_list}
             expensesFuture={[
               ...data.totals.expenses_future_list,

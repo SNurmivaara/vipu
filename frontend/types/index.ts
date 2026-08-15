@@ -75,7 +75,35 @@ export interface BudgetSettings {
   payday_day: number;
 }
 
+/**
+ * One pay period's cash flow, as the backend's single period calculator
+ * produces it. Every figure on the page that describes a period comes from
+ * here, so the summary card, the section headers and the roadmap cannot
+ * disagree about the same days.
+ */
+export interface PeriodFlow {
+  start: string;
+  end: string;
+  /** Net pay arriving in the period, before payroll deductions */
+  income: number;
+  /** Payroll deductions, negative, taken out of that pay */
+  deductions: number;
+  bills: number;
+  savings: number;
+  card_payments: number;
+  /** Pay actually landing in the account: income + deductions */
+  money_in: number;
+  /** Everything leaving: bills + savings + card payments */
+  money_out: number;
+  /** What the period leaves over, free to be swept out */
+  net: number;
+}
+
 export interface BudgetTotals {
+  /** Today through the next payday, the part-period we are standing in */
+  period_current: PeriodFlow;
+  /** Payday to the following payday */
+  period_next: PeriodFlow;
   gross_income: number;
   net_income: number;
   current_balance: number;

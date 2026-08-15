@@ -4,6 +4,7 @@ Handles recurring and one-time payments/income with flexible frequencies.
 """
 
 from calendar import monthrange
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -535,6 +536,105 @@ def calculate_expenses_before_payday(
             total += item.amount * len(occurrences)
 
     return total
+
+
+@dataclass(frozen=True)
+class PeriodFlow:
+    """What one pay period does to the account, broken down by where it goes.
+
+    The single answer to "what happens in this period". Every surface that talks
+    about a period reads it from here: the summary card, the section headers and
+    the roadmap projection. Two of them computing their own version is how they
+    ended up disagreeing about the same period.
+    """
+
+    start: date
+    end: date
+    #: Net pay arriving in the period, before payroll deductions
+    income: Decimal
+    #: Payroll deductions, negative, taken out of that pay
+    deductions: Decimal
+    bills: Decimal
+    savings: Decimal
+    card_payments: Decimal
+
+    @property
+    def money_in(self) -> Decimal:
+        """Pay actually landing in the account, deductions already taken off."""
+        return self.income + self.deductions
+
+    @property
+    def money_out(self) -> Decimal:
+        """Everything leaving the account in the period."""
+        return self.bills + self.savings + self.card_payments
+
+    @property
+    def net(self) -> Decimal:
+        """What the period leaves over: the amount free to be swept out."""
+        return self.money_in - self.money_out
+
+
+def calculate_period_flow(
+    income_items: list["IncomeItem"],
+    expense_items: list["ExpenseItem"],
+    accounts: list["Account"],
+    default_tax_pct: Decimal,
+    payday_day: int,
+    today: date,
+    start: date,
+    end: date,
+) -> PeriodFlow:
+    """Money in and out over [start, end), by category.
+
+    The part-period we are standing in is treated differently in one respect:
+    only it has occurrences behind us, which the user may have flagged as paid
+    early or not paid yet. Later periods are entirely ahead, so no override can
+    apply to them.
+    """
+    is_current = start == today
+
+    # Bills clear on their due day, so the current period only still owes what
+    # falls after today; a later period owes everything in it.
+    expense_start = expense_window_start(today) if is_current else start
+
+    pay = [i for i in income_items if not i.is_deduction]
+    deductions = [i for i in income_items if i.is_deduction]
+
+    return PeriodFlow(
+        start=start,
+        end=end,
+        income=calculate_income_before_payday(
+            pay,
+            start,
+            end,
+            default_tax_pct,
+            payday_day=payday_day,
+            include_pending=is_current,
+        ),
+        deductions=calculate_income_before_payday(
+            deductions,
+            start,
+            end,
+            default_tax_pct,
+            payday_day=payday_day,
+            include_pending=is_current,
+        ),
+        bills=calculate_expenses_before_payday(
+            expense_items,
+            expense_start,
+            end,
+            include_savings=False,
+            include_pending=is_current,
+        ),
+        savings=calculate_expenses_before_payday(
+            expense_items,
+            expense_start,
+            end,
+            include_savings=True,
+            include_pending=is_current,
+        ),
+        card_payments=calculate_cc_payments_in_window(accounts, today, start, end),
+    )
 
 
 def get_card_payment_date(account: "Account", today: date) -> date:

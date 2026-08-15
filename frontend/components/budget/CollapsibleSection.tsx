@@ -7,6 +7,8 @@ interface CollapsibleSectionProps {
   title: string;
   total?: string;
   totalClassName?: string;
+  /** What the total covers, e.g. "next period". Says which days it counts. */
+  totalCaption?: string;
   children: ReactNode;
   defaultOpen?: boolean;
   onAdd?: () => void;
@@ -16,6 +18,7 @@ export function CollapsibleSection({
   title,
   total,
   totalClassName,
+  totalCaption,
   children,
   defaultOpen = false,
   onAdd,
@@ -54,7 +57,14 @@ export function CollapsibleSection({
         </button>
         <div className="flex items-center gap-3">
           {total && (
-            <span className={cn("font-medium", totalClassName)}>{total}</span>
+            <span className="flex items-baseline gap-1.5">
+              {totalCaption && (
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  {totalCaption}
+                </span>
+              )}
+              <span className={cn("font-medium", totalClassName)}>{total}</span>
+            </span>
           )}
           {onAdd && (
             <button

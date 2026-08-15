@@ -18,6 +18,8 @@ import { useToast } from "@/components/ui/Toast";
 
 interface DeductionsSectionProps {
   deductions: IncomeWithOccurrence[];
+  /** Deductions coming out of the next pay period, negative */
+  nextPeriodTotal: number;
   collapsible?: boolean;
   defaultOpen?: boolean;
 }
@@ -113,6 +115,7 @@ function calculateNetAmount(item: IncomeItem): number {
 
 export function DeductionsSection({
   deductions,
+  nextPeriodTotal,
   collapsible = false,
   defaultOpen = false,
 }: DeductionsSectionProps) {
@@ -196,10 +199,6 @@ export function DeductionsSection({
     setIsNew(false);
   };
 
-  const totalDeduction = deductions.reduce(
-    (sum, item) => sum + calculateNetAmount(item),
-    0
-  );
 
   const content = (
     <div className="divide-y divide-gray-100 dark:divide-gray-800">
@@ -294,7 +293,8 @@ export function DeductionsSection({
       <>
         <CollapsibleSection
           title="Deductions"
-          total={formatCurrency(totalDeduction)}
+          total={formatCurrency(nextPeriodTotal)}
+          totalCaption="next period"
           totalClassName="text-red-600 dark:text-red-400"
           defaultOpen={defaultOpen}
           onAdd={openNew}
