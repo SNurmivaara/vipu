@@ -940,6 +940,138 @@ class TestPeriodCashFlow:
         assert totals["unallocated_next_period"] == 2600.0
 
 
+class TestCashLowPoint:
+    """Tests for the lowest the balance gets while the projection plays out.
+
+    A period can end comfortably and still go through the floor in the middle of
+    itself: the bills land on their own days, and the pay that covers them lands
+    on one day. Only the endpoints were reported before, so running out of money
+    a week before payday looked fine.
+    """
+
+    def freeze(self, monkeypatch):
+        import datetime
+
+        from app.routes import budget as budget_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 6, 10)
+
+        monkeypatch.setattr(budget_route, "date", _FixedDate)
+
+    def test_running_out_before_payday_is_reported(self, client, monkeypatch):
+        """Cash covers the period as a whole, but not the day the big bill lands."""
+        self.freeze(monkeypatch)
+        client.put("/api/settings", json={"payday_day": 25})
+
+        client.post("/api/accounts", json={"name": "Checking", "balance": 1700})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 2000, "due_day": 20}
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        # The period ends well in the black once the salary lands...
+        assert totals["period_current"]["net"] == 2000.0
+        # ...but the 20th takes 2 000 out of 1 700
+        assert totals["cash_low_point"] == {"date": "2026-06-20", "balance": -300.0}
+
+    def test_low_point_is_the_opening_balance_when_nothing_dips(
+        self, client, monkeypatch
+    ):
+        """With no bills to land, the tightest moment is where you start."""
+        self.freeze(monkeypatch)
+        client.post("/api/accounts", json={"name": "Checking", "balance": 500})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["cash_low_point"] == {"date": "2026-06-10", "balance": 500.0}
+
+    def test_a_bill_sharing_a_day_with_the_pay_is_not_a_shortfall(
+        self, client, monkeypatch
+    ):
+        """A day is taken as a whole. The 500 lands the same day as the 4 000
+        that covers it, so there is no dip to report."""
+        self.freeze(monkeypatch)
+        client.put("/api/settings", json={"payday_day": 25})
+
+        client.post("/api/accounts", json={"name": "Checking", "balance": 100})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 500, "due_day": 25}
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        # The 25th nets to +3 500, so the tightest moment is where we start
+        assert totals["cash_low_point"] == {"date": "2026-06-10", "balance": 100.0}
+
+    def test_a_bill_flagged_unpaid_counts_from_today(self, client, monkeypatch):
+        """An overdue bill hits the walk now, not on the day already behind us."""
+        self.freeze(monkeypatch)
+        client.put("/api/settings", json={"payday_day": 25})
+
+        client.post("/api/accounts", json={"name": "Checking", "balance": 300})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Loan", "amount": 400, "due_day": 5}
+        ).json["id"]
+
+        # Due on the 5th, still not debited on the 10th
+        import datetime
+
+        from app.routes import expenses as expenses_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 6, 10)
+
+        monkeypatch.setattr(expenses_route, "date", _FixedDate)
+        client.put(
+            f"/api/expenses/{expense_id}/occurrence",
+            json={"occurrence_date": "2026-06-05", "settled": False},
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["cash_low_point"]["balance"] == -100.0
+        assert totals["cash_low_point"]["date"] == "2026-06-11"
+
+
 class TestSeed:
     """Tests for seed endpoint."""
 

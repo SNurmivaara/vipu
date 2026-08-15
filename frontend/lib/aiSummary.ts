@@ -177,6 +177,13 @@ export function buildFinancialSummary(
     `- Still to happen before payday: +${eur(current.money_in)} pay, ${eur(current.bills + current.savings)} of bills, ${eur(current.card_payments)} of card payments`
   );
   lines.push(...occurrenceLines(t.expenses_before_payday_list));
+  lines.push(
+    `- Lowest the cash gets between now and the end of next period: ${eur(t.cash_low_point.balance)} on ${t.cash_low_point.date}${
+      t.cash_low_point.balance < 0
+        ? ". The account goes under before the pay that covers those bills arrives, so the projections below are reached through a shortfall rather than around it."
+        : ""
+    }`
+  );
   lines.push(`- Projected cash at payday: ${eur(atPayday)}`);
   lines.push(
     `- Next period (${next.start} to ${next.end}): +${eur(next.money_in)} pay, ${eur(next.bills + next.savings)} of bills, ${eur(next.card_payments)} of card payments`

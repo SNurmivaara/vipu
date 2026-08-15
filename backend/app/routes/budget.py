@@ -10,6 +10,7 @@ from app.deadline_calc import (
     PeriodFlow,
     calculate_period_flow,
     expense_window_start,
+    find_low_point,
     get_checkpoint_occurrence,
     get_item_occurrences,
     get_latest_due_occurrence,
@@ -342,6 +343,15 @@ def get_current_budget() -> Response:
     cash_balance = sum((a.balance for a in accounts if not a.is_credit), Decimal("0"))
     card_debt = sum((a.balance for a in accounts if a.is_credit), Decimal("0"))
 
+    # Where the balance actually bottoms out. A period can end comfortably and
+    # still go under in the middle of itself, because bills land on their own
+    # days and the pay that covers them usually lands on one day.
+    low_date, low_balance = find_low_point(
+        cash_balance,
+        [*current_period.movements, *next_period.movements],
+        today,
+    )
+
     # Calculate expense occurrences for each period (for frontend display)
     # Returns expense dicts with next_occurrence_date for each period
     expenses_before_payday_list: list[dict] = []
@@ -464,6 +474,11 @@ def get_current_budget() -> Response:
                 "monthly_expenses": float(totals["monthly_expenses"]),
                 "monthly_net_income": float(totals["monthly_net_income"]),
                 "monthly_surplus": float(totals["monthly_surplus"]),
+                # The lowest the cash gets while the two periods below play out
+                "cash_low_point": {
+                    "date": low_date.isoformat(),
+                    "balance": float(low_balance),
+                },
                 # The two periods, each straight off the shared calculator
                 "period_current": period_dict(current_period),
                 "period_next": period_dict(next_period),

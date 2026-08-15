@@ -19,6 +19,7 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
     cash_balance,
     card_debt,
     current_balance,
+    cash_low_point: low,
     period_current: current,
     period_next: next,
   } = data.totals;
@@ -76,7 +77,31 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
           </p>
         )}
 
+        {/* The endpoints below can both look comfortable while the balance
+            goes under in between: bills land on their own days and the pay that
+            covers them lands on one. Say so before showing them. */}
+        {low.balance < 0 && (
+          <p className="text-xs text-red-600 dark:text-red-400">
+            Cash runs out on {formatDateShort(low.date)}, short{" "}
+            {formatCurrency(-low.balance)}. Bills land before the pay that
+            covers them.
+          </p>
+        )}
+
         <div className="pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
+          <PositionRow
+            label="Lowest point"
+            date={low.date}
+            value={low.balance}
+            valueClassName={
+              low.balance < 0 ? getBalanceColor(low.balance) : undefined
+            }
+            detail={
+              low.balance < 0
+                ? "the account goes under before payday"
+                : "the tightest it gets between here and then"
+            }
+          />
           <PositionRow
             label="At payday"
             date={current.end}
