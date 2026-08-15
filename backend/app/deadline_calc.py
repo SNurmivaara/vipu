@@ -537,23 +537,41 @@ def calculate_expenses_before_payday(
     return total
 
 
-def calculate_cc_payments_before_payday(
+def get_card_payment_date(account: "Account", today: date) -> date:
+    """When this card's balance comes off the account.
+
+    A balance is paid off once, on the first due day at or after today, not on
+    every due day: the model has no notion of the card being spent on again, so
+    charging it in each period would take the same debt out repeatedly. A card
+    with no due day set has no schedule to place it on, so it falls due now.
+    """
+    if account.payment_due_day is None:
+        return today
+
+    due_day = normalize_day(account.payment_due_day, today.year, today.month)
+    due_date = date(today.year, today.month, due_day)
+    if due_date >= today:
+        return due_date
+
+    if today.month == 12:
+        next_month, next_year = 1, today.year + 1
+    else:
+        next_month, next_year = today.month + 1, today.year
+    due_day = normalize_day(account.payment_due_day, next_year, next_month)
+    return date(next_year, next_month, due_day)
+
+
+def calculate_cc_payments_in_window(
     accounts: list["Account"],
     today: date,
-    next_payday: date,
-    include_unscheduled: bool = True,
+    window_start: date,
+    window_end: date,
 ) -> Decimal:
-    """Calculate credit card payments due before next payday.
+    """Total credit card debt coming off the account in [start, end).
 
-    Args:
-        accounts: List of accounts
-        today: Current date (window start)
-        next_payday: Next payday date (window end, exclusive)
-        include_unscheduled: Include CCs without a payment_due_day.
-                             Set False for future periods to avoid double-counting.
-
-    Returns:
-        Total credit card payments due before next payday
+    Each card is charged in exactly one window, whichever contains its next
+    payment date, so consecutive periods can be added up without the same
+    balance being subtracted twice.
     """
     total = Decimal("0")
 
@@ -561,31 +579,8 @@ def calculate_cc_payments_before_payday(
         if not account.is_credit:
             continue
 
-        # CCs without a due day: only count once (in the current period)
-        if account.payment_due_day is None:
-            if include_unscheduled:
-                total += abs(account.balance)
-            continue
-
-        # Check if payment_due_day falls in window
-        # Check current month
-        due_day = normalize_day(account.payment_due_day, today.year, today.month)
-        due_date = date(today.year, today.month, due_day)
-
-        if today <= due_date < next_payday:
-            total += abs(account.balance)
-            continue
-
-        # Check next month
-        if today.month == 12:
-            next_month, next_year = 1, today.year + 1
-        else:
-            next_month, next_year = today.month + 1, today.year
-
-        due_day = normalize_day(account.payment_due_day, next_year, next_month)
-        due_date = date(next_year, next_month, due_day)
-
-        if today <= due_date < next_payday:
+        payment_date = get_card_payment_date(account, today)
+        if window_start <= payment_date < window_end:
             total += abs(account.balance)
 
     return total

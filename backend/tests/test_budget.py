@@ -823,6 +823,123 @@ class TestOccurrenceOverrides:
         assert self.settle(client, "income", 999, "2026-06-25", True).status_code == 404
 
 
+class TestPeriodCashFlow:
+    """Tests for the per-period projection the front page is built from.
+
+    Today is frozen to 2026-06-10 with the default payday on the 25th, so the
+    current part-period runs to 2026-06-25 and the next one to 2026-07-25.
+    """
+
+    def freeze(self, monkeypatch):
+        import datetime
+
+        from app.routes import budget as budget_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 6, 10)
+
+        monkeypatch.setattr(budget_route, "date", _FixedDate)
+
+    def test_card_balance_is_charged_once(self, client, monkeypatch):
+        """A card's debt leaves the account on one due day, not on every one.
+
+        Both cards used to be charged in both periods, so adding the periods up
+        subtracted the same balance twice.
+        """
+        self.freeze(monkeypatch)
+
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "Visa",
+                "balance": -750,
+                "is_credit": True,
+                "payment_due_day": 15,
+            },
+        )
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "Mastercard",
+                "balance": -200,
+                "is_credit": True,
+                "payment_due_day": 5,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        # Visa falls due 06-15, in the current period; Mastercard not until 07-05
+        assert totals["cc_payments_before_payday"] == 750.0
+        assert totals["cc_payments_next_period"] == 200.0
+
+    def test_unscheduled_card_falls_due_now(self, client, monkeypatch):
+        """A card with no due day has no schedule to sit on, so it counts now
+        and is not charged again in the next period."""
+        self.freeze(monkeypatch)
+
+        client.post(
+            "/api/accounts",
+            json={"name": "Store card", "balance": -300, "is_credit": True},
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["cc_payments_before_payday"] == 300.0
+        assert totals["cc_payments_next_period"] == 0.0
+
+    def test_cash_and_card_debt_are_reported_separately(self, client, monkeypatch):
+        """The projection spends cash and clears cards on their due day, so it
+        needs the two sides rather than only the netted balance."""
+        self.freeze(monkeypatch)
+
+        client.post("/api/accounts", json={"name": "Checking", "balance": 3500})
+        client.post("/api/accounts", json={"name": "Savings", "balance": 8000})
+        client.post(
+            "/api/accounts",
+            json={"name": "Visa", "balance": -950, "is_credit": True},
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["cash_balance"] == 11500.0
+        assert totals["card_debt"] == -950.0
+        assert totals["current_balance"] == 10550.0
+
+    def test_unallocated_next_period(self, client, monkeypatch):
+        """What next period's own money leaves once that period is paid for."""
+        self.freeze(monkeypatch)
+
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 1200, "due_day": 1}
+        )
+        client.post(
+            "/api/accounts",
+            json={
+                "name": "Visa",
+                "balance": -200,
+                "is_credit": True,
+                "payment_due_day": 5,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        assert totals["income_next_period"] == 4000.0
+        assert totals["expenses_next_period"] == 1200.0
+        assert totals["cc_payments_next_period"] == 200.0
+        assert totals["unallocated_next_period"] == 2600.0
+
+
 class TestSeed:
     """Tests for seed endpoint."""
 

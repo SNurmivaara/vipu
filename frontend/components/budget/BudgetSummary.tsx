@@ -8,85 +8,161 @@ interface BudgetSummaryProps {
   data: BudgetData;
 }
 
+/**
+ * The front page projects the actual periods ahead rather than a smoothed
+ * monthly rate: real cash, the real bills falling due, and each card's balance
+ * leaving on its own due day. A rate would answer "what does a typical month
+ * look like", which is an analytics question; this answers "what happens next".
+ */
 export function BudgetSummary({ data }: BudgetSummaryProps) {
   const {
+    cash_balance,
+    card_debt,
     current_balance,
     expenses_before_payday,
     income_before_payday,
     savings_before_payday,
+    cc_payments_before_payday,
     next_payday,
     next_period_end,
     expenses_next_period,
     savings_next_period,
+    cc_payments_next_period,
+    income_next_period,
+    unallocated_next_period,
   } = data.totals;
 
-  // Total obligations before next payday (expenses + savings).
-  // CC payments excluded: they are internal transfers already reflected in current_balance.
-  // Bills due today (or earlier) are excluded by the backend — they're assumed paid —
-  // so this is genuinely "what's still due before payday".
-  const obligationsBeforePayday = expenses_before_payday + savings_before_payday;
+  // Cash on hand carried forward through each period. Card debt is not netted
+  // off up front: it leaves the account on the card's due day, which is when it
+  // actually stops being spendable.
+  const billsBeforePayday = expenses_before_payday + savings_before_payday;
+  const atPayday =
+    cash_balance +
+    income_before_payday -
+    billsBeforePayday -
+    cc_payments_before_payday;
 
-  // Three projected balances, anchored to the actual current balance:
-  // 1. Before payday: balance minus the obligations still due before next payday
-  const currentPosition = current_balance - obligationsBeforePayday;
+  const billsNextPeriod = expenses_next_period + savings_next_period;
+  const endOfNextPeriod =
+    atPayday + income_next_period - billsNextPeriod - cc_payments_next_period;
 
-  // 2. After payday: plus the income arriving up to and including payday.
-  //    This is the money that has to carry you through the WHOLE next period.
-  const afterPayday = currentPosition + income_before_payday;
+  // Owing more on the cards than there is cash to cover them is worth saying
+  // out loud: every projection below is being paid for out of a hole.
+  const inTheHole = current_balance < 0;
 
-  // 3. End of next period: next period's bills come due BEFORE the paycheck that
-  //    lands at the period end (income_next_period), so they have to be paid out of
-  //    the after-payday balance. We deliberately do NOT add that period-end paycheck
-  //    here — counting it would hide whether you can actually afford the period.
-  //    A negative result means after-payday money can't cover next period's bills.
-  const nextPeriodObligations = expenses_next_period + savings_next_period;
-  const endOfNextPeriod = afterPayday - nextPeriodObligations;
+  // Spare money is only genuinely spare if the period it belongs to ends with
+  // the account in the black.
+  const sweepable = endOfNextPeriod >= 0;
 
   return (
     <CollapsibleSection
       title="You have now"
       total={formatCurrency(current_balance)}
-      totalClassName="font-semibold text-gray-900 dark:text-gray-100"
+      totalClassName={cn(
+        "font-semibold",
+        inTheHole
+          ? getBalanceColor(current_balance)
+          : "text-gray-900 dark:text-gray-100"
+      )}
       defaultOpen
     >
-      {/* Projected balance at each upcoming moment — smaller, muted extra info. */}
       <div className="px-4 py-2.5 space-y-2">
-        <PositionRow
-          label="Before payday"
-          date={next_payday}
-          value={currentPosition}
-          detail={
-            obligationsBeforePayday > 0
-              ? `−${formatCurrency(obligationsBeforePayday)} bills still due`
-              : "Nothing left to pay before payday"
-          }
-        />
-        <PositionRow
-          label="After payday"
-          date={next_payday}
-          value={afterPayday}
-          detail={`+${formatCurrency(income_before_payday)} pay`}
-        />
-        <PositionRow
-          label="End of next period"
-          date={next_period_end}
-          value={endOfNextPeriod}
-          // Flag a shortfall: if next period's bills can't be covered by the
-          // after-payday balance, show the gap in a warning colour.
-          valueClassName={
-            endOfNextPeriod < 0 ? getBalanceColor(endOfNextPeriod) : undefined
-          }
-          detail={
-            nextPeriodObligations > 0
-              ? endOfNextPeriod < 0
-                ? `−${formatCurrency(nextPeriodObligations)} bills · ${formatCurrency(-endOfNextPeriod)} short`
-                : `−${formatCurrency(nextPeriodObligations)} bills`
-              : "No bills next period"
-          }
-        />
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-gray-600 dark:text-gray-400">Cash</span>
+          <span className="text-gray-900 dark:text-gray-100">
+            {formatCurrency(cash_balance)}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-gray-600 dark:text-gray-400">
+            Owed on cards
+            <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+              leaves on each card&apos;s due day
+            </span>
+          </span>
+          <span className="text-gray-900 dark:text-gray-100">
+            {formatCurrency(card_debt)}
+          </span>
+        </div>
+
+        {inTheHole && (
+          <p className="text-xs text-red-600 dark:text-red-400">
+            The cards owe {formatCurrency(-card_debt)} against{" "}
+            {formatCurrency(cash_balance)} of cash, so this period starts{" "}
+            {formatCurrency(-current_balance)} in the hole.
+          </p>
+        )}
+
+        <div className="pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
+          <PositionRow
+            label="At payday"
+            date={next_payday}
+            value={atPayday}
+            detail={flowDetail([
+              [income_before_payday, "pay"],
+              [-billsBeforePayday, "bills"],
+              [-cc_payments_before_payday, "cards"],
+            ])}
+          />
+          <PositionRow
+            label="End of next period"
+            date={next_period_end}
+            value={endOfNextPeriod}
+            valueClassName={
+              endOfNextPeriod < 0 ? getBalanceColor(endOfNextPeriod) : undefined
+            }
+            detail={flowDetail([
+              [income_next_period, "pay"],
+              [-billsNextPeriod, "bills"],
+              [-cc_payments_next_period, "cards"],
+            ])}
+          />
+        </div>
+
+        {/* The point of the whole card: what next period doesn't need, and can
+            therefore be swept somewhere it earns. Money is only free to move
+            once the period it belongs to ends in the black — otherwise it is
+            already spoken for by the shortfall. */}
+        <div className="pt-2 flex items-baseline justify-between gap-3 border-t border-gray-100 dark:border-gray-800">
+          <div className="min-w-0">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Unallocated next period
+            </div>
+            <div className="text-xs text-gray-400 dark:text-gray-500">
+              {unallocated_next_period <= 0
+                ? "next period doesn't cover itself"
+                : sweepable
+                  ? "free to move to savings on payday"
+                  : "needed to cover the shortfall first"}
+            </div>
+          </div>
+          <span
+            className={cn(
+              "text-sm font-semibold whitespace-nowrap",
+              unallocated_next_period <= 0
+                ? getBalanceColor(unallocated_next_period)
+                : sweepable
+                  ? "text-emerald-700 dark:text-emerald-400"
+                  : "text-gray-600 dark:text-gray-400"
+            )}
+          >
+            {formatCurrency(unallocated_next_period)}
+          </span>
+        </div>
       </div>
     </CollapsibleSection>
   );
+}
+
+/** "+4 575,00 € pay · −1 900,00 € bills · −200,00 € cards", zeroes omitted */
+function flowDetail(parts: [number, string][]): string {
+  const shown = parts
+    .filter(([amount]) => amount !== 0)
+    .map(
+      ([amount, label]) =>
+        `${amount > 0 ? "+" : "−"}${formatCurrency(Math.abs(amount))} ${label}`
+    );
+  return shown.length > 0 ? shown.join(" · ") : "nothing due";
 }
 
 interface PositionRowProps {
@@ -121,7 +197,7 @@ function PositionRow({
       <span
         className={cn(
           "text-sm font-medium whitespace-nowrap",
-          valueClassName ?? "text-gray-600 dark:text-gray-400",
+          valueClassName ?? "text-gray-600 dark:text-gray-400"
         )}
       >
         {formatCurrency(value)}
