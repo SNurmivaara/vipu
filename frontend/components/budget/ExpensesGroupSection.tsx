@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { ExpenseWithOccurrence, ExpenseFormData } from "@/types";
 import { createExpense } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -29,7 +30,7 @@ export function ExpensesGroupSection({
 }: ExpensesGroupSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isNewDialogOpen, setIsNewDialogOpen] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   // Occurrences already ticked off are money that has moved, so they don't
@@ -45,7 +46,7 @@ export function ExpensesGroupSection({
   const createMutation = useMutation({
     mutationFn: createExpense,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Expense created", type: "success" });
     },
     onError: () => {

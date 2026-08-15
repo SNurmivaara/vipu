@@ -1122,6 +1122,78 @@ class TestRoadmap:
             },
         )
 
+    @staticmethod
+    def _freeze(monkeypatch, year, month, day):
+        """Freeze today so payday-to-payday dates are deterministic."""
+        import datetime
+
+        from app.routes import goals as goals_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(year, month, day)
+
+        monkeypatch.setattr(goals_route, "date", _FixedDate)
+
+    def _annual_bill_budget(self, client):
+        """4 000/mo pay on the 25th, 1 000 rent on the 1st, 6 000 insurance
+        falling due 2026-07-01.
+
+        Smoothed, that is a 2 500/mo surplus every month. In actual periods it
+        is 3 000 in most of them and -3 000 in the one the insurance lands in.
+        """
+        client.put("/api/settings", json={"payday_day": 25})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 1000, "due_day": 1}
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Insurance",
+                "amount": 6000,
+                "frequency_value": 1,
+                "frequency_unit": "years",
+                "due_day": 1,
+                "start_date": "2026-07-01",
+            },
+        )
+
+    def test_a_step_completes_when_the_money_actually_lands(self, client, monkeypatch):
+        """The next paycheck covers the step, so it completes on that payday.
+
+        At the smoothed 2 500/mo the annual bill drags every month down and this
+        goal would have waited until 2026-08-25, even though the June paycheck
+        arrives long before the July bill does.
+        """
+        self._freeze(monkeypatch, 2026, 6, 10)
+        self._annual_bill_budget(client)
+        self._goal(client, target=3900)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["goals"][0]["projected_completion_date"] == "2026-06-25"
+
+    def test_a_yearly_bill_delays_the_step_it_lands_on(self, client, monkeypatch):
+        """The other side of the same coin: a step that isn't reached before the
+        bill lands waits for the period to recover, rather than being charged a
+        twelfth of it every month."""
+        self._freeze(monkeypatch, 2026, 6, 10)
+        self._annual_bill_budget(client)
+        self._goal(client, target=8000)
+
+        data = client.get("/api/goals/roadmap").json
+        # Smoothed, 8 000 at 2 500/mo would land on 2026-09-25
+        assert data["goals"][0]["projected_completion_date"] == "2026-10-25"
+
     def test_projection_starts_from_zero_when_square(self, client):
         """No cash and no one-time items: the plan starts from a clean zero."""
         self._make_surplus(client)  # 3000/mo
@@ -1243,6 +1315,49 @@ class TestRoadmap:
         assert data["starting_position"] == 0.0
         # Still a full month of surplus, not "already done"
         assert 1.0 <= data["goals"][0]["months_to_complete"] <= 2.0
+
+    def test_cash_covers_a_pending_one_time_bill(self, client):
+        """A one-off bill the balance plainly covers is not a shortfall.
+
+        Spare cash still isn't a head start, so the plan starts from zero rather
+        than from the balance — but it does mean the user isn't behind.
+        """
+        self._make_surplus(client)
+        client.post("/api/accounts", json={"name": "Checking", "balance": 10000})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Vacation",
+                "amount": 800,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["pending_one_time_net"] == -800.0
+        assert data["starting_position"] == 0.0
+        assert data["shortfall_months"] == 0.0
+
+    def test_one_time_bill_beyond_the_balance_is_a_shortfall(self, client):
+        """Only the part the balance can't cover counts as starting behind."""
+        self._make_surplus(client)  # 3000/mo
+        client.post("/api/accounts", json={"name": "Checking", "balance": 500})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Tax bill",
+                "amount": 3500,
+                "is_ephemeral": True,
+                "start_date": "2099-01-01",
+            },
+        )
+        self._goal(client)
+
+        data = client.get("/api/goals/roadmap").json
+        assert data["starting_position"] == -3000.0
+        assert data["shortfall_months"] == 1.0
 
     def test_pending_one_time_income_offsets_a_bill(self, client):
         """A pending bonus nets against a pending bill rather than being lost."""

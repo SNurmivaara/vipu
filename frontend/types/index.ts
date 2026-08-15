@@ -79,6 +79,10 @@ export interface BudgetTotals {
   gross_income: number;
   net_income: number;
   current_balance: number;
+  /** Cash accounts only, before card debt is netted off */
+  cash_balance: number;
+  /** Sum of credit card balances, negative when money is owed */
+  card_debt: number;
   total_expenses: number;
   net_position: number;
   // Frequency-normalized monthly rates (one-time items excluded)
@@ -97,6 +101,8 @@ export interface BudgetTotals {
   savings_next_period: number;
   cc_payments_next_period: number;
   income_next_period: number;
+  /** Next period's own money less that period's bills and card payments */
+  unallocated_next_period: number;
   // Expense IDs for each period (for frontend filtering) - backward compat
   expenses_before_payday_ids: number[];
   expenses_next_period_ids: number[];

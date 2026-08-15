@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { IncomeItem, IncomeWithOccurrence, DeductionFormData } from "@/types";
 import { createIncome, updateIncome, deleteIncome } from "@/lib/api";
 import { cn, formatCurrency, formatOccurrenceDate } from "@/lib/utils";
@@ -117,13 +118,13 @@ export function DeductionsSection({
 }: DeductionsSectionProps) {
   const [editItem, setEditItem] = useState<IncomeItem | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const createMutation = useMutation({
     mutationFn: createIncome,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Deduction created", type: "success" });
     },
     onError: () => {
@@ -135,7 +136,7 @@ export function DeductionsSection({
     mutationFn: ({ id, data }: { id: number; data: DeductionFormData }) =>
       updateIncome(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Deduction updated", type: "success" });
     },
     onError: () => {
@@ -146,7 +147,7 @@ export function DeductionsSection({
   const deleteMutation = useMutation({
     mutationFn: deleteIncome,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Deduction deleted", type: "success" });
     },
     onError: () => {

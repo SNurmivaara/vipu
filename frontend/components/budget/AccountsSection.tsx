@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useInvalidateBudget } from "@/hooks/useInvalidateBudget";
 import { Account, AccountFormData } from "@/types";
 import { createAccount, updateAccount, deleteAccount } from "@/lib/api";
 import { formatCurrency, getBalanceColor } from "@/lib/utils";
@@ -34,13 +35,13 @@ export function AccountsSection({
 }: AccountsSectionProps) {
   const [editItem, setEditItem] = useState<Account | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const queryClient = useQueryClient();
+  const invalidateBudget = useInvalidateBudget();
   const { toast } = useToast();
 
   const createMutation = useMutation({
     mutationFn: createAccount,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Account created", type: "success" });
     },
     onError: () => {
@@ -52,7 +53,7 @@ export function AccountsSection({
     mutationFn: ({ id, data }: { id: number; data: AccountFormData }) =>
       updateAccount(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Account updated", type: "success" });
     },
     onError: () => {
@@ -63,7 +64,7 @@ export function AccountsSection({
   const deleteMutation = useMutation({
     mutationFn: deleteAccount,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["budget"] });
+      invalidateBudget();
       toast({ title: "Account deleted", type: "success" });
     },
     onError: () => {

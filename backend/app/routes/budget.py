@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import get_session
 from app.deadline_calc import (
-    calculate_cc_payments_before_payday,
+    calculate_cc_payments_in_window,
     calculate_expenses_before_payday,
     calculate_income_before_payday,
     expense_window_start,
@@ -332,8 +332,8 @@ def get_current_budget() -> Response:
         payday_day=settings.payday_day,
         include_pending=True,
     )
-    cc_payments_before_payday = calculate_cc_payments_before_payday(
-        accounts, today, next_payday
+    cc_payments_before_payday = calculate_cc_payments_in_window(
+        accounts, today, today, next_payday
     )
 
     # Calculate next period totals (payday to following payday)
@@ -343,8 +343,8 @@ def get_current_budget() -> Response:
     savings_next_period = calculate_expenses_before_payday(
         active_expenses, next_payday, next_period_end, include_savings=True
     )
-    cc_payments_next_period = calculate_cc_payments_before_payday(
-        accounts, next_payday, next_period_end, include_unscheduled=False
+    cc_payments_next_period = calculate_cc_payments_in_window(
+        accounts, today, next_payday, next_period_end
     )
     income_next_period = calculate_income_before_payday(
         active_income,
@@ -353,6 +353,22 @@ def get_current_budget() -> Response:
         settings.tax_percentage,
         payday_day=settings.payday_day,
     )
+
+    # What next period's own money leaves once that period's obligations are
+    # met: the amount that can be swept out to savings on payday without
+    # touching the balance already in the account.
+    unallocated_next_period = (
+        income_next_period
+        - expenses_next_period
+        - savings_next_period
+        - cc_payments_next_period
+    )
+
+    # Cash and card debt separately: the projection spends actual cash, and card
+    # debt leaves it on the card's own due day rather than being netted off up
+    # front. current_balance keeps the netted view for everything else.
+    cash_balance = sum((a.balance for a in accounts if not a.is_credit), Decimal("0"))
+    card_debt = sum((a.balance for a in accounts if a.is_credit), Decimal("0"))
 
     # Calculate expense occurrences for each period (for frontend display)
     # Returns expense dicts with next_occurrence_date for each period
@@ -467,6 +483,9 @@ def get_current_budget() -> Response:
                 "gross_income": float(gross_income),
                 "net_income": float(net_income),
                 "current_balance": float(current_balance),
+                # Split view: cash in hand, and what the cards owe against it
+                "cash_balance": float(cash_balance),
+                "card_debt": float(card_debt),
                 "total_expenses": float(total_expenses),
                 "net_position": float(net_position),
                 # Frequency-normalized monthly rates (one-time items excluded)
@@ -485,6 +504,8 @@ def get_current_budget() -> Response:
                 "savings_next_period": float(savings_next_period),
                 "cc_payments_next_period": float(cc_payments_next_period),
                 "income_next_period": float(income_next_period),
+                # Next period's own money, less next period's obligations
+                "unallocated_next_period": float(unallocated_next_period),
                 # Expense IDs for each period (for frontend filtering) - backward compat
                 "expenses_before_payday_ids": expenses_before_payday_ids,
                 "expenses_next_period_ids": expenses_next_period_ids,
