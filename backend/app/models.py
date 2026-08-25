@@ -270,6 +270,11 @@ class ForecastingSettings(Base):
     # Interest rate and monthly payment per liability group name, so debt can
     # amortise instead of being carried as an opaque balance.
     liability_terms: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Asset groups that stay in net worth but do not back the withdrawal, such
+    # as an owner-occupied home.
+    swr_excluded_groups: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -309,6 +314,7 @@ class ForecastingSettings(Base):
             "group_return_rates": self.group_return_rates or {},
             "contribution_group": self.contribution_group,
             "liability_terms": self.liability_terms or {},
+            "swr_excluded_groups": self.swr_excluded_groups or [],
             "updated_at": self.updated_at.isoformat(),
         }
 

@@ -357,6 +357,8 @@ export interface ForecastingSettings {
   contributionGroup: string | null;
   /** Interest rate and monthly payment per liability group name */
   liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** Groups kept in net worth but held out of the withdrawal base */
+  swrExcludedGroups: string[];
 }
 
 // API response shape (snake_case from backend)
@@ -378,6 +380,7 @@ export interface ForecastingSettingsAPI {
   group_return_rates: Record<string, number>;
   contribution_group: string | null;
   liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  swr_excluded_groups: string[];
   updated_at: string;
 }
 
@@ -442,6 +445,8 @@ export interface FireProjectionPointAPI {
   coast_net_worth: number;
   /** Nominal return implied by the mix at this point; rises as the mix drifts */
   blended_return_pct?: number | null;
+  /** Capital backing the withdrawal, when groups are excluded from it */
+  swr_base?: number | null;
   // Age-specific FIRE numbers (present when pension mode is active)
   fire_number_at_age?: number | null;
   coast_fire_number_at_age?: number | null;
@@ -480,6 +485,9 @@ export interface ForecastingDerivedAPI {
   /** Amounts owed per liability group name, as positive magnitudes */
   liabilities_by_group: Record<string, number>;
   liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  swr_excluded_groups: string[];
+  /** Capital the withdrawal rate applies to, after exclusions and debt */
+  swr_base: number;
   pension_monthly_salary: number;
   pension_active: boolean;
   by_group: Record<string, number>;

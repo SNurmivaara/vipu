@@ -75,6 +75,8 @@ class ProjectionPoint:
     # Value-weighted nominal return of the mix at this point. Rises over time
     # as the faster-growing groups take a larger share. Diagnostic only.
     blended_return_pct: Decimal | None = None
+    # Capital backing the withdrawal, when some groups are excluded from it.
+    swr_base: Decimal | None = None
     # Age-specific FIRE numbers (present when pension is active)
     fire_number_at_age: Decimal | None = None
     coast_fire_number_at_age: Decimal | None = None
@@ -168,6 +170,10 @@ class PortfolioGroup:
     balance: Decimal
     real_annual_pct: Decimal
     nominal_annual_pct: Decimal
+    # An owner-occupied home is a genuine asset tracking its index, but you
+    # cannot draw 4% a year from it. Excluded groups stay in net worth and keep
+    # compounding; they just do not back the withdrawal.
+    swr_eligible: bool = True
 
 
 @dataclass
@@ -270,6 +276,22 @@ class PortfolioState:
         return self.assets_total - self.liabilities_total
 
     @property
+    def swr_base(self) -> Decimal:
+        """The capital the withdrawal rate applies to.
+
+        Excludes groups flagged ineligible, and still nets off debt, since a
+        loan has to be serviced out of the same drawdown.
+        """
+        eligible = sum(
+            (g.balance for g in self._groups if g.swr_eligible), Decimal("0")
+        )
+        return eligible - self.liabilities_total
+
+    @property
+    def has_swr_exclusions(self) -> bool:
+        return any(not g.swr_eligible for g in self._groups)
+
+    @property
     def balances(self) -> dict[str, Decimal]:
         return {g.name: g.balance for g in self._groups}
 
@@ -304,21 +326,31 @@ class PortfolioState:
                 if group.name == self._contribution_group:
                     group.balance += flow
                     return
-        total = self.assets_total
+        # Spending comes out of what can actually be drawn on; a home cannot
+        # fund a withdrawal even though it counts toward net worth.
+        targets = self._groups
+        if flow < 0 and self.has_swr_exclusions:
+            eligible = [g for g in self._groups if g.swr_eligible]
+            if eligible and sum((g.balance for g in eligible), Decimal("0")) > 0:
+                targets = eligible
+
+        total = sum((g.balance for g in targets), Decimal("0"))
         if total <= 0:
             if flow < 0:
                 # A withdrawal from an empty portfolio leaves it empty.
-                self.deplete()
+                for group in targets:
+                    group.balance = Decimal("0")
                 return
             # Nothing to weight by, so spread the contribution evenly.
-            share = flow / len(self._groups)
-            for group in self._groups:
+            share = flow / len(targets)
+            for group in targets:
                 group.balance += share
             return
         if flow < 0 and -flow >= total:
-            self.deplete()
+            for group in targets:
+                group.balance = Decimal("0")
             return
-        for group in self._groups:
+        for group in targets:
             group.balance += flow * (group.balance / total)
 
     def deplete(self) -> None:
@@ -351,14 +383,16 @@ class PortfolioState:
 
         Debt is held at its current real balance rather than amortised away,
         which understates the result: coasting is treated as never paying the
-        loans down further.
+        loans down further. Groups excluded from the withdrawal base are left
+        out, since this is compared against the FIRE number.
         """
         if years <= 0:
-            return self.total
+            return self.swr_base
         grown = sum(
             (
                 group.balance * _decimal_power(1 + group.real_annual_pct / 100, years)
                 for group in self._groups
+                if group.swr_eligible
             ),
             Decimal("0"),
         )
@@ -462,6 +496,7 @@ def build_portfolio(
     contribution_group: str | None = None,
     liabilities_by_group: dict[str, float | Decimal] | None = None,
     liability_terms: dict[str, dict] | None = None,
+    swr_excluded_groups: list[str] | None = None,
 ) -> PortfolioState:
     """Build a portfolio by spreading ``base`` across the asset groups by weight.
 
@@ -472,6 +507,9 @@ def build_portfolio(
     contributions spread across the mix and so earn the portfolio average,
     which is rarely where the money actually goes.
 
+    ``swr_excluded_groups`` names groups that stay in net worth and keep
+    compounding but do not back the withdrawal, such as an owner-occupied home.
+
     ``base`` is gross assets. Debts are carried separately by
     ``liabilities_by_group``, as amounts owed, so they amortise at their own
     rate instead of compounding at the portfolio's. A group with no configured
@@ -480,6 +518,7 @@ def build_portfolio(
     """
     rates = resolve_group_return_rates(by_group, group_return_rates)
     terms = liability_terms or {}
+    excluded = set(swr_excluded_groups or [])
     liabilities = [
         Liability(
             name=name,
@@ -513,6 +552,7 @@ def build_portfolio(
                 balance=base * (amount / total),
                 real_annual_pct=real_return_from_nominal(rates[name], inflation_pct),
                 nominal_annual_pct=rates[name],
+                swr_eligible=name not in excluded,
             )
             for name, amount in positives.items()
         ]
@@ -554,8 +594,8 @@ def calc_coast_fire_number(
     """
     if years_to_retirement <= 0:
         return fire_number
-    if portfolio is not None and portfolio.total > 0:
-        growth_factor = portfolio.coast_value(years_to_retirement) / portfolio.total
+    if portfolio is not None and portfolio.swr_base > 0:
+        growth_factor = portfolio.coast_value(years_to_retirement) / portfolio.swr_base
     else:
         growth_factor = _decimal_power(
             1 + real_annual_return_pct / 100, years_to_retirement
@@ -575,7 +615,8 @@ def calc_years_to_fire(
     Uses real (inflation-adjusted) returns.
     Returns None if FIRE is unreachable within 100 years.
     """
-    if current_net_worth >= fire_number:
+    starting_base = portfolio.swr_base if portfolio is not None else current_net_worth
+    if starting_base >= fire_number:
         return Decimal("0")
 
     state = (
@@ -587,7 +628,7 @@ def calc_years_to_fire(
 
     for m in range(1, max_months + 1):
         state.step(monthly_contribution)
-        if state.total >= fire_number:
+        if state.swr_base >= fire_number:
             return Decimal(m) / 12
 
     return None
@@ -893,7 +934,8 @@ def calc_pension_aware_years_to_fire(
         pension_guarantee_enabled,
         pension_guarantee_amount,
     )
-    if current_net_worth >= current_fire_number:
+    starting_base = portfolio.swr_base if portfolio is not None else current_net_worth
+    if starting_base >= current_fire_number:
         return (Decimal("0"), current_fire_number)
 
     state = (
@@ -920,7 +962,7 @@ def calc_pension_aware_years_to_fire(
             pension_guarantee_amount,
         )
 
-        if state.total >= fire_number_at_age:
+        if state.swr_base >= fire_number_at_age:
             return (Decimal(m) / 12, fire_number_at_age)
 
     return None
@@ -1075,6 +1117,9 @@ def generate_projections(
         net_worth=_decimal_round(start_nw, 0),
         coast_net_worth=_decimal_round(coast_state.total, 0),
         blended_return_pct=_decimal_round(accum.blended_return_pct(), 2),
+        swr_base=(
+            _decimal_round(accum.swr_base, 0) if accum.has_swr_exclusions else None
+        ),
         fire_number_at_age=(
             _decimal_round(start_fire_number, 0) if has_pension else None
         ),
@@ -1162,6 +1207,11 @@ def generate_projections(
                 net_worth=_decimal_round(nw, 0),
                 coast_net_worth=_decimal_round(coast_state.total, 0),
                 blended_return_pct=_decimal_round(mix_state.blended_return_pct(), 2),
+                swr_base=(
+                    _decimal_round(mix_state.swr_base, 0)
+                    if mix_state.has_swr_exclusions
+                    else None
+                ),
                 fire_number_at_age=(
                     _decimal_round(fire_number_at_age, 0) if has_pension else None
                 ),
@@ -1319,7 +1369,8 @@ def calculate_fire(
             ),
             0,
         )
-    coast_fire_reached = inputs.current_net_worth >= coast_fire_number
+    coast_base = portfolio.swr_base if portfolio else inputs.current_net_worth
+    coast_fire_reached = coast_base >= coast_fire_number
 
     # Calculate years to FIRE - use pension-aware calculation when pension is active
     years_to_fire: Decimal | None

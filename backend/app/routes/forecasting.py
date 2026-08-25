@@ -252,6 +252,16 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
                 return jsonify({"error": msg}), 400
         settings.liability_terms = val
 
+    # Groups held out of the withdrawal base (still counted in net worth)
+    if "swr_excluded_groups" in data:
+        val = data["swr_excluded_groups"]
+        if not isinstance(val, list) or not all(isinstance(g, str) for g in val):
+            return (
+                jsonify({"error": "swr_excluded_groups must be a list of strings"}),
+                400,
+            )
+        settings.swr_excluded_groups = val
+
     session.commit()
     return jsonify(settings.to_dict())
 
@@ -384,6 +394,7 @@ def get_forecasting_projection() -> Response:
         contribution_group=settings.contribution_group,
         liabilities_by_group=liabilities_by_group,
         liability_terms=settings.liability_terms or {},
+        swr_excluded_groups=settings.swr_excluded_groups or [],
     )
 
     result = calculate_fire(inputs, portfolio)
@@ -402,6 +413,10 @@ def get_forecasting_projection() -> Response:
         "gross_assets": gross_assets,
         "liabilities_by_group": liabilities_by_group,
         "liability_terms": settings.liability_terms or {},
+        "swr_excluded_groups": settings.swr_excluded_groups or [],
+        # What the withdrawal rate actually applies to, once excluded groups
+        # and debt are taken out.
+        "swr_base": portfolio.swr_base,
         # Whether the figure above is a manual override or the budget-derived
         # default. Without this, "monthly savings" and the budget's "surplus"
         # look like contradictory answers to the same question.

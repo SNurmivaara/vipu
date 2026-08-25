@@ -16,6 +16,8 @@ export interface ProjectionPoint {
   coastNetWorth: number;
   /** Nominal return implied by the mix at this point; rises as the mix drifts */
   blendedReturnPct?: number;
+  /** Capital backing the withdrawal, when groups are excluded from it */
+  swrBase?: number;
   // Age-specific FIRE numbers (present when pension mode is active)
   fireNumberAtAge?: number;
   coastFireNumberAtAge?: number;
@@ -63,6 +65,10 @@ export interface DerivedInputs {
   /** Amounts owed per liability group name, as positive magnitudes */
   liabilitiesByGroup: Record<string, number>;
   liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** Groups kept in net worth but held out of the withdrawal base */
+  swrExcludedGroups: string[];
+  /** Capital the withdrawal rate applies to, after exclusions and debt */
+  swrBase: number;
   /** monthlySavings is a manual override, not the budget's monthly surplus */
   monthlySavingsIsOverride: boolean;
   /** annualExpenses is a manual override, not monthly expenses x 12 */
@@ -124,6 +130,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       netWorth: p.net_worth,
       coastNetWorth: p.coast_net_worth,
       ...(p.blended_return_pct != null && { blendedReturnPct: p.blended_return_pct }),
+      ...(p.swr_base != null && { swrBase: p.swr_base }),
       ...(p.fire_number_at_age != null && { fireNumberAtAge: p.fire_number_at_age }),
       ...(p.coast_fire_number_at_age != null && { coastFireNumberAtAge: p.coast_fire_number_at_age }),
       ...(p.net_worth_early != null && { netWorthEarly: p.net_worth_early }),
@@ -146,6 +153,8 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       grossAssets: api.derived.gross_assets,
       liabilitiesByGroup: api.derived.liabilities_by_group ?? {},
       liabilityTerms: api.derived.liability_terms ?? {},
+      swrExcludedGroups: api.derived.swr_excluded_groups ?? [],
+      swrBase: api.derived.swr_base,
       monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
       annualExpensesIsOverride: api.derived.annual_expenses_is_override,
       targetRetirementAge: api.derived.target_retirement_age,
@@ -181,6 +190,8 @@ const DEFAULT_RESULT: ForecastingProjection = {
     grossAssets: 0,
     liabilitiesByGroup: {},
     liabilityTerms: {},
+    swrExcludedGroups: [],
+    swrBase: 0,
     monthlySavingsIsOverride: false,
     annualExpensesIsOverride: false,
     targetRetirementAge: 0,

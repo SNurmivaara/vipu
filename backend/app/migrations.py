@@ -250,6 +250,17 @@ MIGRATIONS: list[dict] = [
                 ADD COLUMN IF NOT EXISTS liability_terms JSONB NOT NULL DEFAULT '{}';
         """,
     },
+    {
+        "id": "014_swr_excluded_groups",
+        "name": "Add swr_excluded_groups to forecasting_settings",
+        # An owner-occupied home tracks its index and belongs in net worth, but
+        # no one draws 4% a year from it.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS swr_excluded_groups
+                JSONB NOT NULL DEFAULT '[]';
+        """,
+    },
 ]
 
 

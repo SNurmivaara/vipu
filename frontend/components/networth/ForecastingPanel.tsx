@@ -34,6 +34,7 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   groupReturnRates: {},
   contributionGroup: null,
   liabilityTerms: {},
+  swrExcludedGroups: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -297,23 +298,44 @@ export function ForecastingPanel() {
               {Object.entries(latestByGroup)
                 .filter(([, amount]) => amount > 0)
                 .sort(([, a], [, b]) => b - a)
-                .map(([group]) => (
-                  <NumberInput
-                    key={group}
-                    label={group}
-                    value={
-                      settings.groupReturnRates[group] ??
-                      derived.groupReturnRates[group]
-                    }
-                    onChange={(v) => {
-                      const updated = { ...settings.groupReturnRates, [group]: v };
-                      updateSetting("groupReturnRates", updated);
-                    }}
-                    min={-10}
-                    max={30}
-                    step={0.5}
-                  />
-                ))}
+                .map(([group]) => {
+                  const excluded = settings.swrExcludedGroups.includes(group);
+                  return (
+                    <div key={group}>
+                      <NumberInput
+                        label={group}
+                        value={
+                          settings.groupReturnRates[group] ??
+                          derived.groupReturnRates[group]
+                        }
+                        onChange={(v) => {
+                          const updated = { ...settings.groupReturnRates, [group]: v };
+                          updateSetting("groupReturnRates", updated);
+                        }}
+                        min={-10}
+                        max={30}
+                        step={0.5}
+                      />
+                      <label className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={excluded}
+                          onChange={(e) =>
+                            updateSetting(
+                              "swrExcludedGroups",
+                              e.target.checked
+                                ? [...settings.swrExcludedGroups, group]
+                                : settings.swrExcludedGroups.filter(
+                                    (g) => g !== group
+                                  )
+                            )
+                          }
+                        />
+                        Can&apos;t be withdrawn from
+                      </label>
+                    </div>
+                  );
+                })}
               <div className="col-span-full">
                 <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
                   Monthly savings go to
@@ -475,7 +497,13 @@ export function ForecastingPanel() {
         <MetricCard
           label="FIRE Number"
           value={formatCurrencyRounded(result.fireNumberNow)}
-          sublabel={result.pension ? `If retiring now — ${settings.safeWithdrawalRate}% SWR + pension` : `${settings.safeWithdrawalRate}% SWR`}
+          sublabel={
+            settings.swrExcludedGroups.length > 0
+              ? `vs ${formatCurrencyRounded(derived.swrBase)} drawable`
+              : result.pension
+                ? `If retiring now — ${settings.safeWithdrawalRate}% SWR + pension`
+                : `${settings.safeWithdrawalRate}% SWR`
+          }
         />
         <MetricCard
           label="Years to FIRE"

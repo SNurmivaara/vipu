@@ -330,6 +330,75 @@ class TestLiabilities:
         assert portfolio.liabilities_total > Decimal("48000")
 
 
+class TestSwrExclusion:
+    """Groups that count toward net worth but cannot fund a withdrawal (#98)."""
+
+    def _portfolio(self, excluded=None):
+        return build_portfolio(
+            Decimal("400000"),
+            {"Investments": 200000, "Property": 200000},
+            {"Investments": 7, "Property": 3},
+            Decimal("0"),
+            swr_excluded_groups=excluded,
+        )
+
+    def test_excluded_group_stays_in_net_worth(self):
+        """A home is a real asset; it just does not back the 4%."""
+        portfolio = self._portfolio(["Property"])
+
+        assert portfolio.total == Decimal("400000")
+        assert portfolio.swr_base == Decimal("200000")
+
+    def test_no_exclusions_leaves_the_base_untouched(self):
+        portfolio = self._portfolio()
+
+        assert portfolio.swr_base == portfolio.total
+        assert portfolio.has_swr_exclusions is False
+
+    def test_excluding_a_group_delays_fire(self):
+        """Less capital backs the withdrawal, so FIRE takes longer."""
+        inputs = FireInputs(
+            current_net_worth=Decimal("400000"),
+            monthly_contribution=Decimal("1000"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("5"),
+            inflation_pct=Decimal("0"),
+            current_age=30,
+            target_retirement_age=65,
+            safe_withdrawal_rate=Decimal("4"),
+        )
+
+        included = calculate_fire(inputs, self._portfolio())
+        excluded = calculate_fire(inputs, self._portfolio(["Property"]))
+
+        assert included.years_to_fire is not None
+        assert excluded.years_to_fire is not None
+        assert excluded.years_to_fire > included.years_to_fire
+
+    def test_excluded_group_still_compounds(self):
+        """Exclusion is about drawing on it, not about freezing it."""
+        portfolio = self._portfolio(["Property"])
+
+        for _ in range(12):
+            portfolio.step()
+
+        assert portfolio.balances["Property"] > Decimal("200000")
+
+    def test_withdrawals_come_from_eligible_groups_only(self):
+        """Spending cannot be drawn out of the house."""
+        withdrawn = self._portfolio(["Property"])
+        control = self._portfolio(["Property"])
+
+        withdrawn.step(Decimal("-1000"))
+        control.step()
+
+        # The house is untouched; the whole withdrawal hit the investments.
+        assert withdrawn.balances["Property"] == control.balances["Property"]
+        assert control.balances["Investments"] - withdrawn.balances[
+            "Investments"
+        ] == Decimal("1000")
+
+
 class TestCalcFireNumber:
     """Tests for basic FIRE number calculation."""
 
@@ -1228,6 +1297,37 @@ class TestForecastingProjection:
             ).status_code
             == 400
         )
+
+    def test_swr_exclusion_round_trips(self, client):
+        """An excluded group leaves net worth alone but shrinks the SWR base."""
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 5, "amount": 30000},
+                    {"category_id": 9, "amount": 20000},  # House/Apartment
+                ],
+            },
+        )
+
+        resp = client.put(
+            "/api/forecasting/settings", json={"swr_excluded_groups": ["Property"]}
+        )
+        assert resp.status_code == 200
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+        assert derived["current_net_worth"] == 50000
+        assert derived["swr_excluded_groups"] == ["Property"]
+        assert derived["swr_base"] == 30000
+
+    def test_swr_exclusion_rejects_non_list(self, client):
+        resp = client.put(
+            "/api/forecasting/settings", json={"swr_excluded_groups": "Property"}
+        )
+        assert resp.status_code == 400
 
     def test_pension_mode_activated(self, client):
         """Setting pension_accrued_monthly activates pension mode."""

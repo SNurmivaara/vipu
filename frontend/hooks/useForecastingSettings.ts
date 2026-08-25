@@ -29,6 +29,7 @@ const CAMEL_TO_SNAKE: Record<keyof ForecastingSettings, keyof Omit<ForecastingSe
   groupReturnRates: "group_return_rates",
   contributionGroup: "contribution_group",
   liabilityTerms: "liability_terms",
+  swrExcludedGroups: "swr_excluded_groups",
 };
 
 function apiToSettings(api: ForecastingSettingsAPI): ForecastingSettings {
@@ -49,6 +50,7 @@ function apiToSettings(api: ForecastingSettingsAPI): ForecastingSettings {
     groupReturnRates: api.group_return_rates ?? {},
     contributionGroup: api.contribution_group ?? null,
     liabilityTerms: api.liability_terms ?? {},
+    swrExcludedGroups: api.swr_excluded_groups ?? [],
   };
 }
 
