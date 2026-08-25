@@ -14,6 +14,8 @@ export interface ProjectionPoint {
   month: number;
   netWorth: number;
   coastNetWorth: number;
+  /** Nominal return implied by the mix at this point; rises as the mix drifts */
+  blendedReturnPct?: number;
   // Age-specific FIRE numbers (present when pension mode is active)
   fireNumberAtAge?: number;
   coastFireNumberAtAge?: number;
@@ -113,6 +115,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       month: p.month,
       netWorth: p.net_worth,
       coastNetWorth: p.coast_net_worth,
+      ...(p.blended_return_pct != null && { blendedReturnPct: p.blended_return_pct }),
       ...(p.fire_number_at_age != null && { fireNumberAtAge: p.fire_number_at_age }),
       ...(p.coast_fire_number_at_age != null && { coastFireNumberAtAge: p.coast_fire_number_at_age }),
       ...(p.net_worth_early != null && { netWorthEarly: p.net_worth_early }),

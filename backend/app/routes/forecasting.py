@@ -8,6 +8,7 @@ from marshmallow import Schema, ValidationError, fields, post_load, validate
 from app import get_session
 from app.fire import (
     FireInputs,
+    build_portfolio,
     calculate_fire,
     real_return_from_nominal,
     resolve_group_return_rates,
@@ -340,7 +341,13 @@ def get_forecasting_projection() -> Response:
         life_expectancy=settings.life_expectancy,
     )
 
-    result = calculate_fire(inputs)
+    # Each group compounds at its own rate, so the mix drifts toward the
+    # faster groups and the blended return rises over the projection.
+    portfolio = build_portfolio(
+        current_net_worth, by_group, group_rates, settings.inflation_pct
+    )
+
+    result = calculate_fire(inputs, portfolio)
     result_dict = asdict(result)
     result_dict["derived"] = {
         "current_net_worth": current_net_worth,

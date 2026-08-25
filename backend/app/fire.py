@@ -6,7 +6,7 @@ Inflation is an annual percentage (e.g., 2 for 2%).
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -72,6 +72,9 @@ class ProjectionPoint:
     month: int
     net_worth: Decimal
     coast_net_worth: Decimal
+    # Value-weighted nominal return of the mix at this point. Rises over time
+    # as the faster-growing groups take a larger share. Diagnostic only.
+    blended_return_pct: Decimal | None = None
     # Age-specific FIRE numbers (present when pension is active)
     fire_number_at_age: Decimal | None = None
     coast_fire_number_at_age: Decimal | None = None
@@ -142,6 +145,124 @@ def monthly_rate(annual_pct: Decimal) -> Decimal:
     intervening months. Twelve of these steps reproduce the annual rate.
     """
     return _decimal_power(1 + annual_pct / 100, Decimal("1") / 12) - 1
+
+
+# ---------------------------------------------------------------------------
+# Portfolio state
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PortfolioGroup:
+    """One asset group in the simulated portfolio.
+
+    Rates are annual percentages. ``real_annual_pct`` is what the simulation
+    compounds. ``nominal_annual_pct`` is carried only to report the blended
+    return implied by the mix.
+    """
+
+    name: str
+    balance: Decimal
+    real_annual_pct: Decimal
+    nominal_annual_pct: Decimal
+
+
+class PortfolioState:
+    """Per-group balances, each stepped monthly at its own rate.
+
+    Compounding one blended rate holds the mix fixed. In reality the
+    higher-returning groups compound faster, their share of the portfolio
+    rises, and the blended return rises with them. Holding balances per group
+    reproduces that drift without modelling it: there is no blended rate in
+    the loop at all.
+    """
+
+    def __init__(self, groups: list[PortfolioGroup]) -> None:
+        self._groups = groups
+        self._monthly = [monthly_rate(g.real_annual_pct) for g in groups]
+
+    @classmethod
+    def single(cls, balance: Decimal, real_annual_pct: Decimal) -> "PortfolioState":
+        """Degenerate one-group portfolio, equivalent to a scalar simulation."""
+        return cls(
+            [PortfolioGroup("Portfolio", balance, real_annual_pct, real_annual_pct)]
+        )
+
+    def clone(self) -> "PortfolioState":
+        """Independent copy, for branching scenarios off a shared trajectory."""
+        return PortfolioState([replace(g) for g in self._groups])
+
+    @property
+    def total(self) -> Decimal:
+        return sum((g.balance for g in self._groups), Decimal("0"))
+
+    @property
+    def balances(self) -> dict[str, Decimal]:
+        return {g.name: g.balance for g in self._groups}
+
+    def step(self, flow: Decimal = Decimal("0")) -> None:
+        """Grow every group by one month, then apply a net cash flow pro-rata."""
+        for group, monthly in zip(self._groups, self._monthly, strict=True):
+            group.balance = group.balance * (1 + monthly)
+        self._apply_flow(flow)
+
+    def _apply_flow(self, flow: Decimal) -> None:
+        if flow == 0:
+            return
+        total = self.total
+        if total <= 0:
+            if flow < 0:
+                # A withdrawal from an empty portfolio leaves it empty.
+                self.deplete()
+                return
+            # Nothing to weight by, so spread the contribution evenly.
+            share = flow / len(self._groups)
+            for group in self._groups:
+                group.balance += share
+            return
+        if flow < 0 and -flow >= total:
+            self.deplete()
+            return
+        for group in self._groups:
+            group.balance += flow * (group.balance / total)
+
+    def deplete(self) -> None:
+        """Zero every group. A depleted portfolio stays depleted."""
+        for group in self._groups:
+            group.balance = Decimal("0")
+
+    def blended_return_pct(self) -> Decimal:
+        """Value-weighted nominal return of the current mix.
+
+        A diagnostic only. Once drift is modelled this is a property of the mix
+        at an instant, not of the plan, so it is never used to compound.
+        """
+        total = Decimal("0")
+        weighted = Decimal("0")
+        for group in self._groups:
+            if group.balance <= 0:
+                continue
+            weighted += group.balance * group.nominal_annual_pct
+            total += group.balance
+        return weighted / total if total > 0 else Decimal("0")
+
+    def coast_value(self, years: Decimal) -> Decimal:
+        """Value after ``years`` of growth with no further contributions.
+
+        Sum of bᵢ(1 + rᵢ)ⁿ across the groups. Scaling every bucket leaves the
+        mix unchanged, so this closed form needs no simulation. It exceeds the
+        blended-rate result (1 + r̄)ⁿ by Jensen's inequality, and that gap is
+        precisely the drift.
+        """
+        if years <= 0:
+            return self.total
+        return sum(
+            (
+                group.balance * _decimal_power(1 + group.real_annual_pct / 100, years)
+                for group in self._groups
+            ),
+            Decimal("0"),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +341,49 @@ def weighted_return(
     return weighted_sum / total_value if total_value > 0 else Decimal("7")
 
 
+def build_portfolio(
+    base: Decimal,
+    by_group: dict[str, float | Decimal],
+    group_return_rates: dict[str, float | Decimal],
+    inflation_pct: Decimal,
+    fallback_return_pct: Decimal = Decimal("7"),
+) -> PortfolioState:
+    """Build a portfolio by spreading ``base`` across the asset groups by weight.
+
+    Each group compounds at its own Fisher-real rate, so the mix drifts as the
+    faster groups outgrow the slower ones.
+
+    Note that ``base`` is net worth, so the groups currently carry the
+    liabilities spread across them in proportion to assets. Giving liabilities
+    their own balances is a separate change; this one only removes the fixed
+    blended rate.
+    """
+    rates = resolve_group_return_rates(by_group, group_return_rates)
+    positives = {
+        name: Decimal(str(amount))
+        for name, amount in by_group.items()
+        if Decimal(str(amount)) > 0
+    }
+    total = sum(positives.values(), Decimal("0"))
+
+    if total <= 0:
+        return PortfolioState.single(
+            base, real_return_from_nominal(fallback_return_pct, inflation_pct)
+        )
+
+    return PortfolioState(
+        [
+            PortfolioGroup(
+                name=name,
+                balance=base * (amount / total),
+                real_annual_pct=real_return_from_nominal(rates[name], inflation_pct),
+                nominal_annual_pct=rates[name],
+            )
+            for name, amount in positives.items()
+        ]
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core calculation functions
 # ---------------------------------------------------------------------------
@@ -239,18 +403,27 @@ def calc_coast_fire_number(
     fire_number: Decimal,
     real_annual_return_pct: Decimal,
     years_to_retirement: Decimal,
+    portfolio: PortfolioState | None = None,
 ) -> Decimal:
     """Calculate Coast FIRE number.
 
     This is how much you need RIGHT NOW so that compound growth alone
     (no further contributions) reaches your FIRE number by retirement.
 
+    With a portfolio, the growth factor is the mix-weighted sum of per-group
+    factors, which is larger than the blended-rate factor and so asks for less
+    capital today. Without one:
+
     CoastFIRE = FIRE_Number / (1 + realReturn)^yearsToRetirement
     """
     if years_to_retirement <= 0:
         return fire_number
-    r = real_annual_return_pct / 100
-    growth_factor = _decimal_power(1 + r, years_to_retirement)
+    if portfolio is not None and portfolio.total > 0:
+        growth_factor = portfolio.coast_value(years_to_retirement) / portfolio.total
+    else:
+        growth_factor = _decimal_power(
+            1 + real_annual_return_pct / 100, years_to_retirement
+        )
     return fire_number / growth_factor
 
 
@@ -259,6 +432,7 @@ def calc_years_to_fire(
     monthly_contribution: Decimal,
     fire_number: Decimal,
     real_annual_return_pct: Decimal,
+    portfolio: PortfolioState | None = None,
 ) -> Decimal | None:
     """Calculate years to reach FIRE using iterative month-by-month simulation.
 
@@ -268,13 +442,16 @@ def calc_years_to_fire(
     if current_net_worth >= fire_number:
         return Decimal("0")
 
-    monthly_return = monthly_rate(real_annual_return_pct)
-    nw = current_net_worth
+    state = (
+        portfolio.clone()
+        if portfolio is not None
+        else PortfolioState.single(current_net_worth, real_annual_return_pct)
+    )
     max_months = 100 * 12
 
     for m in range(1, max_months + 1):
-        nw = nw * (1 + monthly_return) + monthly_contribution
-        if nw >= fire_number:
+        state.step(monthly_contribution)
+        if state.total >= fire_number:
             return Decimal(m) / 12
 
     return None
@@ -287,36 +464,38 @@ def calc_coast_fire_age(
     real_annual_return_pct: Decimal,
     current_age: int,
     target_retirement_age: int,
+    portfolio: PortfolioState | None = None,
 ) -> Decimal | None:
     """Calculate the age at which you reach Coast FIRE.
 
     At each month, checks: can current NW (with contributions) compound to
     the FIRE number in the remaining time without further contributions?
+    The check uses the mix at that month, so it accounts for drift.
     Returns None if unreachable before target retirement age.
     """
-    r = real_annual_return_pct / 100
-    monthly_return = monthly_rate(real_annual_return_pct)
     total_months = round((target_retirement_age - current_age) * 12)
 
     if total_months <= 0:
         return None
 
+    state = (
+        portfolio.clone()
+        if portfolio is not None
+        else PortfolioState.single(current_net_worth, real_annual_return_pct)
+    )
+
     # Check starting point
     years_to_retire = Decimal(target_retirement_age - current_age)
-    coast_needed_now = fire_number / _decimal_power(1 + r, years_to_retire)
-    if current_net_worth >= coast_needed_now:
+    if state.coast_value(years_to_retire) >= fire_number:
         return Decimal(current_age)
 
-    nw = current_net_worth
-
     for m in range(1, total_months + 1):
-        nw = nw * (1 + monthly_return) + monthly_contribution
+        state.step(monthly_contribution)
         age = Decimal(current_age) + Decimal(m) / 12
         years_remaining = Decimal(target_retirement_age) - age
         if years_remaining <= 0:
             break
-        coast_needed = fire_number / _decimal_power(1 + r, years_remaining)
-        if nw >= coast_needed:
+        if state.coast_value(years_remaining) >= fire_number:
             return _decimal_round(age, 1)
 
     return None
@@ -552,6 +731,7 @@ def calc_pension_aware_years_to_fire(
     pension_full_age: int,
     pension_guarantee_enabled: bool = False,
     pension_guarantee_amount: Decimal = Decimal("990.0"),
+    portfolio: PortfolioState | None = None,
 ) -> tuple[Decimal, Decimal] | None:
     """Calculate earliest FIRE age with pension awareness.
 
@@ -561,7 +741,6 @@ def calc_pension_aware_years_to_fire(
     Returns tuple of (years_to_fire, fire_number_at_that_age) or None if unreachable.
     """
     real_return = real_annual_return_pct / 100
-    monthly_return = monthly_rate(real_annual_return_pct)
     max_months = 100 * 12
 
     # Check if already FIRE'd at current age
@@ -581,10 +760,14 @@ def calc_pension_aware_years_to_fire(
     if current_net_worth >= current_fire_number:
         return (Decimal("0"), current_fire_number)
 
-    nw = current_net_worth
+    state = (
+        portfolio.clone()
+        if portfolio is not None
+        else PortfolioState.single(current_net_worth, real_annual_return_pct)
+    )
 
     for m in range(1, max_months + 1):
-        nw = nw * (1 + monthly_return) + monthly_contribution
+        state.step(monthly_contribution)
         age = Decimal(current_age) + Decimal(m) / 12
 
         fire_number_at_age = calc_fire_number_for_age(
@@ -601,7 +784,7 @@ def calc_pension_aware_years_to_fire(
             pension_guarantee_amount,
         )
 
-        if nw >= fire_number_at_age:
+        if state.total >= fire_number_at_age:
             return (Decimal(m) / 12, fire_number_at_age)
 
     return None
@@ -617,6 +800,7 @@ def generate_projections(
     years_ahead: int = 40,
     pension_result: PensionResult | None = None,
     fire_number_at_target: Decimal | None = None,
+    portfolio: PortfolioState | None = None,
 ) -> list[ProjectionPoint]:
     """Generate year-by-year projections for net worth growth.
 
@@ -627,7 +811,6 @@ def generate_projections(
         inputs.annual_return_pct, inputs.inflation_pct
     )
     real_return = real_return_pct / 100
-    monthly_return = monthly_rate(real_return_pct)
     total_months = years_ahead * 12
     current_year = datetime.now().year
     current_month = datetime.now().month
@@ -676,11 +859,15 @@ def generate_projections(
         else 999
     )
 
-    nw = inputs.current_net_worth
-    coast_nw = inputs.current_net_worth
-    nw_early = inputs.current_net_worth
-    nw_normal = inputs.current_net_worth
-    nw_late = inputs.current_net_worth
+    base_state = (
+        portfolio
+        if portfolio is not None
+        else PortfolioState.single(inputs.current_net_worth, real_return_pct)
+    )
+    accum = base_state.clone()
+    coast_state = base_state.clone()
+    # Cloned off the accumulation trajectory at FIRE age, where they diverge.
+    scenario_states: dict[PensionLabel, PortfolioState] | None = None
 
     # Helper to calculate age-specific FIRE number for pension mode
     def calc_fire_number_for_projection_age(retirement_age: Decimal) -> Decimal:
@@ -722,7 +909,7 @@ def generate_projections(
                 inputs.annual_expenses, inputs.safe_withdrawal_rate
             )
             return calc_coast_fire_number(
-                fire_num, real_return_pct, years_to_retirement
+                fire_num, real_return_pct, years_to_retirement, coast_state
             )
 
         # Pension mode: Coast FIRE at age X =
@@ -734,6 +921,7 @@ def generate_projections(
             fire_number_at_target,
             real_return_pct,
             years_to_retirement,
+            coast_state,
         )
 
     # Add starting point
@@ -743,12 +931,14 @@ def generate_projections(
         Decimal(start_age)
     )
 
+    start_nw = accum.total
     start_point = ProjectionPoint(
         age=start_age,
         year=current_year,
         month=current_month,
-        net_worth=_decimal_round(nw, 0),
-        coast_net_worth=_decimal_round(coast_nw, 0),
+        net_worth=_decimal_round(start_nw, 0),
+        coast_net_worth=_decimal_round(coast_state.total, 0),
+        blended_return_pct=_decimal_round(accum.blended_return_pct(), 2),
         fire_number_at_age=(
             _decimal_round(start_fire_number, 0) if has_pension else None
         ),
@@ -757,44 +947,60 @@ def generate_projections(
         ),
     )
     if has_pension:
-        start_point.net_worth_early = _decimal_round(nw, 0)
-        start_point.net_worth_normal = _decimal_round(nw, 0)
-        start_point.net_worth_late = _decimal_round(nw, 0)
+        start_point.net_worth_early = _decimal_round(start_nw, 0)
+        start_point.net_worth_normal = _decimal_round(start_nw, 0)
+        start_point.net_worth_late = _decimal_round(start_nw, 0)
     points.append(start_point)
 
     def apply_drawdown(
-        current_nw: Decimal,
+        state: PortfolioState,
         pension_monthly: Decimal,
         pension_start_age: int,
         age: Decimal,
-    ) -> Decimal:
-        if current_nw <= 0:
-            return Decimal("0")
-        val = current_nw * (1 + monthly_return) - monthly_expenses
+    ) -> None:
+        """Spend down one scenario by a month, pro-rata across the groups."""
+        if state.total <= 0:
+            state.deplete()
+            return
+        flow = -monthly_expenses
         if age >= pension_start_age:
-            val += pension_monthly
-        return max(Decimal("0"), val)
+            flow += pension_monthly
+        state.step(flow)
 
     for m in range(1, total_months + 1):
         age = Decimal(inputs.current_age) + Decimal(m) / 12
         in_drawdown = has_pension and age >= fire_age
 
         if in_drawdown:
-            nw_early = apply_drawdown(
-                nw_early, early_pension_monthly, early_start_age, age
+            if scenario_states is None:
+                scenario_states = {
+                    "early": accum.clone(),
+                    "normal": accum.clone(),
+                    "late": accum.clone(),
+                }
+            apply_drawdown(
+                scenario_states["early"], early_pension_monthly, early_start_age, age
             )
-            nw_normal = apply_drawdown(
-                nw_normal, normal_pension_monthly, normal_start_age, age
+            apply_drawdown(
+                scenario_states["normal"], normal_pension_monthly, normal_start_age, age
             )
-            nw_late = apply_drawdown(nw_late, late_pension_monthly, late_start_age, age)
-            nw = nw_normal
+            apply_drawdown(
+                scenario_states["late"], late_pension_monthly, late_start_age, age
+            )
+            nw = scenario_states["normal"].total
+            nw_early = scenario_states["early"].total
+            nw_normal = nw
+            nw_late = scenario_states["late"].total
+            mix_state = scenario_states["normal"]
         else:
-            nw = nw * (1 + monthly_return) + inputs.monthly_contribution
+            accum.step(inputs.monthly_contribution)
+            nw = accum.total
             nw_early = nw
             nw_normal = nw
             nw_late = nw
+            mix_state = accum
 
-        coast_nw = coast_nw * (1 + monthly_return)
+        coast_state.step()
 
         # Only add yearly points
         if m % 12 == 0:
@@ -818,7 +1024,8 @@ def generate_projections(
                 year=proj_year,
                 month=proj_month,
                 net_worth=_decimal_round(nw, 0),
-                coast_net_worth=_decimal_round(coast_nw, 0),
+                coast_net_worth=_decimal_round(coast_state.total, 0),
+                blended_return_pct=_decimal_round(mix_state.blended_return_pct(), 2),
                 fire_number_at_age=(
                     _decimal_round(fire_number_at_age, 0) if has_pension else None
                 ),
@@ -840,8 +1047,16 @@ def generate_projections(
 # ---------------------------------------------------------------------------
 
 
-def calculate_fire(inputs: FireInputs) -> FireResult:
-    """Calculate all FIRE metrics from inputs."""
+def calculate_fire(
+    inputs: FireInputs, portfolio: PortfolioState | None = None
+) -> FireResult:
+    """Calculate all FIRE metrics from inputs.
+
+    Pass a ``portfolio`` to compound each asset group at its own rate, so the
+    mix drifts toward the faster groups. Without one the whole balance
+    compounds at ``inputs.annual_return_pct``, which is the degenerate
+    single-group case.
+    """
     real_return_pct = real_return_from_nominal(
         inputs.annual_return_pct, inputs.inflation_pct
     )
@@ -964,7 +1179,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
     else:
         coast_fire_number = _decimal_round(
             calc_coast_fire_number(
-                fire_number, real_return_pct, Decimal(years_to_retirement)
+                fire_number, real_return_pct, Decimal(years_to_retirement), portfolio
             ),
             0,
         )
@@ -989,6 +1204,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
             inputs.pension_full_age,
             inputs.pension_guarantee_enabled,
             inputs.pension_guarantee_amount,
+            portfolio,
         )
         years_to_fire = pension_aware_result[0] if pension_aware_result else None
     else:
@@ -997,6 +1213,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
             inputs.monthly_contribution,
             fire_number,
             real_return_pct,
+            portfolio,
         )
 
     fire_age = (
@@ -1017,6 +1234,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
             real_return_pct,
             inputs.current_age,
             inputs.target_retirement_age,
+            portfolio,
         )
     )
 
@@ -1032,7 +1250,7 @@ def calculate_fire(inputs: FireInputs) -> FireResult:
         else default_projection_years
     )
     projections = generate_projections(
-        inputs, projection_years, pension_result, fire_number
+        inputs, projection_years, pension_result, fire_number, portfolio
     )
 
     # Find when portfolio depletes (normal scenario hits 0)

@@ -434,6 +434,8 @@ export interface FireProjectionPointAPI {
   month: number;
   net_worth: number;
   coast_net_worth: number;
+  /** Nominal return implied by the mix at this point; rises as the mix drifts */
+  blended_return_pct?: number | null;
   // Age-specific FIRE numbers (present when pension mode is active)
   fire_number_at_age?: number | null;
   coast_fire_number_at_age?: number | null;

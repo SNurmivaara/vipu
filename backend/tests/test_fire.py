@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from app.fire import (
     FireInputs,
+    build_portfolio,
     calc_coast_fire_age,
     calc_coast_fire_number,
     calc_fire_number,
@@ -51,6 +52,111 @@ class TestRateConversions:
     def test_monthly_rate_is_geometric_not_arithmetic(self):
         """annual/12 skips intra-year compounding and overstates each step."""
         assert monthly_rate(Decimal("8")) < Decimal("8") / 100 / 12
+
+
+class TestPortfolioDrift:
+    """Per-group compounding and the weight drift it produces (issue #98)."""
+
+    def _two_group_inputs(self, **overrides):
+        defaults = dict(
+            current_net_worth=Decimal("100000"),
+            monthly_contribution=Decimal("0"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("4.5"),  # value-weighted 8% and 1%
+            inflation_pct=Decimal("0"),
+            current_age=30,
+            target_retirement_age=65,
+            safe_withdrawal_rate=Decimal("4"),
+        )
+        defaults.update(overrides)
+        return FireInputs(**defaults)
+
+    def _two_group_portfolio(self, base=Decimal("100000")):
+        return build_portfolio(
+            base,
+            {"Equities": 50000, "Cash": 50000},
+            {"Equities": 8, "Cash": 1},
+            Decimal("0"),
+        )
+
+    def test_blended_return_rises_with_drift(self):
+        """Zero contributions, 8% and 1%: the blended return climbs (issue #98).
+
+        The faster group compounds into a larger share of the portfolio, so the
+        return the mix implies rises even though no group's rate changes.
+        """
+        result = calculate_fire(self._two_group_inputs(), self._two_group_portfolio())
+
+        by_age = {p.age: p.blended_return_pct for p in result.projections}
+
+        assert by_age[30] == Decimal("4.50")
+        assert by_age[50] > by_age[30]
+        assert by_age[50] < Decimal("8")  # bounded by the fastest group
+
+    def test_drift_beats_a_fixed_blended_rate(self):
+        """Per-group compounding outgrows one held-constant blended rate."""
+        inputs = self._two_group_inputs()
+
+        drifted = calculate_fire(inputs, self._two_group_portfolio())
+        fixed = calculate_fire(inputs)
+
+        drifted_at_50 = next(p.net_worth for p in drifted.projections if p.age == 50)
+        fixed_at_50 = next(p.net_worth for p in fixed.projections if p.age == 50)
+        assert drifted_at_50 > fixed_at_50
+
+    def test_coast_closed_form_matches_simulation(self):
+        """Jensen's closed form agrees with a zero-contribution simulation."""
+        portfolio = self._two_group_portfolio()
+        years = Decimal("20")
+
+        closed_form = portfolio.coast_value(years)
+
+        simulated = portfolio.clone()
+        for _ in range(int(years) * 12):
+            simulated.step()
+
+        assert abs(closed_form - simulated.total) / closed_form < Decimal("1e-9")
+
+    def test_coast_value_exceeds_blended_rate_growth(self):
+        """The Jensen gap: the mix grows faster than its blended rate implies."""
+        portfolio = self._two_group_portfolio()
+        years = Decimal("20")
+
+        blended_growth = Decimal("100000") * (Decimal("1.045") ** 20)
+
+        assert portfolio.coast_value(years) > blended_growth
+
+    def test_single_group_reproduces_scalar_path(self):
+        """Degenerate case: one group, no liabilities, matches the scalar model."""
+        inputs = self._two_group_inputs(
+            annual_return_pct=Decimal("7"), inflation_pct=Decimal("2")
+        )
+        portfolio = build_portfolio(
+            Decimal("100000"), {"Investments": 100000}, {"Investments": 7}, Decimal("2")
+        )
+
+        with_portfolio = calculate_fire(inputs, portfolio)
+        scalar = calculate_fire(inputs)
+
+        assert with_portfolio.fire_number == scalar.fire_number
+        assert with_portfolio.coast_fire_number == scalar.coast_fire_number
+        assert with_portfolio.years_to_fire == scalar.years_to_fire
+        assert [p.net_worth for p in with_portfolio.projections] == [
+            p.net_worth for p in scalar.projections
+        ]
+
+    def test_coast_number_is_lower_under_drift(self):
+        """Drift means less capital is needed today to coast to the target."""
+        portfolio = self._two_group_portfolio()
+
+        with_drift = calc_coast_fire_number(
+            Decimal("1000000"), Decimal("4.5"), Decimal("20"), portfolio
+        )
+        without = calc_coast_fire_number(
+            Decimal("1000000"), Decimal("4.5"), Decimal("20")
+        )
+
+        assert with_drift < without
 
 
 class TestCalcFireNumber:
