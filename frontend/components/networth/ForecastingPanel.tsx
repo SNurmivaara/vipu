@@ -427,8 +427,8 @@ export function ForecastingPanel() {
         />
         <MetricCard
           label="Real return"
-          value={`${(derived.weightedReturnPct - settings.inflationPct).toFixed(1)}%`}
-          sublabel={`${derived.weightedReturnPct.toFixed(1)}% weighted - ${settings.inflationPct}% infl.`}
+          value={`${derived.realReturnPct.toFixed(1)}%`}
+          sublabel={`${derived.weightedReturnPct.toFixed(1)}% weighted, ${settings.inflationPct}% infl.`}
         />
       </div>
 

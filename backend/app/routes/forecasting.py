@@ -9,6 +9,7 @@ from app import get_session
 from app.fire import (
     FireInputs,
     calculate_fire,
+    real_return_from_nominal,
     resolve_group_return_rates,
     weighted_return,
 )
@@ -314,6 +315,9 @@ def get_forecasting_projection() -> Response:
         else gross_income
     )
     weighted_return_pct = weighted_return(by_group, group_rates)
+    real_return_pct = real_return_from_nominal(
+        weighted_return_pct, settings.inflation_pct
+    )
     pension_active = settings.pension_accrued_monthly is not None
 
     inputs = FireInputs(
@@ -343,6 +347,10 @@ def get_forecasting_projection() -> Response:
         "monthly_savings": monthly_savings,
         "annual_expenses": annual_expenses,
         "weighted_return_pct": weighted_return_pct,
+        # Fisher-converted real return, so the displayed figure is the one the
+        # projection actually compounds at. Deriving it in the frontend as
+        # "weighted - inflation" made the two disagree.
+        "real_return_pct": real_return_pct,
         # Whether the figure above is a manual override or the budget-derived
         # default. Without this, "monthly savings" and the budget's "surplus"
         # look like contradictory answers to the same question.

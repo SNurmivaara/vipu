@@ -15,10 +15,42 @@ from app.fire import (
     calculate_fire,
     default_return_for_group,
     generate_pension_scenarios,
+    monthly_rate,
     pv_annuity,
+    real_return_from_nominal,
     resolve_group_return_rates,
     weighted_return,
 )
+
+
+class TestRateConversions:
+    """Nominal-to-real and annual-to-monthly rate conversions (issue #98)."""
+
+    def test_fisher_conversion(self):
+        """8% nominal at 3% inflation is 4.854% real, not the 5% of subtraction."""
+        result = real_return_from_nominal(Decimal("8"), Decimal("3"))
+
+        assert abs(result / 100 - Decimal("0.04854")) < Decimal("0.000005")
+        assert result / 100 != Decimal("0.05")
+
+    def test_fisher_is_below_subtraction(self):
+        """Subtraction overstates the real return whenever inflation is positive."""
+        for nominal, inflation in [("8", "3"), ("6.1", "3"), ("5.5", "2")]:
+            fisher = real_return_from_nominal(Decimal(nominal), Decimal(inflation))
+            assert fisher < Decimal(nominal) - Decimal(inflation)
+
+    def test_fisher_zero_inflation_is_identity(self):
+        assert real_return_from_nominal(Decimal("7"), Decimal("0")) == Decimal("7")
+
+    def test_twelve_monthly_steps_reproduce_annual(self):
+        """Monthly compounding round-trips to the annual rate."""
+        for annual in [Decimal("8"), Decimal("4.854368932038835"), Decimal("-2")]:
+            compounded = (1 + monthly_rate(annual)) ** 12 - 1
+            assert abs(compounded - annual / 100) < Decimal("1e-12")
+
+    def test_monthly_rate_is_geometric_not_arithmetic(self):
+        """annual/12 skips intra-year compounding and overstates each step."""
+        assert monthly_rate(Decimal("8")) < Decimal("8") / 100 / 12
 
 
 class TestCalcFireNumber:
@@ -447,6 +479,29 @@ class TestCalculateFire:
         assert first_point.net_worth_normal is not None
         assert first_point.net_worth_late is not None
 
+    def test_projection_compounds_at_the_fisher_real_rate(self):
+        """The projection grows at the same real rate the UI reports (issue #98).
+
+        Zero contributions, so year one is exactly one application of the rate.
+        Subtracting inflation instead would give 105000.
+        """
+        inputs = FireInputs(
+            current_net_worth=Decimal("100000"),
+            monthly_contribution=Decimal("0"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("8"),
+            inflation_pct=Decimal("3"),
+            current_age=30,
+            target_retirement_age=55,
+            safe_withdrawal_rate=Decimal("4"),
+        )
+
+        result = calculate_fire(inputs)
+
+        year_one = result.projections[1]
+        assert year_one.age == 31
+        assert year_one.net_worth == Decimal("104854")
+
     def test_fire_number_now_equals_fire_number_without_pension(self):
         """Without pension the retire-now number matches the FIRE number."""
         inputs = FireInputs(
@@ -731,6 +786,32 @@ class TestForecastingProjection:
         assert derived["monthly_savings"] == 3000  # 4000 - 1000
         assert derived["annual_expenses"] == 12000  # 1000 * 12
         assert derived["group_return_rates"] == {"Cash": 1, "Investments": 7}
+
+    def test_real_return_is_fisher_derived(self, client):
+        """Real return comes from the backend's Fisher conversion (issue #98).
+
+        The frontend used to compute "weighted - inflation" itself, so the
+        displayed figure disagreed with the one the projection compounded at.
+        """
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 1, "amount": 10000},
+                    {"category_id": 5, "amount": 30000},
+                ],
+            },
+        )
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+
+        # Weighted 5.5% at the default 2% inflation -> 3.431%, not 3.5%
+        assert derived["weighted_return_pct"] == 5.5
+        assert abs(derived["real_return_pct"] - 3.43137) < 0.0001
+        assert derived["real_return_pct"] != 3.5
 
     def test_overrides_applied(self, client):
         """Persisted overrides take precedence over budget-derived values."""

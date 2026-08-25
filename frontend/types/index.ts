@@ -463,6 +463,8 @@ export interface ForecastingDerivedAPI {
   monthly_savings: number;
   annual_expenses: number;
   weighted_return_pct: number;
+  /** Fisher-converted real return at the current mix, as the projection compounds it */
+  real_return_pct: number;
   pension_monthly_salary: number;
   pension_active: boolean;
   by_group: Record<string, number>;

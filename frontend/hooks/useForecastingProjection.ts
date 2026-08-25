@@ -46,6 +46,11 @@ export interface DerivedInputs {
   monthlySavings: number;
   annualExpenses: number;
   weightedReturnPct: number;
+  /**
+   * Real return at the current mix, Fisher-converted by the backend so the
+   * displayed figure is the one the projection compounds at.
+   */
+  realReturnPct: number;
   pensionMonthlySalary: number;
   pensionActive: boolean;
   byGroup: Record<string, number>;
@@ -120,6 +125,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       monthlySavings: api.derived.monthly_savings,
       annualExpenses: api.derived.annual_expenses,
       weightedReturnPct: api.derived.weighted_return_pct,
+      realReturnPct: api.derived.real_return_pct,
       pensionMonthlySalary: api.derived.pension_monthly_salary,
       pensionActive: api.derived.pension_active,
       byGroup: api.derived.by_group,
@@ -149,6 +155,7 @@ const DEFAULT_RESULT: ForecastingProjection = {
     monthlySavings: 0,
     annualExpenses: 0,
     weightedReturnPct: 7,
+    realReturnPct: 0,
     pensionMonthlySalary: 0,
     pensionActive: false,
     byGroup: {},

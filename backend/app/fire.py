@@ -119,6 +119,31 @@ def _decimal_power(base: Decimal, exponent: Decimal) -> Decimal:
     return Decimal(str(float(base) ** float(exponent)))
 
 
+def real_return_from_nominal(nominal_pct: Decimal, inflation_pct: Decimal) -> Decimal:
+    """Convert a nominal annual return (%) to a real one via the Fisher relation.
+
+    real = (1 + nominal) / (1 + inflation) - 1
+
+    Subtracting inflation is the common approximation. It overstates the real
+    return, and the error compounds over a projection: 8% at 3% inflation is
+    4.854% real, not 5%.
+    """
+    inflation = inflation_pct / 100
+    if inflation <= -1:
+        # Deflation of 100% or more has no meaningful Fisher conversion.
+        return nominal_pct
+    return ((1 + nominal_pct / 100) / (1 + inflation) - 1) * 100
+
+
+def monthly_rate(annual_pct: Decimal) -> Decimal:
+    """Monthly rate equivalent to an annual one: (1 + annual)^(1/12) - 1.
+
+    Dividing by 12 overstates growth, because it skips the compounding of the
+    intervening months. Twelve of these steps reproduce the annual rate.
+    """
+    return _decimal_power(1 + annual_pct / 100, Decimal("1") / 12) - 1
+
+
 # ---------------------------------------------------------------------------
 # Input derivation from persisted state
 #
@@ -243,9 +268,7 @@ def calc_years_to_fire(
     if current_net_worth >= fire_number:
         return Decimal("0")
 
-    monthly_return = (
-        _decimal_power(1 + real_annual_return_pct / 100, Decimal("1") / 12) - 1
-    )
+    monthly_return = monthly_rate(real_annual_return_pct)
     nw = current_net_worth
     max_months = 100 * 12
 
@@ -272,7 +295,7 @@ def calc_coast_fire_age(
     Returns None if unreachable before target retirement age.
     """
     r = real_annual_return_pct / 100
-    monthly_return = _decimal_power(1 + r, Decimal("1") / 12) - 1
+    monthly_return = monthly_rate(real_annual_return_pct)
     total_months = round((target_retirement_age - current_age) * 12)
 
     if total_months <= 0:
@@ -538,7 +561,7 @@ def calc_pension_aware_years_to_fire(
     Returns tuple of (years_to_fire, fire_number_at_that_age) or None if unreachable.
     """
     real_return = real_annual_return_pct / 100
-    monthly_return = _decimal_power(1 + real_return, Decimal("1") / 12) - 1
+    monthly_return = monthly_rate(real_annual_return_pct)
     max_months = 100 * 12
 
     # Check if already FIRE'd at current age
@@ -600,9 +623,11 @@ def generate_projections(
     When pension inputs are present, extends past FIRE age with drawdown projections
     and calculates age-specific FIRE numbers for each projection point.
     """
-    real_return_pct = inputs.annual_return_pct - inputs.inflation_pct
+    real_return_pct = real_return_from_nominal(
+        inputs.annual_return_pct, inputs.inflation_pct
+    )
     real_return = real_return_pct / 100
-    monthly_return = _decimal_power(1 + real_return, Decimal("1") / 12) - 1
+    monthly_return = monthly_rate(real_return_pct)
     total_months = years_ahead * 12
     current_year = datetime.now().year
     current_month = datetime.now().month
@@ -817,7 +842,9 @@ def generate_projections(
 
 def calculate_fire(inputs: FireInputs) -> FireResult:
     """Calculate all FIRE metrics from inputs."""
-    real_return_pct = inputs.annual_return_pct - inputs.inflation_pct
+    real_return_pct = real_return_from_nominal(
+        inputs.annual_return_pct, inputs.inflation_pct
+    )
     real_return = real_return_pct / 100
 
     # Check if pension mode is active
