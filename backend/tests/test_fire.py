@@ -145,6 +145,65 @@ class TestPortfolioDrift:
             p.net_worth for p in scalar.projections
         ]
 
+    def test_routing_contributions_beats_the_portfolio_average(self):
+        """Routing savings to an above-average group raises terminal wealth.
+
+        Without a destination, new money is credited at the portfolio average,
+        which is not where contributions actually go (issue #98).
+        """
+        inputs = self._two_group_inputs(monthly_contribution=Decimal("1000"))
+
+        routed = calculate_fire(
+            inputs,
+            build_portfolio(
+                Decimal("100000"),
+                {"Equities": 50000, "Cash": 50000},
+                {"Equities": 8, "Cash": 1},
+                Decimal("0"),
+                contribution_group="Equities",
+            ),
+        )
+        pro_rata = calculate_fire(inputs, self._two_group_portfolio())
+
+        routed_at_65 = next(p.net_worth for p in routed.projections if p.age == 65)
+        pro_rata_at_65 = next(p.net_worth for p in pro_rata.projections if p.age == 65)
+        assert routed_at_65 > pro_rata_at_65
+
+    def test_routing_to_a_below_average_group_lowers_wealth(self):
+        """Routing is directional, not a free uplift."""
+        inputs = self._two_group_inputs(monthly_contribution=Decimal("1000"))
+
+        to_cash = calculate_fire(
+            inputs,
+            build_portfolio(
+                Decimal("100000"),
+                {"Equities": 50000, "Cash": 50000},
+                {"Equities": 8, "Cash": 1},
+                Decimal("0"),
+                contribution_group="Cash",
+            ),
+        )
+        pro_rata = calculate_fire(inputs, self._two_group_portfolio())
+
+        cash_at_65 = next(p.net_worth for p in to_cash.projections if p.age == 65)
+        pro_rata_at_65 = next(p.net_worth for p in pro_rata.projections if p.age == 65)
+        assert cash_at_65 < pro_rata_at_65
+
+    def test_unknown_contribution_group_falls_back_to_pro_rata(self):
+        """A stale group name must not silently swallow contributions."""
+        portfolio = build_portfolio(
+            Decimal("100000"),
+            {"Equities": 50000, "Cash": 50000},
+            {"Equities": 8, "Cash": 1},
+            Decimal("0"),
+            contribution_group="Deleted Group",
+        )
+
+        assert portfolio.contribution_group is None
+
+        portfolio.step(Decimal("1000"))
+        assert portfolio.total > Decimal("100000")
+
     def test_coast_number_is_lower_under_drift(self):
         """Drift means less capital is needed today to coast to the target."""
         portfolio = self._two_group_portfolio()
@@ -955,6 +1014,39 @@ class TestForecastingProjection:
         )
         derived = client.get("/api/forecasting/projection").json["derived"]
         assert derived["target_retirement_age"] == 62
+
+    def test_contribution_group_round_trips(self, client):
+        """The contribution destination persists and reaches the projection."""
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 1, "amount": 10000},
+                    {"category_id": 5, "amount": 30000},
+                ],
+            },
+        )
+
+        resp = client.put(
+            "/api/forecasting/settings", json={"contribution_group": "Investments"}
+        )
+        assert resp.status_code == 200
+        assert resp.json["contribution_group"] == "Investments"
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+        assert derived["contribution_group"] == "Investments"
+
+    def test_contribution_group_defaults_to_pro_rata(self, client):
+        """Unset means contributions spread across the mix."""
+        derived = client.get("/api/forecasting/projection").json["derived"]
+        assert derived["contribution_group"] is None
+
+    def test_contribution_group_rejects_non_string(self, client):
+        resp = client.put("/api/forecasting/settings", json={"contribution_group": 7})
+        assert resp.status_code == 400
 
     def test_pension_mode_activated(self, client):
         """Setting pension_accrued_monthly activates pension mode."""

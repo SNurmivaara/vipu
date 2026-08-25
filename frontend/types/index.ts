@@ -353,6 +353,8 @@ export interface ForecastingSettings {
   lifeExpectancy: number;
   /** Expected annual return % per net worth group name */
   groupReturnRates: Record<string, number>;
+  /** Asset group monthly savings are paid into; null spreads them across the mix */
+  contributionGroup: string | null;
 }
 
 // API response shape (snake_case from backend)
@@ -372,6 +374,7 @@ export interface ForecastingSettingsAPI {
   pension_guarantee_amount: number;
   life_expectancy: number;
   group_return_rates: Record<string, number>;
+  contribution_group: string | null;
   updated_at: string;
 }
 

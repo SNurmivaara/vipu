@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   pensionGuaranteeAmount: 990,
   lifeExpectancy: 95,
   groupReturnRates: {},
+  contributionGroup: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -312,6 +313,32 @@ export function ForecastingPanel() {
                     step={0.5}
                   />
                 ))}
+              <div className="col-span-full">
+                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                  Monthly savings go to
+                </label>
+                <select
+                  className="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm"
+                  value={settings.contributionGroup ?? ""}
+                  onChange={(e) =>
+                    updateSetting("contributionGroup", e.target.value || null)
+                  }
+                >
+                  <option value="">Spread across the mix</option>
+                  {Object.entries(latestByGroup)
+                    .filter(([, amount]) => amount > 0)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([group]) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                </select>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                  Spreading credits new money at the portfolio average. Naming a
+                  group compounds it at that group&apos;s rate instead.
+                </div>
+              </div>
             </>
           )}
 

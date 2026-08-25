@@ -224,6 +224,16 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
                 return jsonify({"error": msg}), 400
         settings.group_return_rates = val
 
+    # Contribution destination (null routes contributions across the mix)
+    if "contribution_group" in data:
+        val = data["contribution_group"]
+        if val is not None and not isinstance(val, str):
+            return (
+                jsonify({"error": "contribution_group must be a string or null"}),
+                400,
+            )
+        settings.contribution_group = val or None
+
     session.commit()
     return jsonify(settings.to_dict())
 
@@ -344,7 +354,11 @@ def get_forecasting_projection() -> Response:
     # Each group compounds at its own rate, so the mix drifts toward the
     # faster groups and the blended return rises over the projection.
     portfolio = build_portfolio(
-        current_net_worth, by_group, group_rates, settings.inflation_pct
+        current_net_worth,
+        by_group,
+        group_rates,
+        settings.inflation_pct,
+        contribution_group=settings.contribution_group,
     )
 
     result = calculate_fire(inputs, portfolio)
@@ -358,6 +372,8 @@ def get_forecasting_projection() -> Response:
         # projection actually compounds at. Deriving it in the frontend as
         # "weighted - inflation" made the two disagree.
         "real_return_pct": real_return_pct,
+        # Where monthly savings land. None spreads them across the mix.
+        "contribution_group": portfolio.contribution_group,
         # Whether the figure above is a manual override or the budget-derived
         # default. Without this, "monthly savings" and the budget's "surplus"
         # look like contradictory answers to the same question.

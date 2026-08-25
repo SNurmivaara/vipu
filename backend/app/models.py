@@ -262,6 +262,11 @@ class ForecastingSettings(Base):
     )
     life_expectancy: Mapped[int] = mapped_column(Integer, nullable=False, default=95)
     group_return_rates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Asset group new savings are paid into. NULL spreads them across the mix,
+    # which credits them at the portfolio average rather than where they go.
+    contribution_group: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, default=None
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -299,6 +304,7 @@ class ForecastingSettings(Base):
             "pension_guarantee_amount": float(self.pension_guarantee_amount),
             "life_expectancy": self.life_expectancy,
             "group_return_rates": self.group_return_rates or {},
+            "contribution_group": self.contribution_group,
             "updated_at": self.updated_at.isoformat(),
         }
 

@@ -177,9 +177,18 @@ class PortfolioState:
     the loop at all.
     """
 
-    def __init__(self, groups: list[PortfolioGroup]) -> None:
+    def __init__(
+        self, groups: list[PortfolioGroup], contribution_group: str | None = None
+    ) -> None:
         self._groups = groups
         self._monthly = [monthly_rate(g.real_annual_pct) for g in groups]
+        # Where new money lands. Unset spreads it across the mix, which credits
+        # contributions at the portfolio average.
+        self._contribution_group = (
+            contribution_group
+            if any(g.name == contribution_group for g in groups)
+            else None
+        )
 
     @classmethod
     def single(cls, balance: Decimal, real_annual_pct: Decimal) -> "PortfolioState":
@@ -190,7 +199,13 @@ class PortfolioState:
 
     def clone(self) -> "PortfolioState":
         """Independent copy, for branching scenarios off a shared trajectory."""
-        return PortfolioState([replace(g) for g in self._groups])
+        return PortfolioState(
+            [replace(g) for g in self._groups], self._contribution_group
+        )
+
+    @property
+    def contribution_group(self) -> str | None:
+        return self._contribution_group
 
     @property
     def total(self) -> Decimal:
@@ -209,6 +224,11 @@ class PortfolioState:
     def _apply_flow(self, flow: Decimal) -> None:
         if flow == 0:
             return
+        if flow > 0 and self._contribution_group is not None:
+            for group in self._groups:
+                if group.name == self._contribution_group:
+                    group.balance += flow
+                    return
         total = self.total
         if total <= 0:
             if flow < 0:
@@ -347,11 +367,16 @@ def build_portfolio(
     group_return_rates: dict[str, float | Decimal],
     inflation_pct: Decimal,
     fallback_return_pct: Decimal = Decimal("7"),
+    contribution_group: str | None = None,
 ) -> PortfolioState:
     """Build a portfolio by spreading ``base`` across the asset groups by weight.
 
     Each group compounds at its own Fisher-real rate, so the mix drifts as the
     faster groups outgrow the slower ones.
+
+    ``contribution_group`` names the group new savings land in. Left unset,
+    contributions spread across the mix and so earn the portfolio average,
+    which is rarely where the money actually goes.
 
     Note that ``base`` is net worth, so the groups currently carry the
     liabilities spread across them in proportion to assets. Giving liabilities
@@ -380,7 +405,8 @@ def build_portfolio(
                 nominal_annual_pct=rates[name],
             )
             for name, amount in positives.items()
-        ]
+        ],
+        contribution_group,
     )
 
 

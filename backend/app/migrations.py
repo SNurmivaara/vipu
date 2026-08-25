@@ -228,6 +228,17 @@ MIGRATIONS: list[dict] = [
                 AND is_ephemeral = FALSE;
         """,
     },
+    {
+        "id": "012_contribution_group",
+        "name": "Add contribution_group to forecasting_settings",
+        # Monthly savings had no destination, so the projection credited new
+        # money at the portfolio average. Naming the group it lands in lets
+        # contributions compound at that group's rate instead.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS contribution_group VARCHAR(100);
+        """,
+    },
 ]
 
 

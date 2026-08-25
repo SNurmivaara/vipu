@@ -27,6 +27,7 @@ const CAMEL_TO_SNAKE: Record<keyof ForecastingSettings, keyof Omit<ForecastingSe
   pensionGuaranteeAmount: "pension_guarantee_amount",
   lifeExpectancy: "life_expectancy",
   groupReturnRates: "group_return_rates",
+  contributionGroup: "contribution_group",
 };
 
 function apiToSettings(api: ForecastingSettingsAPI): ForecastingSettings {
@@ -45,6 +46,7 @@ function apiToSettings(api: ForecastingSettingsAPI): ForecastingSettings {
     pensionGuaranteeAmount: api.pension_guarantee_amount,
     lifeExpectancy: api.life_expectancy,
     groupReturnRates: api.group_return_rates ?? {},
+    contributionGroup: api.contribution_group ?? null,
   };
 }
 
