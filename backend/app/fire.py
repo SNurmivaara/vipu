@@ -693,6 +693,11 @@ def calc_projected_monthly_pension(
     """Project monthly pension at FIRE age based on current accrual and future work.
 
     Accrual stops when you FIRE (stop working).
+
+    The result is a real figure and is never deflated anywhere downstream.
+    TyEL is already inflation-hedged: the palkkakerroin uprates earned rights
+    before claiming and the TyEL index uprates the pension in payment. Applying
+    inflation to it as well would understate it twice over.
     """
     years_of_accrual = max(Decimal("0"), fire_age - current_age)
     additional_monthly_pension = (

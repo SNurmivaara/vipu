@@ -71,6 +71,10 @@ export function ForecastingPanel() {
       age: p.age,
       netWorth: p.netWorth,
       coastNetWorth: p.coastNetWorth,
+      ...(p.blendedReturnPct !== undefined && {
+        blendedReturnPct: p.blendedReturnPct,
+      }),
+      ...(p.swrBase !== undefined && { swrBase: p.swrBase }),
       // Use age-specific FIRE numbers when available (pension mode)
       // Stop drawing FIRE/Coast FIRE lines after target retirement age
       ...(p.age <= targetAge && {
@@ -171,6 +175,16 @@ export function ForecastingPanel() {
               </p>
             )}
           </>
+        )}
+        {d.swrBase !== undefined && (
+          <p className="text-gray-500 dark:text-gray-400">
+            Drawable: {formatCurrencyRounded(d.swrBase)}
+          </p>
+        )}
+        {d.blendedReturnPct !== undefined && (
+          <p className="text-gray-500 dark:text-gray-400">
+            Blended return: {d.blendedReturnPct.toFixed(1)}%
+          </p>
         )}
       </div>
     );

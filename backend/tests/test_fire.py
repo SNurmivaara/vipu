@@ -553,6 +553,46 @@ class TestCalcCoastFireAge:
         assert result is None
 
 
+class TestPensionIsReal:
+    """TyEL is inflation-hedged, so it is never deflated (issue #98)."""
+
+    def _inputs(self, inflation_pct):
+        return FireInputs(
+            current_net_worth=Decimal("100000"),
+            monthly_contribution=Decimal("1000"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("7"),
+            inflation_pct=inflation_pct,
+            current_age=30,
+            target_retirement_age=45,
+            safe_withdrawal_rate=Decimal("4"),
+            pension_accrued_monthly=Decimal("500"),
+            pension_monthly_salary=Decimal("4000"),
+            pension_accrual_rate=Decimal("1.5"),
+            pension_full_age=68,
+        )
+
+    def test_pension_does_not_shrink_with_inflation(self):
+        """The palkkakerroin and TyEL index already hedge it."""
+        no_inflation = calculate_fire(self._inputs(Decimal("0")))
+        high_inflation = calculate_fire(self._inputs(Decimal("5")))
+
+        assert no_inflation.pension is not None
+        assert high_inflation.pension is not None
+        assert (
+            no_inflation.pension.projected_monthly_pension
+            == high_inflation.pension.projected_monthly_pension
+        )
+
+    def test_accrual_stops_at_the_retirement_age(self):
+        """Retiring at 45 credits accrual to 45, not through to full age."""
+        result = calculate_fire(self._inputs(Decimal("2")))
+
+        assert result.pension is not None
+        # 500 accrued + 15 years (30 -> 45) * 4000 * 1.5%
+        assert result.pension.projected_monthly_pension == Decimal("1400.00")
+
+
 class TestPensionCalculations:
     """Tests for pension-related calculations."""
 
