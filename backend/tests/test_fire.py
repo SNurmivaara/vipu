@@ -218,6 +218,118 @@ class TestPortfolioDrift:
         assert with_drift < without
 
 
+class TestLiabilities:
+    """Debt carried with its own terms rather than as an opaque balance (#98)."""
+
+    def _portfolio(self, rate_pct=3, payment=800, debt=120000):
+        return build_portfolio(
+            Decimal("200000"),
+            {"Equities": 150000, "Cash": 50000},
+            {"Equities": 8, "Cash": 1},
+            Decimal("0"),
+            liabilities_by_group={"Mortgage": debt},
+            liability_terms={
+                "Mortgage": {"rate_pct": rate_pct, "monthly_payment": payment}
+            },
+        )
+
+    def test_net_worth_matches_the_snapshot_at_the_start(self):
+        """Gross assets less debt reproduces the net worth it replaced."""
+        portfolio = self._portfolio()
+
+        assert portfolio.assets_total == Decimal("200000")
+        assert portfolio.liabilities_total == Decimal("120000")
+        assert portfolio.total == Decimal("80000")
+
+    def test_debt_amortises_instead_of_compounding_at_the_asset_rate(self):
+        """The balance falls. Applying the blended rate to net worth grew it."""
+        portfolio = self._portfolio()
+
+        for _ in range(12):
+            portfolio.step()
+
+        assert portfolio.liabilities_total < Decimal("120000")
+
+    def test_payoff_frees_the_payment_into_contributions(self):
+        """Once the loan clears, its payment starts compounding instead."""
+        portfolio = build_portfolio(
+            Decimal("10000"),
+            {"Cash": 10000},
+            {"Cash": 0},
+            Decimal("0"),
+            liabilities_by_group={"Loan": 1000},
+            liability_terms={"Loan": {"rate_pct": 0, "monthly_payment": 500}},
+        )
+
+        portfolio.step()
+        portfolio.step()
+        assert portfolio.liabilities_total == Decimal("0")
+        assets_at_payoff = portfolio.assets_total
+
+        portfolio.step()
+        assert portfolio.assets_total == assets_at_payoff + Decimal("500")
+
+    def test_payment_below_interest_warns(self):
+        """A balance that outgrows its payment is flagged, not projected."""
+        portfolio = build_portfolio(
+            Decimal("100000"),
+            {"Cash": 100000},
+            {"Cash": 1},
+            Decimal("0"),
+            liabilities_by_group={"Card": 1000},
+            liability_terms={"Card": {"rate_pct": 20, "monthly_payment": 5}},
+        )
+
+        assert portfolio.liability_warnings() == [
+            {"code": "negative_amortization", "group": "Card"}
+        ]
+
+    def test_serviceable_debt_does_not_warn(self):
+        assert self._portfolio().liability_warnings() == []
+
+    def test_negative_amortization_terminates_the_solve(self):
+        """The solve returns unreachable rather than running away."""
+        inputs = FireInputs(
+            current_net_worth=Decimal("0"),
+            monthly_contribution=Decimal("0"),
+            annual_expenses=Decimal("40000"),
+            annual_return_pct=Decimal("1"),
+            inflation_pct=Decimal("0"),
+            current_age=30,
+            target_retirement_age=65,
+            safe_withdrawal_rate=Decimal("4"),
+        )
+        portfolio = build_portfolio(
+            Decimal("1000"),
+            {"Cash": 1000},
+            {"Cash": 1},
+            Decimal("0"),
+            liabilities_by_group={"Card": 10000},
+            liability_terms={"Card": {"rate_pct": 20, "monthly_payment": 1}},
+        )
+
+        result = calculate_fire(inputs, portfolio)
+
+        assert result.years_to_fire is None
+        assert result.warnings == [{"code": "negative_amortization", "group": "Card"}]
+
+    def test_untermed_debt_erodes_with_inflation(self):
+        """A liability with no terms holds nominally, so inflation shrinks it."""
+        portfolio = build_portfolio(
+            Decimal("100000"),
+            {"Cash": 100000},
+            {"Cash": 0},
+            Decimal("3"),
+            liabilities_by_group={"Loan": 50000},
+        )
+
+        for _ in range(12):
+            portfolio.step()
+
+        assert portfolio.liabilities_total < Decimal("50000")
+        assert portfolio.liabilities_total > Decimal("48000")
+
+
 class TestCalcFireNumber:
     """Tests for basic FIRE number calculation."""
 
@@ -1047,6 +1159,75 @@ class TestForecastingProjection:
     def test_contribution_group_rejects_non_string(self, client):
         resp = client.put("/api/forecasting/settings", json={"contribution_group": 7})
         assert resp.status_code == 400
+
+    def _seed_with_liability(self, client):
+        """Cash 10000 + Investments 30000, less a 5000 student loan."""
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2025,
+                "entries": [
+                    {"category_id": 1, "amount": 10000},
+                    {"category_id": 5, "amount": 30000},
+                    {"category_id": 10, "amount": -5000},  # Student Loan
+                ],
+            },
+        )
+
+    def test_liabilities_are_carried_separately(self, client):
+        """Gross assets and debt are exposed, and still net to the same worth."""
+        self._seed_with_liability(client)
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+
+        assert derived["gross_assets"] == 40000
+        assert derived["liabilities_by_group"] == {"Loans": 5000}
+        assert derived["current_net_worth"] == 35000
+
+    def test_liability_terms_round_trip_and_warn(self, client):
+        """Terms persist, and a payment below interest surfaces a warning."""
+        self._seed_with_liability(client)
+
+        resp = client.put(
+            "/api/forecasting/settings",
+            json={"liability_terms": {"Loans": {"rate_pct": 20, "monthly_payment": 5}}},
+        )
+        assert resp.status_code == 200
+        assert resp.json["liability_terms"]["Loans"]["rate_pct"] == 20
+
+        result = client.get("/api/forecasting/projection").json
+        assert result["warnings"] == [
+            {"code": "negative_amortization", "group": "Loans"}
+        ]
+
+    def test_serviceable_liability_has_no_warning(self, client):
+        self._seed_with_liability(client)
+        client.put(
+            "/api/forecasting/settings",
+            json={
+                "liability_terms": {"Loans": {"rate_pct": 2, "monthly_payment": 200}}
+            },
+        )
+
+        assert client.get("/api/forecasting/projection").json["warnings"] == []
+
+    def test_liability_terms_reject_bad_values(self, client):
+        assert (
+            client.put(
+                "/api/forecasting/settings",
+                json={"liability_terms": {"Loans": {"rate_pct": 99}}},
+            ).status_code
+            == 400
+        )
+        assert (
+            client.put(
+                "/api/forecasting/settings",
+                json={"liability_terms": {"Loans": {"monthly_payment": -5}}},
+            ).status_code
+            == 400
+        )
 
     def test_pension_mode_activated(self, client):
         """Setting pension_accrued_monthly activates pension mode."""

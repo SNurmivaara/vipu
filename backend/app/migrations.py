@@ -239,6 +239,17 @@ MIGRATIONS: list[dict] = [
                 ADD COLUMN IF NOT EXISTS contribution_group VARCHAR(100);
         """,
     },
+    {
+        "id": "013_liability_terms",
+        "name": "Add liability_terms to forecasting_settings",
+        # Liabilities were opaque negative balances, so the projection grew
+        # them at the portfolio return. Rate and payment per group let them
+        # amortise instead.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS liability_terms JSONB NOT NULL DEFAULT '{}';
+        """,
+    },
 ]
 
 

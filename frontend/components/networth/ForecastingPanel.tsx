@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useCallback } from "react";
+import { Fragment, useMemo, useState, useRef, useCallback } from "react";
 import {
   Line,
   XAxis,
@@ -33,6 +33,7 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   lifeExpectancy: 95,
   groupReturnRates: {},
   contributionGroup: null,
+  liabilityTerms: {},
 };
 
 // ---------------------------------------------------------------------------
@@ -342,6 +343,52 @@ export function ForecastingPanel() {
             </>
           )}
 
+          {/* Liability terms */}
+          {Object.keys(derived.liabilitiesByGroup).length > 0 && (
+            <>
+              <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Loan terms
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-500 mb-2">
+                  Without terms a balance is held flat and only inflation erodes
+                  it. The payment should match a budget expense, or savings will
+                  be counted twice.
+                </div>
+              </div>
+              {Object.entries(derived.liabilitiesByGroup).map(([group, owed]) => {
+                const terms = settings.liabilityTerms[group] ?? {
+                  rate_pct: 0,
+                  monthly_payment: 0,
+                };
+                const setTerms = (next: Partial<typeof terms>) =>
+                  updateSetting("liabilityTerms", {
+                    ...settings.liabilityTerms,
+                    [group]: { ...terms, ...next },
+                  });
+                return (
+                  <Fragment key={group}>
+                    <NumberInput
+                      label={`${group} rate % (${formatCurrencyRounded(owed)} owed)`}
+                      value={terms.rate_pct}
+                      onChange={(v) => setTerms({ rate_pct: v })}
+                      min={0}
+                      max={30}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label={`${group} payment /mo`}
+                      value={terms.monthly_payment}
+                      onChange={(v) => setTerms({ monthly_payment: v })}
+                      min={0}
+                      step={50}
+                    />
+                  </Fragment>
+                );
+              })}
+            </>
+          )}
+
           {/* Pension (TyEL) section */}
           <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
             <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -496,6 +543,22 @@ export function ForecastingPanel() {
           </div>
         );
       })()}
+
+      {/* Loans whose payment does not cover their interest */}
+      {result.warnings
+        .filter((w) => w.code === "negative_amortization")
+        .map((w) => (
+          <div
+            key={w.group}
+            className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3 text-sm"
+          >
+            <span className="text-red-600 dark:text-red-400">
+              {w.group}: the monthly payment does not cover the interest, so the
+              balance grows every month. The projection cannot show a payoff
+              until the payment or rate changes.
+            </span>
+          </div>
+        ))}
 
       {/* Guarantee pension (takuueläke) crossover milestone */}
       {result.pension?.guaranteeActive && (() => {

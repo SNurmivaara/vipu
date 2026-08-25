@@ -355,6 +355,8 @@ export interface ForecastingSettings {
   groupReturnRates: Record<string, number>;
   /** Asset group monthly savings are paid into; null spreads them across the mix */
   contributionGroup: string | null;
+  /** Interest rate and monthly payment per liability group name */
+  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
 }
 
 // API response shape (snake_case from backend)
@@ -375,6 +377,7 @@ export interface ForecastingSettingsAPI {
   life_expectancy: number;
   group_return_rates: Record<string, number>;
   contribution_group: string | null;
+  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
   updated_at: string;
 }
 
@@ -460,6 +463,8 @@ export interface FireResultAPI {
   portfolio_depleted_age: number | null;
   projections: FireProjectionPointAPI[];
   pension: FirePensionResultAPI | null;
+  /** Conditions the projection cannot model away, e.g. negative amortization */
+  warnings?: { code: string; group: string }[];
 }
 
 // FIRE inputs derived on the backend from persisted settings + snapshots + budget
@@ -470,6 +475,11 @@ export interface ForecastingDerivedAPI {
   weighted_return_pct: number;
   /** Fisher-converted real return at the current mix, as the projection compounds it */
   real_return_pct: number;
+  contribution_group: string | null;
+  gross_assets: number;
+  /** Amounts owed per liability group name, as positive magnitudes */
+  liabilities_by_group: Record<string, number>;
+  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
   pension_monthly_salary: number;
   pension_active: boolean;
   by_group: Record<string, number>;

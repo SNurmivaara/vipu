@@ -234,6 +234,24 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
             )
         settings.contribution_group = val or None
 
+    # Liability terms: {group_name: {rate_pct, monthly_payment}}
+    if "liability_terms" in data:
+        val = data["liability_terms"]
+        if not isinstance(val, dict):
+            return jsonify({"error": "liability_terms must be an object"}), 400
+        for group, terms in val.items():
+            if not isinstance(terms, dict):
+                return jsonify({"error": f"Terms for {group} must be an object"}), 400
+            rate = terms.get("rate_pct", 0)
+            payment = terms.get("monthly_payment", 0)
+            if not isinstance(rate, (int, float)) or rate < 0 or rate > 30:
+                msg = f"Rate for {group} must be between 0 and 30"
+                return jsonify({"error": msg}), 400
+            if not isinstance(payment, (int, float)) or payment < 0:
+                msg = f"Payment for {group} must not be negative"
+                return jsonify({"error": msg}), 400
+        settings.liability_terms = val
+
     session.commit()
     return jsonify(settings.to_dict())
 
@@ -299,7 +317,12 @@ def get_forecasting_projection() -> Response:
         .first()
     )
     current_net_worth = Decimal(str(latest.net_worth)) if latest else Decimal("0")
-    by_group: dict = latest.to_dict()["by_group"] if latest else {}
+    snapshot = latest.to_dict() if latest else {}
+    by_group: dict = snapshot.get("by_group", {})
+    liabilities_by_group: dict = snapshot.get("liabilities_by_group", {})
+    # Compound gross assets and amortise debt separately. Applying an
+    # asset-weighted rate to net worth grew the loans at the portfolio return.
+    gross_assets = Decimal(str(latest.total_assets)) if latest else Decimal("0")
 
     # Budget-derived figures (shared helper), frequency-normalized to monthly
     # rates so a quarterly or yearly bill isn't counted as a monthly one
@@ -354,11 +377,13 @@ def get_forecasting_projection() -> Response:
     # Each group compounds at its own rate, so the mix drifts toward the
     # faster groups and the blended return rises over the projection.
     portfolio = build_portfolio(
-        current_net_worth,
+        gross_assets,
         by_group,
         group_rates,
         settings.inflation_pct,
         contribution_group=settings.contribution_group,
+        liabilities_by_group=liabilities_by_group,
+        liability_terms=settings.liability_terms or {},
     )
 
     result = calculate_fire(inputs, portfolio)
@@ -374,6 +399,9 @@ def get_forecasting_projection() -> Response:
         "real_return_pct": real_return_pct,
         # Where monthly savings land. None spreads them across the mix.
         "contribution_group": portfolio.contribution_group,
+        "gross_assets": gross_assets,
+        "liabilities_by_group": liabilities_by_group,
+        "liability_terms": settings.liability_terms or {},
         # Whether the figure above is a manual override or the budget-derived
         # default. Without this, "monthly savings" and the budget's "surplus"
         # look like contradictory answers to the same question.

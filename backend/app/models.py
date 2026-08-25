@@ -267,6 +267,9 @@ class ForecastingSettings(Base):
     contribution_group: Mapped[str | None] = mapped_column(
         String(100), nullable=True, default=None
     )
+    # Interest rate and monthly payment per liability group name, so debt can
+    # amortise instead of being carried as an opaque balance.
+    liability_terms: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -305,6 +308,7 @@ class ForecastingSettings(Base):
             "life_expectancy": self.life_expectancy,
             "group_return_rates": self.group_return_rates or {},
             "contribution_group": self.contribution_group,
+            "liability_terms": self.liability_terms or {},
             "updated_at": self.updated_at.isoformat(),
         }
 
@@ -595,15 +599,28 @@ class NetWorthSnapshot(Base):
             zero = Decimal(0)
             group_totals: dict[int, Decimal] = {}  # group_id -> total
             group_names: dict[int, str] = {}  # group_id -> name
+            liability_totals: dict[int, Decimal] = {}
             for entry in self.entries:
                 group = entry.category.group
+                amount = entry.amount if entry.amount is not None else zero
                 if group.group_type == "asset":
-                    amount = entry.amount if entry.amount is not None else zero
                     group_totals[group.id] = group_totals.get(group.id, zero) + amount
+                    group_names[group.id] = group.name
+                else:
+                    liability_totals[group.id] = (
+                        liability_totals.get(group.id, zero) + amount
+                    )
                     group_names[group.id] = group.name
 
             result["by_group"] = {
                 group_names[gid]: float(total) for gid, total in group_totals.items()
+            }
+
+            # Amounts owed, as positive magnitudes. Liability entries are stored
+            # negative, but a forecast reads these as balances to pay down.
+            result["liabilities_by_group"] = {
+                group_names[gid]: abs(float(total))
+                for gid, total in liability_totals.items()
             }
 
             # Percentages (avoid division by zero)

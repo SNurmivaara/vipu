@@ -102,6 +102,9 @@ class FireResult:
     portfolio_depleted_age: Decimal | None
     projections: list[ProjectionPoint] = field(default_factory=list)
     pension: PensionResult | None = None
+    # Conditions the projection cannot model away, e.g. a loan whose payment
+    # does not cover its interest.
+    warnings: list[dict[str, str]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +170,31 @@ class PortfolioGroup:
     nominal_annual_pct: Decimal
 
 
+@dataclass
+class Liability:
+    """One debt, carried in nominal terms.
+
+    ``balance`` is the amount owed as a positive number. Loans are nominally
+    fixed, so inflation erodes them in real terms; the portfolio deflates the
+    balance rather than growing it.
+    """
+
+    name: str
+    balance: Decimal
+    annual_rate_pct: Decimal
+    monthly_payment: Decimal
+
+    @property
+    def monthly_interest_rate(self) -> Decimal:
+        return monthly_rate(self.annual_rate_pct)
+
+    def covers_interest(self) -> bool:
+        """Whether the payment keeps the balance from growing."""
+        if self.balance <= 0:
+            return True
+        return self.monthly_payment >= self.balance * self.monthly_interest_rate
+
+
 class PortfolioState:
     """Per-group balances, each stepped monthly at its own rate.
 
@@ -178,7 +206,11 @@ class PortfolioState:
     """
 
     def __init__(
-        self, groups: list[PortfolioGroup], contribution_group: str | None = None
+        self,
+        groups: list[PortfolioGroup],
+        contribution_group: str | None = None,
+        liabilities: list[Liability] | None = None,
+        inflation_pct: Decimal = Decimal("0"),
     ) -> None:
         self._groups = groups
         self._monthly = [monthly_rate(g.real_annual_pct) for g in groups]
@@ -189,6 +221,12 @@ class PortfolioState:
             if any(g.name == contribution_group for g in groups)
             else None
         )
+        self._liabilities = liabilities or []
+        self._inflation_pct = inflation_pct
+        self._monthly_inflation = monthly_rate(inflation_pct)
+        # Assets are simulated in real terms and debt in nominal terms, so the
+        # nominal balances are deflated by the inflation accrued so far.
+        self._inflation_factor = Decimal("1")
 
     @classmethod
     def single(cls, balance: Decimal, real_annual_pct: Decimal) -> "PortfolioState":
@@ -199,27 +237,64 @@ class PortfolioState:
 
     def clone(self) -> "PortfolioState":
         """Independent copy, for branching scenarios off a shared trajectory."""
-        return PortfolioState(
-            [replace(g) for g in self._groups], self._contribution_group
+        copy = PortfolioState(
+            [replace(g) for g in self._groups],
+            self._contribution_group,
+            [replace(liability) for liability in self._liabilities],
+            self._inflation_pct,
         )
+        copy._inflation_factor = self._inflation_factor
+        return copy
 
     @property
     def contribution_group(self) -> str | None:
         return self._contribution_group
 
     @property
-    def total(self) -> Decimal:
+    def assets_total(self) -> Decimal:
         return sum((g.balance for g in self._groups), Decimal("0"))
+
+    @property
+    def liabilities_total(self) -> Decimal:
+        """Debt in today's money: nominal balances deflated by inflation so far."""
+        if not self._liabilities:
+            return Decimal("0")
+        nominal = sum(
+            (liability.balance for liability in self._liabilities), Decimal(0)
+        )
+        return nominal / self._inflation_factor
+
+    @property
+    def total(self) -> Decimal:
+        """Net worth: assets less what is still owed."""
+        return self.assets_total - self.liabilities_total
 
     @property
     def balances(self) -> dict[str, Decimal]:
         return {g.name: g.balance for g in self._groups}
 
     def step(self, flow: Decimal = Decimal("0")) -> None:
-        """Grow every group by one month, then apply a net cash flow pro-rata."""
+        """Advance one month: grow assets, service debt, apply the cash flow."""
         for group, monthly in zip(self._groups, self._monthly, strict=True):
             group.balance = group.balance * (1 + monthly)
-        self._apply_flow(flow)
+        # A paid-off loan frees its payment, which then feeds the contributions.
+        self._apply_flow(flow + self._amortize())
+        self._inflation_factor *= 1 + self._monthly_inflation
+
+    def _amortize(self) -> Decimal:
+        """Service every debt for a month. Returns cash freed by paid-off loans."""
+        freed = Decimal("0")
+        for liability in self._liabilities:
+            if liability.balance <= 0:
+                freed += liability.monthly_payment
+                continue
+            interest = liability.balance * liability.monthly_interest_rate
+            liability.balance += interest - liability.monthly_payment
+            if liability.balance <= 0:
+                # The final payment overshoots; the excess comes back as cash.
+                freed += -liability.balance
+                liability.balance = Decimal("0")
+        return freed
 
     def _apply_flow(self, flow: Decimal) -> None:
         if flow == 0:
@@ -229,7 +304,7 @@ class PortfolioState:
                 if group.name == self._contribution_group:
                     group.balance += flow
                     return
-        total = self.total
+        total = self.assets_total
         if total <= 0:
             if flow < 0:
                 # A withdrawal from an empty portfolio leaves it empty.
@@ -267,22 +342,39 @@ class PortfolioState:
         return weighted / total if total > 0 else Decimal("0")
 
     def coast_value(self, years: Decimal) -> Decimal:
-        """Value after ``years`` of growth with no further contributions.
+        """Net worth after ``years`` of growth with no further contributions.
 
         Sum of bᵢ(1 + rᵢ)ⁿ across the groups. Scaling every bucket leaves the
         mix unchanged, so this closed form needs no simulation. It exceeds the
         blended-rate result (1 + r̄)ⁿ by Jensen's inequality, and that gap is
         precisely the drift.
+
+        Debt is held at its current real balance rather than amortised away,
+        which understates the result: coasting is treated as never paying the
+        loans down further.
         """
         if years <= 0:
             return self.total
-        return sum(
+        grown = sum(
             (
                 group.balance * _decimal_power(1 + group.real_annual_pct / 100, years)
                 for group in self._groups
             ),
             Decimal("0"),
         )
+        return grown - self.liabilities_total
+
+    def liability_warnings(self) -> list[dict[str, str]]:
+        """Flag debts whose payment does not cover their interest.
+
+        Such a balance grows every month, so a solve against it would run to
+        its iteration cap rather than converge. Saying so beats projecting it.
+        """
+        return [
+            {"code": "negative_amortization", "group": liability.name}
+            for liability in self._liabilities
+            if not liability.covers_interest()
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -368,6 +460,8 @@ def build_portfolio(
     inflation_pct: Decimal,
     fallback_return_pct: Decimal = Decimal("7"),
     contribution_group: str | None = None,
+    liabilities_by_group: dict[str, float | Decimal] | None = None,
+    liability_terms: dict[str, dict] | None = None,
 ) -> PortfolioState:
     """Build a portfolio by spreading ``base`` across the asset groups by weight.
 
@@ -378,12 +472,24 @@ def build_portfolio(
     contributions spread across the mix and so earn the portfolio average,
     which is rarely where the money actually goes.
 
-    Note that ``base`` is net worth, so the groups currently carry the
-    liabilities spread across them in proportion to assets. Giving liabilities
-    their own balances is a separate change; this one only removes the fixed
-    blended rate.
+    ``base`` is gross assets. Debts are carried separately by
+    ``liabilities_by_group``, as amounts owed, so they amortise at their own
+    rate instead of compounding at the portfolio's. A group with no configured
+    terms holds its nominal balance, which inflation still erodes in real
+    terms.
     """
     rates = resolve_group_return_rates(by_group, group_return_rates)
+    terms = liability_terms or {}
+    liabilities = [
+        Liability(
+            name=name,
+            balance=Decimal(str(amount)),
+            annual_rate_pct=Decimal(str(terms.get(name, {}).get("rate_pct", 0))),
+            monthly_payment=Decimal(str(terms.get(name, {}).get("monthly_payment", 0))),
+        )
+        for name, amount in (liabilities_by_group or {}).items()
+        if Decimal(str(amount)) > 0
+    ]
     positives = {
         name: Decimal(str(amount))
         for name, amount in by_group.items()
@@ -392,12 +498,16 @@ def build_portfolio(
     total = sum(positives.values(), Decimal("0"))
 
     if total <= 0:
-        return PortfolioState.single(
-            base, real_return_from_nominal(fallback_return_pct, inflation_pct)
-        )
-
-    return PortfolioState(
-        [
+        groups = [
+            PortfolioGroup(
+                "Portfolio",
+                base,
+                real_return_from_nominal(fallback_return_pct, inflation_pct),
+                fallback_return_pct,
+            )
+        ]
+    else:
+        groups = [
             PortfolioGroup(
                 name=name,
                 balance=base * (amount / total),
@@ -405,9 +515,9 @@ def build_portfolio(
                 nominal_annual_pct=rates[name],
             )
             for name, amount in positives.items()
-        ],
-        contribution_group,
-    )
+        ]
+
+    return PortfolioState(groups, contribution_group, liabilities, inflation_pct)
 
 
 # ---------------------------------------------------------------------------
@@ -1305,4 +1415,5 @@ def calculate_fire(
         portfolio_depleted_age=portfolio_depleted_age,
         projections=projections,
         pension=pension_result,
+        warnings=portfolio.liability_warnings() if portfolio else [],
     )

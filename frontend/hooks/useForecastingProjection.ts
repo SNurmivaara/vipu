@@ -57,6 +57,12 @@ export interface DerivedInputs {
   pensionActive: boolean;
   byGroup: Record<string, number>;
   groupReturnRates: Record<string, number>;
+  /** Where monthly savings land; null spreads them across the mix */
+  contributionGroup: string | null;
+  grossAssets: number;
+  /** Amounts owed per liability group name, as positive magnitudes */
+  liabilitiesByGroup: Record<string, number>;
+  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
   /** monthlySavings is a manual override, not the budget's monthly surplus */
   monthlySavingsIsOverride: boolean;
   /** annualExpenses is a manual override, not monthly expenses x 12 */
@@ -78,6 +84,8 @@ export interface ForecastingProjection {
   portfolioDepletedAge: number | null;
   projections: ProjectionPoint[];
   pension?: PensionResult;
+  /** Conditions the projection cannot model away, e.g. negative amortization */
+  warnings: { code: string; group: string }[];
   derived: DerivedInputs;
 }
 
@@ -123,6 +131,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       ...(p.net_worth_late != null && { netWorthLate: p.net_worth_late }),
     })),
     pension: api.pension ? fromApiPension(api.pension) : undefined,
+    warnings: api.warnings ?? [],
     derived: {
       currentNetWorth: api.derived.current_net_worth,
       monthlySavings: api.derived.monthly_savings,
@@ -133,6 +142,10 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       pensionActive: api.derived.pension_active,
       byGroup: api.derived.by_group,
       groupReturnRates: api.derived.group_return_rates,
+      contributionGroup: api.derived.contribution_group,
+      grossAssets: api.derived.gross_assets,
+      liabilitiesByGroup: api.derived.liabilities_by_group ?? {},
+      liabilityTerms: api.derived.liability_terms ?? {},
       monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
       annualExpensesIsOverride: api.derived.annual_expenses_is_override,
       targetRetirementAge: api.derived.target_retirement_age,
@@ -153,6 +166,7 @@ const DEFAULT_RESULT: ForecastingProjection = {
   portfolioDepletedAge: null,
   projections: [],
   pension: undefined,
+  warnings: [],
   derived: {
     currentNetWorth: 0,
     monthlySavings: 0,
@@ -163,6 +177,10 @@ const DEFAULT_RESULT: ForecastingProjection = {
     pensionActive: false,
     byGroup: {},
     groupReturnRates: {},
+    contributionGroup: null,
+    grossAssets: 0,
+    liabilitiesByGroup: {},
+    liabilityTerms: {},
     monthlySavingsIsOverride: false,
     annualExpensesIsOverride: false,
     targetRetirementAge: 0,
