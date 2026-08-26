@@ -14,6 +14,10 @@ export interface ProjectionPoint {
   month: number;
   netWorth: number;
   coastNetWorth: number;
+  /** Nominal return implied by the mix at this point; rises as the mix drifts */
+  blendedReturnPct?: number;
+  /** Capital backing the withdrawal, when groups are excluded from it */
+  swrBase?: number;
   // Age-specific FIRE numbers (present when pension mode is active)
   fireNumberAtAge?: number;
   coastFireNumberAtAge?: number;
@@ -46,10 +50,25 @@ export interface DerivedInputs {
   monthlySavings: number;
   annualExpenses: number;
   weightedReturnPct: number;
+  /**
+   * Real return at the current mix, Fisher-converted by the backend so the
+   * displayed figure is the one the projection compounds at.
+   */
+  realReturnPct: number;
   pensionMonthlySalary: number;
   pensionActive: boolean;
   byGroup: Record<string, number>;
   groupReturnRates: Record<string, number>;
+  /** Where monthly savings land; null spreads them across the mix */
+  contributionGroup: string | null;
+  grossAssets: number;
+  /** Amounts owed per liability group name, as positive magnitudes */
+  liabilitiesByGroup: Record<string, number>;
+  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** Groups kept in net worth but held out of the withdrawal base */
+  swrExcludedGroups: string[];
+  /** Capital the withdrawal rate applies to, after exclusions and debt */
+  swrBase: number;
   /** monthlySavings is a manual override, not the budget's monthly surplus */
   monthlySavingsIsOverride: boolean;
   /** annualExpenses is a manual override, not monthly expenses x 12 */
@@ -71,6 +90,8 @@ export interface ForecastingProjection {
   portfolioDepletedAge: number | null;
   projections: ProjectionPoint[];
   pension?: PensionResult;
+  /** Conditions the projection cannot model away, e.g. negative amortization */
+  warnings: { code: string; group: string }[];
   derived: DerivedInputs;
 }
 
@@ -108,6 +129,8 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       month: p.month,
       netWorth: p.net_worth,
       coastNetWorth: p.coast_net_worth,
+      ...(p.blended_return_pct != null && { blendedReturnPct: p.blended_return_pct }),
+      ...(p.swr_base != null && { swrBase: p.swr_base }),
       ...(p.fire_number_at_age != null && { fireNumberAtAge: p.fire_number_at_age }),
       ...(p.coast_fire_number_at_age != null && { coastFireNumberAtAge: p.coast_fire_number_at_age }),
       ...(p.net_worth_early != null && { netWorthEarly: p.net_worth_early }),
@@ -115,15 +138,23 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       ...(p.net_worth_late != null && { netWorthLate: p.net_worth_late }),
     })),
     pension: api.pension ? fromApiPension(api.pension) : undefined,
+    warnings: api.warnings ?? [],
     derived: {
       currentNetWorth: api.derived.current_net_worth,
       monthlySavings: api.derived.monthly_savings,
       annualExpenses: api.derived.annual_expenses,
       weightedReturnPct: api.derived.weighted_return_pct,
+      realReturnPct: api.derived.real_return_pct,
       pensionMonthlySalary: api.derived.pension_monthly_salary,
       pensionActive: api.derived.pension_active,
       byGroup: api.derived.by_group,
       groupReturnRates: api.derived.group_return_rates,
+      contributionGroup: api.derived.contribution_group,
+      grossAssets: api.derived.gross_assets,
+      liabilitiesByGroup: api.derived.liabilities_by_group ?? {},
+      liabilityTerms: api.derived.liability_terms ?? {},
+      swrExcludedGroups: api.derived.swr_excluded_groups ?? [],
+      swrBase: api.derived.swr_base,
       monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
       annualExpensesIsOverride: api.derived.annual_expenses_is_override,
       targetRetirementAge: api.derived.target_retirement_age,
@@ -144,15 +175,23 @@ const DEFAULT_RESULT: ForecastingProjection = {
   portfolioDepletedAge: null,
   projections: [],
   pension: undefined,
+  warnings: [],
   derived: {
     currentNetWorth: 0,
     monthlySavings: 0,
     annualExpenses: 0,
     weightedReturnPct: 7,
+    realReturnPct: 0,
     pensionMonthlySalary: 0,
     pensionActive: false,
     byGroup: {},
     groupReturnRates: {},
+    contributionGroup: null,
+    grossAssets: 0,
+    liabilitiesByGroup: {},
+    liabilityTerms: {},
+    swrExcludedGroups: [],
+    swrBase: 0,
     monthlySavingsIsOverride: false,
     annualExpensesIsOverride: false,
     targetRetirementAge: 0,

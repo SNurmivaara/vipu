@@ -353,6 +353,12 @@ export interface ForecastingSettings {
   lifeExpectancy: number;
   /** Expected annual return % per net worth group name */
   groupReturnRates: Record<string, number>;
+  /** Asset group monthly savings are paid into; null spreads them across the mix */
+  contributionGroup: string | null;
+  /** Interest rate and monthly payment per liability group name */
+  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** Groups kept in net worth but held out of the withdrawal base */
+  swrExcludedGroups: string[];
 }
 
 // API response shape (snake_case from backend)
@@ -372,6 +378,9 @@ export interface ForecastingSettingsAPI {
   pension_guarantee_amount: number;
   life_expectancy: number;
   group_return_rates: Record<string, number>;
+  contribution_group: string | null;
+  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  swr_excluded_groups: string[];
   updated_at: string;
 }
 
@@ -434,6 +443,10 @@ export interface FireProjectionPointAPI {
   month: number;
   net_worth: number;
   coast_net_worth: number;
+  /** Nominal return implied by the mix at this point; rises as the mix drifts */
+  blended_return_pct?: number | null;
+  /** Capital backing the withdrawal, when groups are excluded from it */
+  swr_base?: number | null;
   // Age-specific FIRE numbers (present when pension mode is active)
   fire_number_at_age?: number | null;
   coast_fire_number_at_age?: number | null;
@@ -455,6 +468,8 @@ export interface FireResultAPI {
   portfolio_depleted_age: number | null;
   projections: FireProjectionPointAPI[];
   pension: FirePensionResultAPI | null;
+  /** Conditions the projection cannot model away, e.g. negative amortization */
+  warnings?: { code: string; group: string }[];
 }
 
 // FIRE inputs derived on the backend from persisted settings + snapshots + budget
@@ -463,6 +478,16 @@ export interface ForecastingDerivedAPI {
   monthly_savings: number;
   annual_expenses: number;
   weighted_return_pct: number;
+  /** Fisher-converted real return at the current mix, as the projection compounds it */
+  real_return_pct: number;
+  contribution_group: string | null;
+  gross_assets: number;
+  /** Amounts owed per liability group name, as positive magnitudes */
+  liabilities_by_group: Record<string, number>;
+  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  swr_excluded_groups: string[];
+  /** Capital the withdrawal rate applies to, after exclusions and debt */
+  swr_base: number;
   pension_monthly_salary: number;
   pension_active: boolean;
   by_group: Record<string, number>;

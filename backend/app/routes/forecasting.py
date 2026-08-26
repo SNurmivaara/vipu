@@ -8,7 +8,9 @@ from marshmallow import Schema, ValidationError, fields, post_load, validate
 from app import get_session
 from app.fire import (
     FireInputs,
+    build_portfolio,
     calculate_fire,
+    real_return_from_nominal,
     resolve_group_return_rates,
     weighted_return,
 )
@@ -222,6 +224,44 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
                 return jsonify({"error": msg}), 400
         settings.group_return_rates = val
 
+    # Contribution destination (null routes contributions across the mix)
+    if "contribution_group" in data:
+        val = data["contribution_group"]
+        if val is not None and not isinstance(val, str):
+            return (
+                jsonify({"error": "contribution_group must be a string or null"}),
+                400,
+            )
+        settings.contribution_group = val or None
+
+    # Liability terms: {group_name: {rate_pct, monthly_payment}}
+    if "liability_terms" in data:
+        val = data["liability_terms"]
+        if not isinstance(val, dict):
+            return jsonify({"error": "liability_terms must be an object"}), 400
+        for group, terms in val.items():
+            if not isinstance(terms, dict):
+                return jsonify({"error": f"Terms for {group} must be an object"}), 400
+            rate = terms.get("rate_pct", 0)
+            payment = terms.get("monthly_payment", 0)
+            if not isinstance(rate, (int, float)) or rate < 0 or rate > 30:
+                msg = f"Rate for {group} must be between 0 and 30"
+                return jsonify({"error": msg}), 400
+            if not isinstance(payment, (int, float)) or payment < 0:
+                msg = f"Payment for {group} must not be negative"
+                return jsonify({"error": msg}), 400
+        settings.liability_terms = val
+
+    # Groups held out of the withdrawal base (still counted in net worth)
+    if "swr_excluded_groups" in data:
+        val = data["swr_excluded_groups"]
+        if not isinstance(val, list) or not all(isinstance(g, str) for g in val):
+            return (
+                jsonify({"error": "swr_excluded_groups must be a list of strings"}),
+                400,
+            )
+        settings.swr_excluded_groups = val
+
     session.commit()
     return jsonify(settings.to_dict())
 
@@ -287,7 +327,12 @@ def get_forecasting_projection() -> Response:
         .first()
     )
     current_net_worth = Decimal(str(latest.net_worth)) if latest else Decimal("0")
-    by_group: dict = latest.to_dict()["by_group"] if latest else {}
+    snapshot = latest.to_dict() if latest else {}
+    by_group: dict = snapshot.get("by_group", {})
+    liabilities_by_group: dict = snapshot.get("liabilities_by_group", {})
+    # Compound gross assets and amortise debt separately. Applying an
+    # asset-weighted rate to net worth grew the loans at the portfolio return.
+    gross_assets = Decimal(str(latest.total_assets)) if latest else Decimal("0")
 
     # Budget-derived figures (shared helper), frequency-normalized to monthly
     # rates so a quarterly or yearly bill isn't counted as a monthly one
@@ -314,6 +359,9 @@ def get_forecasting_projection() -> Response:
         else gross_income
     )
     weighted_return_pct = weighted_return(by_group, group_rates)
+    real_return_pct = real_return_from_nominal(
+        weighted_return_pct, settings.inflation_pct
+    )
     pension_active = settings.pension_accrued_monthly is not None
 
     inputs = FireInputs(
@@ -336,13 +384,39 @@ def get_forecasting_projection() -> Response:
         life_expectancy=settings.life_expectancy,
     )
 
-    result = calculate_fire(inputs)
+    # Each group compounds at its own rate, so the mix drifts toward the
+    # faster groups and the blended return rises over the projection.
+    portfolio = build_portfolio(
+        gross_assets,
+        by_group,
+        group_rates,
+        settings.inflation_pct,
+        contribution_group=settings.contribution_group,
+        liabilities_by_group=liabilities_by_group,
+        liability_terms=settings.liability_terms or {},
+        swr_excluded_groups=settings.swr_excluded_groups or [],
+    )
+
+    result = calculate_fire(inputs, portfolio)
     result_dict = asdict(result)
     result_dict["derived"] = {
         "current_net_worth": current_net_worth,
         "monthly_savings": monthly_savings,
         "annual_expenses": annual_expenses,
         "weighted_return_pct": weighted_return_pct,
+        # Fisher-converted real return, so the displayed figure is the one the
+        # projection actually compounds at. Deriving it in the frontend as
+        # "weighted - inflation" made the two disagree.
+        "real_return_pct": real_return_pct,
+        # Where monthly savings land. None spreads them across the mix.
+        "contribution_group": portfolio.contribution_group,
+        "gross_assets": gross_assets,
+        "liabilities_by_group": liabilities_by_group,
+        "liability_terms": settings.liability_terms or {},
+        "swr_excluded_groups": settings.swr_excluded_groups or [],
+        # What the withdrawal rate actually applies to, once excluded groups
+        # and debt are taken out.
+        "swr_base": portfolio.swr_base,
         # Whether the figure above is a manual override or the budget-derived
         # default. Without this, "monthly savings" and the budget's "surplus"
         # look like contradictory answers to the same question.

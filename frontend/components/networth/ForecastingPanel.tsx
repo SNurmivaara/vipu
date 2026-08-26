@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useRef, useCallback } from "react";
+import { Fragment, useMemo, useState, useRef, useCallback } from "react";
 import {
   Line,
   XAxis,
@@ -32,6 +32,9 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   pensionGuaranteeAmount: 990,
   lifeExpectancy: 95,
   groupReturnRates: {},
+  contributionGroup: null,
+  liabilityTerms: {},
+  swrExcludedGroups: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -68,6 +71,10 @@ export function ForecastingPanel() {
       age: p.age,
       netWorth: p.netWorth,
       coastNetWorth: p.coastNetWorth,
+      ...(p.blendedReturnPct !== undefined && {
+        blendedReturnPct: p.blendedReturnPct,
+      }),
+      ...(p.swrBase !== undefined && { swrBase: p.swrBase }),
       // Use age-specific FIRE numbers when available (pension mode)
       // Stop drawing FIRE/Coast FIRE lines after target retirement age
       ...(p.age <= targetAge && {
@@ -168,6 +175,16 @@ export function ForecastingPanel() {
               </p>
             )}
           </>
+        )}
+        {d.swrBase !== undefined && (
+          <p className="text-gray-500 dark:text-gray-400">
+            Drawable: {formatCurrencyRounded(d.swrBase)}
+          </p>
+        )}
+        {d.blendedReturnPct !== undefined && (
+          <p className="text-gray-500 dark:text-gray-400">
+            Blended return: {d.blendedReturnPct.toFixed(1)}%
+          </p>
         )}
       </div>
     );
@@ -295,23 +312,116 @@ export function ForecastingPanel() {
               {Object.entries(latestByGroup)
                 .filter(([, amount]) => amount > 0)
                 .sort(([, a], [, b]) => b - a)
-                .map(([group]) => (
-                  <NumberInput
-                    key={group}
-                    label={group}
-                    value={
-                      settings.groupReturnRates[group] ??
-                      derived.groupReturnRates[group]
-                    }
-                    onChange={(v) => {
-                      const updated = { ...settings.groupReturnRates, [group]: v };
-                      updateSetting("groupReturnRates", updated);
-                    }}
-                    min={-10}
-                    max={30}
-                    step={0.5}
-                  />
-                ))}
+                .map(([group]) => {
+                  const excluded = settings.swrExcludedGroups.includes(group);
+                  return (
+                    <div key={group}>
+                      <NumberInput
+                        label={group}
+                        value={
+                          settings.groupReturnRates[group] ??
+                          derived.groupReturnRates[group]
+                        }
+                        onChange={(v) => {
+                          const updated = { ...settings.groupReturnRates, [group]: v };
+                          updateSetting("groupReturnRates", updated);
+                        }}
+                        min={-10}
+                        max={30}
+                        step={0.5}
+                      />
+                      <label className="mt-1 flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={excluded}
+                          onChange={(e) =>
+                            updateSetting(
+                              "swrExcludedGroups",
+                              e.target.checked
+                                ? [...settings.swrExcludedGroups, group]
+                                : settings.swrExcludedGroups.filter(
+                                    (g) => g !== group
+                                  )
+                            )
+                          }
+                        />
+                        Can&apos;t be withdrawn from
+                      </label>
+                    </div>
+                  );
+                })}
+              <div className="col-span-full">
+                <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+                  Monthly savings go to
+                </label>
+                <select
+                  className="w-full rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-sm"
+                  value={settings.contributionGroup ?? ""}
+                  onChange={(e) =>
+                    updateSetting("contributionGroup", e.target.value || null)
+                  }
+                >
+                  <option value="">Spread across the mix</option>
+                  {Object.entries(latestByGroup)
+                    .filter(([, amount]) => amount > 0)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([group]) => (
+                      <option key={group} value={group}>
+                        {group}
+                      </option>
+                    ))}
+                </select>
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                  Spreading credits new money at the portfolio average. Naming a
+                  group compounds it at that group&apos;s rate instead.
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Liability terms */}
+          {Object.keys(derived.liabilitiesByGroup).length > 0 && (
+            <>
+              <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+                <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Loan terms
+                </div>
+                <div className="text-xs text-gray-500 dark:text-gray-500 mb-2">
+                  Without terms a balance is held flat and only inflation erodes
+                  it. The payment should match a budget expense, or savings will
+                  be counted twice.
+                </div>
+              </div>
+              {Object.entries(derived.liabilitiesByGroup).map(([group, owed]) => {
+                const terms = settings.liabilityTerms[group] ?? {
+                  rate_pct: 0,
+                  monthly_payment: 0,
+                };
+                const setTerms = (next: Partial<typeof terms>) =>
+                  updateSetting("liabilityTerms", {
+                    ...settings.liabilityTerms,
+                    [group]: { ...terms, ...next },
+                  });
+                return (
+                  <Fragment key={group}>
+                    <NumberInput
+                      label={`${group} rate % (${formatCurrencyRounded(owed)} owed)`}
+                      value={terms.rate_pct}
+                      onChange={(v) => setTerms({ rate_pct: v })}
+                      min={0}
+                      max={30}
+                      step={0.1}
+                    />
+                    <NumberInput
+                      label={`${group} payment /mo`}
+                      value={terms.monthly_payment}
+                      onChange={(v) => setTerms({ monthly_payment: v })}
+                      min={0}
+                      step={50}
+                    />
+                  </Fragment>
+                );
+              })}
             </>
           )}
 
@@ -401,7 +511,13 @@ export function ForecastingPanel() {
         <MetricCard
           label="FIRE Number"
           value={formatCurrencyRounded(result.fireNumberNow)}
-          sublabel={result.pension ? `If retiring now — ${settings.safeWithdrawalRate}% SWR + pension` : `${settings.safeWithdrawalRate}% SWR`}
+          sublabel={
+            settings.swrExcludedGroups.length > 0
+              ? `vs ${formatCurrencyRounded(derived.swrBase)} drawable`
+              : result.pension
+                ? `If retiring now — ${settings.safeWithdrawalRate}% SWR + pension`
+                : `${settings.safeWithdrawalRate}% SWR`
+          }
         />
         <MetricCard
           label="Years to FIRE"
@@ -427,8 +543,8 @@ export function ForecastingPanel() {
         />
         <MetricCard
           label="Real return"
-          value={`${(derived.weightedReturnPct - settings.inflationPct).toFixed(1)}%`}
-          sublabel={`${derived.weightedReturnPct.toFixed(1)}% weighted - ${settings.inflationPct}% infl.`}
+          value={`${derived.realReturnPct.toFixed(1)}%`}
+          sublabel={`${derived.weightedReturnPct.toFixed(1)}% weighted, ${settings.inflationPct}% infl.`}
         />
       </div>
 
@@ -469,6 +585,22 @@ export function ForecastingPanel() {
           </div>
         );
       })()}
+
+      {/* Loans whose payment does not cover their interest */}
+      {result.warnings
+        .filter((w) => w.code === "negative_amortization")
+        .map((w) => (
+          <div
+            key={w.group}
+            className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3 text-sm"
+          >
+            <span className="text-red-600 dark:text-red-400">
+              {w.group}: the monthly payment does not cover the interest, so the
+              balance grows every month. The projection cannot show a payoff
+              until the payment or rate changes.
+            </span>
+          </div>
+        ))}
 
       {/* Guarantee pension (takuueläke) crossover milestone */}
       {result.pension?.guaranteeActive && (() => {

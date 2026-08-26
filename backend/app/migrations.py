@@ -228,6 +228,39 @@ MIGRATIONS: list[dict] = [
                 AND is_ephemeral = FALSE;
         """,
     },
+    {
+        "id": "012_contribution_group",
+        "name": "Add contribution_group to forecasting_settings",
+        # Monthly savings had no destination, so the projection credited new
+        # money at the portfolio average. Naming the group it lands in lets
+        # contributions compound at that group's rate instead.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS contribution_group VARCHAR(100);
+        """,
+    },
+    {
+        "id": "013_liability_terms",
+        "name": "Add liability_terms to forecasting_settings",
+        # Liabilities were opaque negative balances, so the projection grew
+        # them at the portfolio return. Rate and payment per group let them
+        # amortise instead.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS liability_terms JSONB NOT NULL DEFAULT '{}';
+        """,
+    },
+    {
+        "id": "014_swr_excluded_groups",
+        "name": "Add swr_excluded_groups to forecasting_settings",
+        # An owner-occupied home tracks its index and belongs in net worth, but
+        # no one draws 4% a year from it.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS swr_excluded_groups
+                JSONB NOT NULL DEFAULT '[]';
+        """,
+    },
 ]
 
 
