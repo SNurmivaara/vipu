@@ -12,6 +12,7 @@ from app.fire import (
     calculate_fire,
     real_return_from_nominal,
     resolve_group_return_rates,
+    resolve_liability_terms,
     weighted_return,
 )
 from app.models import ForecastingSettings, NetWorthSnapshot
@@ -234,21 +235,38 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
             )
         settings.contribution_group = val or None
 
-    # Liability terms: {group_name: {rate_pct, monthly_payment}}
+    # Liability terms, per loan (net worth category name):
+    # {loan: {rate_pct, schedule, monthly_payment | end_year + end_month}}
     if "liability_terms" in data:
         val = data["liability_terms"]
         if not isinstance(val, dict):
             return jsonify({"error": "liability_terms must be an object"}), 400
-        for group, terms in val.items():
+        for loan, terms in val.items():
             if not isinstance(terms, dict):
-                return jsonify({"error": f"Terms for {group} must be an object"}), 400
+                return jsonify({"error": f"Terms for {loan} must be an object"}), 400
             rate = terms.get("rate_pct", 0)
             payment = terms.get("monthly_payment", 0)
             if not isinstance(rate, (int, float)) or rate < 0 or rate > 30:
-                msg = f"Rate for {group} must be between 0 and 30"
+                msg = f"Rate for {loan} must be between 0 and 30"
                 return jsonify({"error": msg}), 400
             if not isinstance(payment, (int, float)) or payment < 0:
-                msg = f"Payment for {group} must not be negative"
+                msg = f"Payment for {loan} must not be negative"
+                return jsonify({"error": msg}), 400
+            # Absent means "fixed", so terms written before schedules existed
+            # keep amortising off their payment.
+            schedule = terms.get("schedule", "fixed")
+            if schedule not in ("fixed", "annuity"):
+                msg = f"Schedule for {loan} must be 'fixed' or 'annuity'"
+                return jsonify({"error": msg}), 400
+            if schedule != "annuity":
+                continue
+            year = terms.get("end_year")
+            month = terms.get("end_month")
+            if not isinstance(year, int) or not 1900 <= year <= 2200:
+                msg = f"Payoff year for {loan} must be between 1900 and 2200"
+                return jsonify({"error": msg}), 400
+            if not isinstance(month, int) or not 1 <= month <= 12:
+                msg = f"Payoff month for {loan} must be between 1 and 12"
                 return jsonify({"error": msg}), 400
         settings.liability_terms = val
 
@@ -330,6 +348,8 @@ def get_forecasting_projection() -> Response:
     snapshot = latest.to_dict() if latest else {}
     by_group: dict = snapshot.get("by_group", {})
     liabilities_by_group: dict = snapshot.get("liabilities_by_group", {})
+    # Per-loan balances, since two loans in one group rarely share a rate.
+    liabilities_by_category: dict = snapshot.get("liabilities_by_category", {})
     # Compound gross assets and amortise debt separately. Applying an
     # asset-weighted rate to net worth grew the loans at the portfolio return.
     gross_assets = Decimal(str(latest.total_assets)) if latest else Decimal("0")
@@ -341,6 +361,21 @@ def get_forecasting_projection() -> Response:
     gross_income = budget_totals["gross_income"]
 
     group_rates = settings.group_return_rates or {}
+
+    # A loan states either a fixed payment or a payoff date; resolve both to a
+    # payment, counted from the snapshot the balances were taken on.
+    loan_balances = {
+        name: loan["amount"] for name, loan in liabilities_by_category.items()
+    }
+    loan_groups = {
+        name: loan["group"] for name, loan in liabilities_by_category.items()
+    }
+    resolved_terms = resolve_liability_terms(
+        loan_balances,
+        settings.liability_terms or {},
+        latest.year if latest else 0,
+        latest.month if latest else 0,
+    )
 
     # Derive FIRE inputs, mirroring the former frontend logic
     monthly_savings = (
@@ -392,8 +427,9 @@ def get_forecasting_projection() -> Response:
         group_rates,
         settings.inflation_pct,
         contribution_group=settings.contribution_group,
-        liabilities_by_group=liabilities_by_group,
-        liability_terms=settings.liability_terms or {},
+        liability_balances=loan_balances,
+        liability_terms=resolved_terms,
+        liability_groups=loan_groups,
         swr_excluded_groups=settings.swr_excluded_groups or [],
     )
 
@@ -412,7 +448,11 @@ def get_forecasting_projection() -> Response:
         "contribution_group": portfolio.contribution_group,
         "gross_assets": gross_assets,
         "liabilities_by_group": liabilities_by_group,
+        "liabilities_by_category": liabilities_by_category,
         "liability_terms": settings.liability_terms or {},
+        # What the stated terms work out to: the payment an annuity's payoff
+        # date implies, or the payoff date a fixed payment implies.
+        "liability_terms_resolved": resolved_terms,
         "swr_excluded_groups": settings.swr_excluded_groups or [],
         # What the withdrawal rate actually applies to, once excluded groups
         # and debt are taken out.

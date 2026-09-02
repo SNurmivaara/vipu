@@ -267,8 +267,10 @@ class ForecastingSettings(Base):
     contribution_group: Mapped[str | None] = mapped_column(
         String(100), nullable=True, default=None
     )
-    # Interest rate and monthly payment per liability group name, so debt can
-    # amortise instead of being carried as an opaque balance.
+    # Terms per liability category name, so each loan amortises on its own
+    # rate and schedule: {"Home loan": {"rate_pct": 3.108, "schedule":
+    # "annuity", "end_year": 2051, "end_month": 12}}. A loan states either a
+    # fixed monthly_payment or a payoff date; the other follows from it.
     liability_terms: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # Asset groups that stay in net worth but do not back the withdrawal, such
     # as an owner-occupied home.
@@ -606,6 +608,11 @@ class NetWorthSnapshot(Base):
             group_totals: dict[int, Decimal] = {}  # group_id -> total
             group_names: dict[int, str] = {}  # group_id -> name
             liability_totals: dict[int, Decimal] = {}
+            # One entry per loan, since two loans in the same group rarely share
+            # an interest rate or a maturity.
+            loan_totals: dict[str, Decimal] = {}
+            loan_groups: dict[str, str] = {}
+            loan_order: dict[str, tuple[int, int]] = {}
             for entry in self.entries:
                 group = entry.category.group
                 amount = entry.amount if entry.amount is not None else zero
@@ -617,6 +624,13 @@ class NetWorthSnapshot(Base):
                         liability_totals.get(group.id, zero) + amount
                     )
                     group_names[group.id] = group.name
+                    name = entry.category.name
+                    loan_totals[name] = loan_totals.get(name, zero) + amount
+                    loan_groups[name] = group.name
+                    loan_order[name] = (
+                        group.display_order,
+                        entry.category.display_order,
+                    )
 
             result["by_group"] = {
                 group_names[gid]: float(total) for gid, total in group_totals.items()
@@ -627,6 +641,17 @@ class NetWorthSnapshot(Base):
             result["liabilities_by_group"] = {
                 group_names[gid]: abs(float(total))
                 for gid, total in liability_totals.items()
+            }
+
+            # Same amounts, one level finer, so terms can be set per loan.
+            # A cleared loan is left out: there is nothing to amortise.
+            result["liabilities_by_category"] = {
+                name: {
+                    "amount": abs(float(loan_totals[name])),
+                    "group": loan_groups[name],
+                }
+                for name in sorted(loan_totals, key=lambda n: loan_order[n])
+                if loan_totals[name] < 0
             }
 
             # Percentages (avoid division by zero)

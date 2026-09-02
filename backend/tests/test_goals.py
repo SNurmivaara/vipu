@@ -1,6 +1,18 @@
 """Tests for goals API endpoints."""
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+
+
+def _target_in(months: int) -> str:
+    """An ISO target date ``months`` whole calendar months from today.
+
+    Pace tests need a deadline that is still ahead. A hardcoded one goes stale:
+    once the date passes, the pace is never computed and the assertions fail
+    for a reason that has nothing to do with what they test.
+    """
+    today = datetime.now(UTC)
+    index = today.year * 12 + today.month - 1 + months
+    return datetime(index // 12, index % 12 + 1, 28, tzinfo=UTC).isoformat()
 
 
 class TestGoalValidation:
@@ -810,7 +822,7 @@ class TestGoalStatus:
                 "name": "100k Goal",
                 "goal_type": "net_worth",
                 "target_value": 100000,
-                "target_date": "2026-12-31T00:00:00+00:00",
+                "target_date": _target_in(10),
             },
         )
 
@@ -856,7 +868,7 @@ class TestSavingsGoalPace:
                 "goal_type": "savings_goal",
                 "target_value": 5000,
                 "category_id": 1,
-                "target_date": "2027-01-31T00:00:00+00:00",
+                "target_date": _target_in(10),
             },
         )
 
@@ -882,7 +894,7 @@ class TestSavingsGoalPace:
                 "goal_type": "savings_goal",
                 "target_value": 5000,
                 "category_id": 1,
-                "target_date": "2027-01-31T00:00:00+00:00",
+                "target_date": _target_in(10),
             },
         )
 
@@ -910,7 +922,7 @@ class TestSavingsGoalPace:
                 "goal_type": "savings_goal",
                 "target_value": 5000,
                 "category_id": 1,
-                "target_date": "2026-09-30T00:00:00+00:00",
+                "target_date": _target_in(6),
             },
         )
 
@@ -954,7 +966,7 @@ class TestSavingsGoalPace:
                 "goal_type": "savings_goal",
                 "target_value": 5000,
                 "category_id": 1,
-                "target_date": "2027-01-31T00:00:00+00:00",
+                "target_date": _target_in(10),
             },
         )
 
@@ -1245,8 +1257,11 @@ class TestRoadmap:
         # Smoothed, 8 000 at 2 500/mo would land on 2026-09-25
         assert data["goals"][0]["projected_completion_date"] == "2026-10-25"
 
-    def test_projection_starts_from_zero_when_square(self, client):
+    def test_projection_starts_from_zero_when_square(self, client, monkeypatch):
         """No cash and no one-time items: the plan starts from a clean zero."""
+        # Frozen on a payday: months_to_complete otherwise swings with how far
+        # into the pay period today happens to fall.
+        self._freeze(monkeypatch, 2026, 6, 25)
         self._make_surplus(client)  # 3000/mo
         self._goal(client)
 
@@ -1255,8 +1270,9 @@ class TestRoadmap:
         assert data["shortfall_months"] == 0.0
         assert 1.0 <= data["goals"][0]["months_to_complete"] <= 2.0
 
-    def test_card_debt_delays_the_plan(self, client):
+    def test_card_debt_delays_the_plan(self, client, monkeypatch):
         """A negative net position is earned back before step 1 progresses."""
+        self._freeze(monkeypatch, 2026, 6, 25)
         self._make_surplus(client)  # 3000/mo
         client.post("/api/accounts", json={"name": "Checking", "balance": 500})
         client.post(

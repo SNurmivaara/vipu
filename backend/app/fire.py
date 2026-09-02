@@ -5,10 +5,11 @@ Return rates are annual percentages (e.g., 7 for 7%).
 Inflation is an annual percentage (e.g., 2 for 2%).
 """
 
+import math
 import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
 # Type alias for pension scenario labels
@@ -119,6 +120,11 @@ def _decimal_round(value: Decimal, places: int = 2) -> Decimal:
     return value.quantize(Decimal(10) ** -places)
 
 
+def _decimal_ceil(value: Decimal) -> Decimal:
+    """Round up to the next whole number."""
+    return value.quantize(Decimal("1"), rounding=ROUND_CEILING)
+
+
 def _decimal_power(base: Decimal, exponent: Decimal) -> Decimal:
     """Calculate base ** exponent for Decimals using float conversion.
 
@@ -150,6 +156,115 @@ def monthly_rate(annual_pct: Decimal) -> Decimal:
     intervening months. Twelve of these steps reproduce the annual rate.
     """
     return _decimal_power(1 + annual_pct / 100, Decimal("1") / 12) - 1
+
+
+def annuity_payment(balance: Decimal, annual_rate_pct: Decimal, months: int) -> Decimal:
+    """Monthly instalment that clears ``balance`` in exactly ``months``.
+
+    P·i / (1 - (1+i)^-n), the standard annuity. A Finnish *muuttuva annuiteetti*
+    recalculates this at every rate reset so the maturity stays fixed, which is
+    what a forecast at one assumed rate reproduces in a single shot.
+
+    Uses ``monthly_rate``, the same geometric conversion the simulation
+    amortises at. Dividing the annual rate by 12 instead would leave the loan
+    with a balance on its stated payoff month.
+    """
+    if balance <= 0:
+        return Decimal("0")
+    rate = monthly_rate(annual_rate_pct)
+    if months <= 0:
+        # The term has already run out; clear it next month, interest included.
+        return balance * (1 + rate)
+    if rate == 0:
+        return balance / months
+    return balance * rate / (1 - _decimal_power(1 + rate, Decimal(-months)))
+
+
+def months_to_payoff(
+    balance: Decimal, annual_rate_pct: Decimal, monthly_payment: Decimal
+) -> int | None:
+    """Months a fixed payment needs to clear ``balance``, or None if it never does.
+
+    -ln(1 - P·i/pay) / ln(1+i). A payment at or below the first month's interest
+    never amortises, so there is no answer to report.
+    """
+    if balance <= 0:
+        return 0
+    if monthly_payment <= 0:
+        return None
+    rate = monthly_rate(annual_rate_pct)
+    if rate == 0:
+        return int(_decimal_ceil(balance / monthly_payment))
+    interest = balance * rate
+    if monthly_payment <= interest:
+        return None
+    ratio = 1 - interest / monthly_payment
+    months = Decimal(str(-math.log(float(ratio)) / math.log(float(1 + rate))))
+    return int(_decimal_ceil(months))
+
+
+def add_months(year: int, month: int, months: int) -> tuple[int, int]:
+    """Calendar month ``months`` after ``year``-``month``."""
+    index = (year * 12 + month - 1) + months
+    return index // 12, index % 12 + 1
+
+
+def months_between(from_year: int, from_month: int, to_year: int, to_month: int) -> int:
+    """Whole months from one year-month to another. Negative when in the past."""
+    return (to_year * 12 + to_month) - (from_year * 12 + from_month)
+
+
+def resolve_liability_terms(
+    balances: dict[str, float | Decimal],
+    terms: dict[str, dict],
+    as_of_year: int,
+    as_of_month: int,
+) -> dict[str, dict]:
+    """Resolve each loan's stated terms to a concrete rate, payment and payoff.
+
+    A loan states either a fixed monthly payment, whose maturity follows from
+    it, or a payoff date, whose instalment follows from it. Both come back here
+    as a payment, since that is all the simulation amortises with.
+
+    Months are counted from ``as_of_year``-``as_of_month``, the snapshot the
+    balances were taken from, so a stated payoff date is honoured against the
+    balance actually owed on that date.
+    """
+    resolved: dict[str, dict] = {}
+    for name, amount in balances.items():
+        balance = Decimal(str(amount))
+        if balance <= 0:
+            continue
+        stated = terms.get(name) or {}
+        rate = Decimal(str(stated.get("rate_pct", 0) or 0))
+        if stated.get("schedule") == "annuity":
+            end_year = int(stated.get("end_year") or as_of_year)
+            end_month = int(stated.get("end_month") or as_of_month)
+            months = months_between(as_of_year, as_of_month, end_year, end_month)
+            # Rounded up to the cent, so the stated payoff month holds. Rounded
+            # to nearest, the shortfall leaves a few cents owed and the loan
+            # runs a month past its maturity.
+            payment = annuity_payment(balance, rate, months).quantize(
+                Decimal("0.01"), rounding=ROUND_CEILING
+            )
+            payoff_year, payoff_month = add_months(
+                as_of_year, as_of_month, max(months, 1)
+            )
+        else:
+            payment = Decimal(str(stated.get("monthly_payment", 0) or 0))
+            months = months_to_payoff(balance, rate, payment) or 0
+            payoff_year, payoff_month = (
+                add_months(as_of_year, as_of_month, months) if months else (0, 0)
+            )
+        resolved[name] = {
+            "rate_pct": rate,
+            "monthly_payment": _decimal_round(payment),
+            # 0/0 when a fixed payment never clears the balance. The negative
+            # amortization warning covers that case.
+            "payoff_year": payoff_year,
+            "payoff_month": payoff_month,
+        }
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +304,9 @@ class Liability:
     balance: Decimal
     annual_rate_pct: Decimal
     monthly_payment: Decimal
+    # The net worth group the loan sits under, carried only so a warning can
+    # say "OP Gold (Credit)" rather than naming a bare category.
+    group: str = ""
 
     @property
     def monthly_interest_rate(self) -> Decimal:
@@ -405,7 +523,11 @@ class PortfolioState:
         its iteration cap rather than converge. Saying so beats projecting it.
         """
         return [
-            {"code": "negative_amortization", "group": liability.name}
+            {
+                "code": "negative_amortization",
+                "name": liability.name,
+                "group": liability.group,
+            }
             for liability in self._liabilities
             if not liability.covers_interest()
         ]
@@ -494,8 +616,9 @@ def build_portfolio(
     inflation_pct: Decimal,
     fallback_return_pct: Decimal = Decimal("7"),
     contribution_group: str | None = None,
-    liabilities_by_group: dict[str, float | Decimal] | None = None,
+    liability_balances: dict[str, float | Decimal] | None = None,
     liability_terms: dict[str, dict] | None = None,
+    liability_groups: dict[str, str] | None = None,
     swr_excluded_groups: list[str] | None = None,
 ) -> PortfolioState:
     """Build a portfolio by spreading ``base`` across the asset groups by weight.
@@ -511,13 +634,15 @@ def build_portfolio(
     compounding but do not back the withdrawal, such as an owner-occupied home.
 
     ``base`` is gross assets. Debts are carried separately by
-    ``liabilities_by_group``, as amounts owed, so they amortise at their own
-    rate instead of compounding at the portfolio's. A group with no configured
-    terms holds its nominal balance, which inflation still erodes in real
-    terms.
+    ``liability_balances``, as amounts owed keyed by loan name, so each one
+    amortises at its own rate instead of compounding at the portfolio's. A loan
+    with no configured terms holds its nominal balance, which inflation still
+    erodes in real terms. ``liability_groups`` maps those names to their net
+    worth group, for labelling only.
     """
     rates = resolve_group_return_rates(by_group, group_return_rates)
     terms = liability_terms or {}
+    groups_by_loan = liability_groups or {}
     excluded = set(swr_excluded_groups or [])
     liabilities = [
         Liability(
@@ -525,8 +650,9 @@ def build_portfolio(
             balance=Decimal(str(amount)),
             annual_rate_pct=Decimal(str(terms.get(name, {}).get("rate_pct", 0))),
             monthly_payment=Decimal(str(terms.get(name, {}).get("monthly_payment", 0))),
+            group=groups_by_loan.get(name, ""),
         )
-        for name, amount in (liabilities_by_group or {}).items()
+        for name, amount in (liability_balances or {}).items()
         if Decimal(str(amount)) > 0
     ]
     positives = {

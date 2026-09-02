@@ -335,6 +335,27 @@ export interface GoalProgress {
   category_name?: string | null;
 }
 
+/** One loan's terms. A loan states either a payment or a payoff date. */
+export interface LiabilityTerm {
+  rate_pct: number;
+  /** Absent means "fixed", so terms written before schedules existed still work */
+  schedule?: "fixed" | "annuity";
+  /** Set when schedule is "fixed"; the maturity follows from it */
+  monthly_payment?: number;
+  /** Set when schedule is "annuity"; the instalment follows from these */
+  end_year?: number;
+  end_month?: number;
+}
+
+/** A loan's terms resolved to what the projection amortises with */
+export interface ResolvedLiabilityTerm {
+  rate_pct: number;
+  monthly_payment: number;
+  /** 0 when a fixed payment never clears the balance */
+  payoff_year: number;
+  payoff_month: number;
+}
+
 // FIRE / Forecasting settings (frontend camelCase)
 export interface ForecastingSettings {
   inflationPct: number;
@@ -355,8 +376,8 @@ export interface ForecastingSettings {
   groupReturnRates: Record<string, number>;
   /** Asset group monthly savings are paid into; null spreads them across the mix */
   contributionGroup: string | null;
-  /** Interest rate and monthly payment per liability group name */
-  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** Terms per liability category name, one loan each */
+  liabilityTerms: Record<string, LiabilityTerm>;
   /** Groups kept in net worth but held out of the withdrawal base */
   swrExcludedGroups: string[];
 }
@@ -379,7 +400,7 @@ export interface ForecastingSettingsAPI {
   life_expectancy: number;
   group_return_rates: Record<string, number>;
   contribution_group: string | null;
-  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  liability_terms: Record<string, LiabilityTerm>;
   swr_excluded_groups: string[];
   updated_at: string;
 }
@@ -469,7 +490,7 @@ export interface FireResultAPI {
   projections: FireProjectionPointAPI[];
   pension: FirePensionResultAPI | null;
   /** Conditions the projection cannot model away, e.g. negative amortization */
-  warnings?: { code: string; group: string }[];
+  warnings?: { code: string; name: string; group: string }[];
 }
 
 // FIRE inputs derived on the backend from persisted settings + snapshots + budget
@@ -484,7 +505,11 @@ export interface ForecastingDerivedAPI {
   gross_assets: number;
   /** Amounts owed per liability group name, as positive magnitudes */
   liabilities_by_group: Record<string, number>;
-  liability_terms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** The same amounts per loan, with the group each sits under */
+  liabilities_by_category: Record<string, { amount: number; group: string }>;
+  liability_terms: Record<string, LiabilityTerm>;
+  /** What the stated terms work out to: derived payment, derived payoff date */
+  liability_terms_resolved: Record<string, ResolvedLiabilityTerm>;
   swr_excluded_groups: string[];
   /** Capital the withdrawal rate applies to, after exclusions and debt */
   swr_base: number;

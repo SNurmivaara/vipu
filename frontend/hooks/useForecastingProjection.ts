@@ -2,7 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { fetchForecastingProjection } from "@/lib/api";
-import { ForecastingProjectionAPI, FirePensionResultAPI } from "@/types";
+import {
+  ForecastingProjectionAPI,
+  FirePensionResultAPI,
+  LiabilityTerm,
+  ResolvedLiabilityTerm,
+} from "@/types";
 
 // React Query key — exported so settings updates can invalidate the projection.
 export const FORECASTING_PROJECTION_KEY = ["forecasting-projection"] as const;
@@ -64,7 +69,11 @@ export interface DerivedInputs {
   grossAssets: number;
   /** Amounts owed per liability group name, as positive magnitudes */
   liabilitiesByGroup: Record<string, number>;
-  liabilityTerms: Record<string, { rate_pct: number; monthly_payment: number }>;
+  /** The same amounts per loan, with the group each sits under */
+  liabilitiesByCategory: Record<string, { amount: number; group: string }>;
+  liabilityTerms: Record<string, LiabilityTerm>;
+  /** What the stated terms work out to: derived payment, derived payoff date */
+  liabilityTermsResolved: Record<string, ResolvedLiabilityTerm>;
   /** Groups kept in net worth but held out of the withdrawal base */
   swrExcludedGroups: string[];
   /** Capital the withdrawal rate applies to, after exclusions and debt */
@@ -91,7 +100,7 @@ export interface ForecastingProjection {
   projections: ProjectionPoint[];
   pension?: PensionResult;
   /** Conditions the projection cannot model away, e.g. negative amortization */
-  warnings: { code: string; group: string }[];
+  warnings: { code: string; name: string; group: string }[];
   derived: DerivedInputs;
 }
 
@@ -152,7 +161,9 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       contributionGroup: api.derived.contribution_group,
       grossAssets: api.derived.gross_assets,
       liabilitiesByGroup: api.derived.liabilities_by_group ?? {},
+      liabilitiesByCategory: api.derived.liabilities_by_category ?? {},
       liabilityTerms: api.derived.liability_terms ?? {},
+      liabilityTermsResolved: api.derived.liability_terms_resolved ?? {},
       swrExcludedGroups: api.derived.swr_excluded_groups ?? [],
       swrBase: api.derived.swr_base,
       monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
@@ -189,7 +200,9 @@ const DEFAULT_RESULT: ForecastingProjection = {
     contributionGroup: null,
     grossAssets: 0,
     liabilitiesByGroup: {},
+    liabilitiesByCategory: {},
     liabilityTerms: {},
+    liabilityTermsResolved: {},
     swrExcludedGroups: [],
     swrBase: 0,
     monthlySavingsIsOverride: false,

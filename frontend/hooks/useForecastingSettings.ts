@@ -129,20 +129,33 @@ export function useForecastingSettings() {
   const updateSetting = useCallback(
     <K extends keyof ForecastingSettings>(
       key: K,
-      value: ForecastingSettings[K]
+      // An updater reads the value the cache holds right now. A loan has five
+      // editable fields, and a plain value built from the render closure would
+      // drop an edit made earlier in the same debounce window.
+      value:
+        | ForecastingSettings[K]
+        | ((prev: ForecastingSettings[K]) => ForecastingSettings[K])
     ) => {
+      let resolved = value as ForecastingSettings[K];
+
       // Optimistic update (immediate — UI stays snappy)
       queryClient.setQueryData(
         QUERY_KEY,
         (old: ForecastingSettingsAPI | undefined) => {
           if (!old) return old;
-          const apiUpdate = settingsToApi({ [key]: value });
+          if (typeof value === "function") {
+            const next = value as (
+              prev: ForecastingSettings[K]
+            ) => ForecastingSettings[K];
+            resolved = next(apiToSettings(old)[key]);
+          }
+          const apiUpdate = settingsToApi({ [key]: resolved });
           return { ...old, ...apiUpdate };
         }
       );
 
       // Batch and debounce the API call
-      pendingUpdate.current = { ...pendingUpdate.current, [key]: value };
+      pendingUpdate.current = { ...pendingUpdate.current, [key]: resolved };
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
         const update = { ...pendingUpdate.current };

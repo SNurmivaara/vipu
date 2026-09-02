@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState, useRef, useCallback } from "react";
+import { useMemo, useState, useRef, useCallback } from "react";
 import {
   Line,
   XAxis,
@@ -12,7 +12,12 @@ import {
   ReferenceLine,
   Area,
 } from "recharts";
-import { ForecastingSettings } from "@/types";
+import {
+  ForecastingSettings,
+  LiabilityTerm,
+  ResolvedLiabilityTerm,
+} from "@/types";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { formatCurrencyRounded, cn } from "@/lib/utils";
 import { useForecastingProjection } from "@/hooks/useForecastingProjection";
 import { useForecastingSettings } from "@/hooks/useForecastingSettings";
@@ -379,8 +384,9 @@ export function ForecastingPanel() {
             </>
           )}
 
-          {/* Liability terms */}
-          {Object.keys(derived.liabilitiesByGroup).length > 0 && (
+          {/* Loan terms, one loan at a time: two loans in a group rarely
+              share a rate or a maturity. */}
+          {Object.keys(derived.liabilitiesByCategory).length > 0 && (
             <>
               <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
                 <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -392,36 +398,24 @@ export function ForecastingPanel() {
                   be counted twice.
                 </div>
               </div>
-              {Object.entries(derived.liabilitiesByGroup).map(([group, owed]) => {
-                const terms = settings.liabilityTerms[group] ?? {
-                  rate_pct: 0,
-                  monthly_payment: 0,
-                };
-                const setTerms = (next: Partial<typeof terms>) =>
-                  updateSetting("liabilityTerms", {
-                    ...settings.liabilityTerms,
-                    [group]: { ...terms, ...next },
-                  });
-                return (
-                  <Fragment key={group}>
-                    <NumberInput
-                      label={`${group} rate % (${formatCurrencyRounded(owed)} owed)`}
-                      value={terms.rate_pct}
-                      onChange={(v) => setTerms({ rate_pct: v })}
-                      min={0}
-                      max={30}
-                      step={0.1}
-                    />
-                    <NumberInput
-                      label={`${group} payment /mo`}
-                      value={terms.monthly_payment}
-                      onChange={(v) => setTerms({ monthly_payment: v })}
-                      min={0}
-                      step={50}
-                    />
-                  </Fragment>
-                );
-              })}
+              {Object.entries(derived.liabilitiesByCategory).map(
+                ([loan, { amount, group }]) => (
+                  <LoanTerms
+                    key={loan}
+                    loan={loan}
+                    group={group}
+                    owed={amount}
+                    terms={settings.liabilityTerms[loan]}
+                    resolved={derived.liabilityTermsResolved[loan]}
+                    onChange={(next) =>
+                      updateSetting("liabilityTerms", (prev) => ({
+                        ...prev,
+                        [loan]: { ...prev[loan], ...next },
+                      }))
+                    }
+                  />
+                )
+              )}
             </>
           )}
 
@@ -591,11 +585,11 @@ export function ForecastingPanel() {
         .filter((w) => w.code === "negative_amortization")
         .map((w) => (
           <div
-            key={w.group}
+            key={w.name}
             className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 p-3 text-sm"
           >
             <span className="text-red-600 dark:text-red-400">
-              {w.group}: the monthly payment does not cover the interest, so the
+              {w.name}: the monthly payment does not cover the interest, so the
               balance grows every month. The projection cannot show a payoff
               until the payment or rate changes.
             </span>
@@ -920,6 +914,125 @@ function NumberInput({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** One loan's terms: a rate, plus either a payment or a payoff date. */
+function LoanTerms({
+  loan,
+  group,
+  owed,
+  terms,
+  resolved,
+  onChange,
+}: {
+  loan: string;
+  group: string;
+  owed: number;
+  terms?: LiabilityTerm;
+  resolved?: ResolvedLiabilityTerm;
+  onChange: (next: Partial<LiabilityTerm>) => void;
+}) {
+  const schedule = terms?.schedule ?? "fixed";
+  const defaultEndYear = new Date().getFullYear() + 10;
+
+  // A stated payoff date implies an instalment; a stated instalment implies a
+  // payoff date. Whichever was not typed in is read back here.
+  const payment = resolved?.monthly_payment ?? 0;
+  const hint =
+    schedule === "annuity"
+      ? `${payment.toFixed(2)} €/mo to clear it by then`
+      : payment <= 0
+        ? "No payment set, so the balance is held flat"
+        : resolved && resolved.payoff_year > 0
+          ? `Paid off ${MONTHS[resolved.payoff_month - 1]} ${resolved.payoff_year}`
+          : "This payment does not cover the interest";
+
+  return (
+    <div className="col-span-full rounded-lg border border-gray-200 dark:border-gray-800 p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <div className="text-sm font-medium">
+          {loan}{" "}
+          <span className="text-xs font-normal text-gray-500 dark:text-gray-500">
+            {group}
+          </span>
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-500">
+          {formatCurrencyRounded(owed)} owed
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <NumberInput
+          label="Rate %"
+          value={terms?.rate_pct ?? 0}
+          onChange={(v) => onChange({ rate_pct: v })}
+          min={0}
+          max={30}
+          step={0.1}
+        />
+        <div className="col-span-full sm:col-span-2">
+          <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">
+            Schedule
+          </label>
+          <SegmentedControl
+            ariaLabel={`${loan} schedule`}
+            options={[
+              { value: "annuity", label: "Paid off by" },
+              { value: "fixed", label: "Fixed payment" },
+            ]}
+            value={schedule}
+            onChange={(v) => {
+              const next = v as "fixed" | "annuity";
+              // An annuity is saved with its payoff date, or the API rejects
+              // it as incomplete and the switch silently rolls back.
+              onChange(
+                next === "annuity"
+                  ? {
+                      schedule: next,
+                      end_year: terms?.end_year ?? defaultEndYear,
+                      end_month: terms?.end_month ?? 12,
+                    }
+                  : { schedule: next }
+              );
+            }}
+          />
+        </div>
+        {schedule === "annuity" ? (
+          <>
+            <NumberInput
+              label="Payoff year"
+              value={terms?.end_year ?? defaultEndYear}
+              onChange={(v) => onChange({ end_year: Math.round(v) })}
+              min={new Date().getFullYear()}
+              max={2200}
+              step={1}
+            />
+            <NumberInput
+              label="Payoff month"
+              value={terms?.end_month ?? 12}
+              onChange={(v) => onChange({ end_month: Math.round(v) })}
+              min={1}
+              max={12}
+              step={1}
+            />
+          </>
+        ) : (
+          <NumberInput
+            label="Payment /mo"
+            value={terms?.monthly_payment ?? 0}
+            onChange={(v) => onChange({ monthly_payment: v })}
+            min={0}
+            step={50}
+          />
+        )}
+      </div>
+      <div className="mt-2 text-xs text-gray-500 dark:text-gray-500">{hint}</div>
     </div>
   );
 }
