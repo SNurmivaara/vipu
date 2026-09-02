@@ -329,6 +329,25 @@ MIGRATIONS: list[dict] = [
             );
         """,
     },
+    {
+        "id": "016_retirement_taxes",
+        "name": "Add capital gains and pension tax rates to forecasting_settings",
+        # The FIRE number assumed every withdrawn euro was spendable and that a
+        # gross TyEL pension was too. Both are taxed, so both are now charged.
+        # Finnish defaults: 30% capital gains on the 60% of a sale the
+        # hankintameno-olettama leaves taxable, and 15% on pension income.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS capital_gains_tax_pct
+                NUMERIC(5,2) NOT NULL DEFAULT 30.0;
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS taxable_gain_pct
+                NUMERIC(5,2) NOT NULL DEFAULT 60.0;
+            ALTER TABLE forecasting_settings
+                ADD COLUMN IF NOT EXISTS pension_tax_pct
+                NUMERIC(5,2) NOT NULL DEFAULT 15.0;
+        """,
+    },
 ]
 
 

@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from app.fire import (
     FireInputs,
+    TaxAssumptions,
     add_months,
     annuity_payment,
     build_portfolio,
@@ -18,6 +19,7 @@ from app.fire import (
     calculate_fire,
     default_return_for_group,
     generate_pension_scenarios,
+    gross_up,
     monthly_rate,
     months_between,
     months_to_payoff,
@@ -26,6 +28,7 @@ from app.fire import (
     resolve_group_return_rates,
     resolve_liability_terms,
     weighted_return,
+    withdrawal_tax_drag,
 )
 
 
@@ -487,6 +490,203 @@ class TestResolveLiabilityTerms:
             portfolio.step()
 
         assert portfolio.liabilities_total == Decimal("0")
+
+
+class TestRetirementTax:
+    """Withdrawals and pension are taxed; the model used to charge neither."""
+
+    FINNISH = TaxAssumptions(
+        withdrawal_drag=withdrawal_tax_drag(Decimal("30"), Decimal("60")),
+        pension_pct=Decimal("15"),
+    )
+
+    def test_drag_is_the_rate_on_the_taxable_share(self):
+        """30% of the 60% left taxable by the olettama is 18% of a sale."""
+        assert withdrawal_tax_drag(Decimal("30"), Decimal("60")) == Decimal("0.18")
+
+    def test_gross_up_leaves_the_spending_money_intact(self):
+        """What is left after tax is exactly what was asked for."""
+        gross = gross_up(Decimal("40000"), Decimal("0.18"))
+
+        assert gross > Decimal("40000")
+        assert abs(gross * Decimal("0.82") - Decimal("40000")) < Decimal("0.01")
+
+    def test_gross_up_is_a_no_op_without_tax(self):
+        assert gross_up(Decimal("40000"), Decimal("0")) == Decimal("40000")
+
+    def test_a_surplus_is_not_grossed_up(self):
+        """Nothing was sold, so there is no gain to tax."""
+        assert gross_up(Decimal("-500"), Decimal("0.18")) == Decimal("-500")
+
+    def test_fire_number_asks_for_the_tax_as_well(self):
+        """40 000 of spending at 4% is 1M untaxed, and more once tax is due."""
+        untaxed = calc_fire_number(Decimal("40000"), Decimal("4"))
+        taxed = calc_fire_number(Decimal("40000"), Decimal("4"), self.FINNISH)
+
+        assert untaxed == Decimal("1000000")
+        assert taxed > untaxed
+        # 40 000 / 0.82 / 0.04
+        assert abs(taxed - Decimal("1219512.20")) < Decimal("1")
+
+    def test_fire_number_unchanged_when_no_tax_is_configured(self):
+        """The untaxed model stays available, and is the default."""
+        assert calc_fire_number(
+            Decimal("40000"), Decimal("4"), TaxAssumptions()
+        ) == calc_fire_number(Decimal("40000"), Decimal("4"))
+
+    def test_pension_is_netted_before_the_gap_is_taken(self):
+        """A gross TyEL figure credited the tax office's share as spendable."""
+        gross_pension = Decimal("24000")
+        args = (Decimal("40000"), gross_pension, Decimal("60"), 68, Decimal("4"))
+
+        untaxed = calc_pension_fire_number(*args, Decimal("0.05"))
+        taxed = calc_pension_fire_number(*args, Decimal("0.05"), self.FINNISH)
+
+        assert taxed > untaxed
+
+    def test_a_pension_that_covers_everything_still_needs_phase_one(self):
+        """Tax cannot push the phase 2 gap below zero."""
+        result = calc_pension_fire_number(
+            Decimal("10000"),
+            Decimal("100000"),
+            Decimal("60"),
+            68,
+            Decimal("4"),
+            Decimal("0.05"),
+            self.FINNISH,
+        )
+
+        assert result > 0
+
+    def test_tax_pushes_fire_further_out(self):
+        """End to end: the same plan takes longer once tax is charged."""
+        base = {
+            "current_net_worth": Decimal("400000"),
+            "monthly_contribution": Decimal("2000"),
+            "annual_expenses": Decimal("40000"),
+            "annual_return_pct": Decimal("7"),
+            "inflation_pct": Decimal("2"),
+            "current_age": 40,
+            "target_retirement_age": 60,
+            "safe_withdrawal_rate": Decimal("4"),
+        }
+        untaxed = calculate_fire(FireInputs(**base))
+        taxed = calculate_fire(
+            FireInputs(
+                **base,
+                capital_gains_tax_pct=Decimal("30"),
+                taxable_gain_pct=Decimal("60"),
+            )
+        )
+
+        assert untaxed.years_to_fire is not None
+        assert taxed.years_to_fire is not None
+        assert taxed.years_to_fire > untaxed.years_to_fire
+        assert taxed.fire_number > untaxed.fire_number
+
+
+class TestDrawdownFundsItsLoans:
+    """A retiree has no budget surplus, so the portfolio pays the loans (#98)."""
+
+    def _portfolio(self, return_pct=7):
+        return build_portfolio(
+            Decimal("560000"),
+            {"Investments": 560000},
+            {"Investments": return_pct},
+            Decimal("0"),
+            liability_balances={"Mortgage": 60000},
+            liability_terms={"Mortgage": {"rate_pct": 3, "monthly_payment": 415}},
+        )
+
+    def test_paid_and_freed_always_sum_to_the_schedule(self):
+        """Including the part-month at payoff, so neither path double counts."""
+        portfolio = self._portfolio()
+
+        for _ in range(200):
+            paid, freed = portfolio._amortize()
+            assert paid + freed == Decimal("415")
+
+    def test_drawdown_charges_the_payment_to_the_portfolio(self):
+        """Left out, a mortgage amortised itself with money nobody paid."""
+        funded, unfunded = self._portfolio(), self._portfolio()
+
+        for _ in range(120):
+            funded.step_drawdown(Decimal("2500"))
+            unfunded.step(Decimal("-2500"))
+
+        assert funded.liabilities_total == unfunded.liabilities_total
+        assert funded.assets_total < unfunded.assets_total
+
+    def test_a_cleared_loan_stops_costing_anything(self):
+        """No phantom credit or charge once the balance is gone.
+
+        Zero return, so the only thing moving the balance is the withdrawal.
+        """
+        portfolio = self._portfolio(return_pct=0)
+        while portfolio.liabilities_total > 0:
+            portfolio.step_drawdown(Decimal("2500"))
+
+        before = portfolio.assets_total
+        portfolio.step_drawdown(Decimal("2500"))
+
+        assert portfolio.assets_total == before - Decimal("2500")
+
+    def test_drawdown_grosses_up_for_tax(self):
+        untaxed, taxed = self._portfolio(), self._portfolio()
+
+        untaxed.step_drawdown(Decimal("2500"))
+        taxed.step_drawdown(Decimal("2500"), tax_drag=Decimal("0.18"))
+
+        assert taxed.assets_total < untaxed.assets_total
+
+    def test_pension_reduces_what_has_to_be_sold(self):
+        with_pension, without = self._portfolio(), self._portfolio()
+
+        with_pension.step_drawdown(Decimal("2500"), Decimal("1500"))
+        without.step_drawdown(Decimal("2500"))
+
+        assert with_pension.assets_total > without.assets_total
+
+    def test_accumulation_does_not_charge_the_payment(self):
+        """It is already out of the budget surplus the contribution carries."""
+        portfolio = self._portfolio()
+        before = portfolio.assets_total
+
+        portfolio.step(Decimal("0"))
+
+        # Assets only grew; the payment came from the budget, not the portfolio
+        assert portfolio.assets_total > before
+
+    def test_pension_coast_number_uses_the_drifting_mix(self):
+        """Pension mode dropped the portfolio and fell back to a blended rate.
+
+        The coast number is FIRE / growth factor, and the per-group factor is
+        the larger of the two by Jensen, so the blended fallback asked for more
+        capital than the mix actually needs.
+        """
+        base = {
+            "current_net_worth": Decimal("300000"),
+            "monthly_contribution": Decimal("1500"),
+            "annual_expenses": Decimal("35000"),
+            "annual_return_pct": Decimal("6"),
+            "inflation_pct": Decimal("2"),
+            "current_age": 35,
+            "target_retirement_age": 60,
+            "safe_withdrawal_rate": Decimal("4"),
+            "pension_accrued_monthly": Decimal("900"),
+            "pension_monthly_salary": Decimal("4000"),
+        }
+        portfolio = build_portfolio(
+            Decimal("300000"),
+            {"Equities": 200000, "Cash": 100000},
+            {"Equities": 9, "Cash": 1},
+            Decimal("2"),
+        )
+
+        with_mix = calculate_fire(FireInputs(**base), portfolio)
+        without = calculate_fire(FireInputs(**base))
+
+        assert with_mix.coast_fire_number < without.coast_fire_number
 
 
 class TestSwrExclusion:
@@ -1559,6 +1759,34 @@ class TestForecastingProjection:
             ).status_code
             == 400
         )
+
+    def test_tax_rates_round_trip_and_raise_the_fire_number(self, client):
+        """The defaults are Finnish, and turning tax off is a supported answer."""
+        settings = client.get("/api/forecasting/settings").json
+        assert settings["capital_gains_tax_pct"] == 30
+        assert settings["taxable_gain_pct"] == 60
+        assert settings["pension_tax_pct"] == 15
+
+        client.post("/api/expenses", json={"name": "Living", "amount": 2000})
+        taxed = client.get("/api/forecasting/projection").json
+        assert taxed["derived"]["withdrawal_tax_drag_pct"] == 18
+
+        resp = client.put("/api/forecasting/settings", json={"taxable_gain_pct": 0})
+        assert resp.status_code == 200
+        untaxed = client.get("/api/forecasting/projection").json
+
+        assert untaxed["derived"]["withdrawal_tax_drag_pct"] == 0
+        assert taxed["fire_number"] > untaxed["fire_number"]
+
+    def test_tax_rates_reject_bad_values(self, client):
+        for field, value in [
+            ("capital_gains_tax_pct", 61),
+            ("capital_gains_tax_pct", -1),
+            ("taxable_gain_pct", 101),
+            ("pension_tax_pct", 61),
+        ]:
+            resp = client.put("/api/forecasting/settings", json={field: value})
+            assert resp.status_code == 400, (field, value)
 
     def test_liability_terms_reject_bad_schedules(self, client):
         """An annuity without a valid payoff date has no payment to derive."""

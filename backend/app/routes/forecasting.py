@@ -67,6 +67,18 @@ class FireCalculateInputSchema(Schema):
         load_default=95, validate=validate.Range(min=60, max=120)
     )
 
+    # Tax on the two streams that fund retirement. Default 0 so a caller that
+    # does not mention tax gets the untaxed model it asked for.
+    capital_gains_tax_pct = fields.Float(
+        load_default=0, validate=validate.Range(min=0, max=60)
+    )
+    taxable_gain_pct = fields.Float(
+        load_default=0, validate=validate.Range(min=0, max=100)
+    )
+    pension_tax_pct = fields.Float(
+        load_default=0, validate=validate.Range(min=0, max=60)
+    )
+
     @post_load
     def make_fire_inputs(self, data: dict, **kwargs: object) -> FireInputs:
         """Convert validated data to FireInputs dataclass."""
@@ -94,6 +106,9 @@ class FireCalculateInputSchema(Schema):
             pension_guarantee_enabled=data["pension_guarantee_enabled"],
             pension_guarantee_amount=Decimal(str(data["pension_guarantee_amount"])),
             life_expectancy=data["life_expectancy"],
+            capital_gains_tax_pct=Decimal(str(data["capital_gains_tax_pct"])),
+            taxable_gain_pct=Decimal(str(data["taxable_gain_pct"])),
+            pension_tax_pct=Decimal(str(data["pension_tax_pct"])),
         )
 
 
@@ -164,6 +179,9 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
         "safe_withdrawal_rate": (1, 10),
         "pension_accrual_rate": (0, 10),
         "pension_guarantee_amount": (0, 5000),
+        "capital_gains_tax_pct": (0, 60),
+        "taxable_gain_pct": (0, 100),
+        "pension_tax_pct": (0, 60),
     }
     for field, (lo, hi) in numeric_fields.items():
         if field in data:
@@ -417,6 +435,9 @@ def get_forecasting_projection() -> Response:
         pension_guarantee_enabled=settings.pension_guarantee_enabled,
         pension_guarantee_amount=settings.pension_guarantee_amount,
         life_expectancy=settings.life_expectancy,
+        capital_gains_tax_pct=settings.capital_gains_tax_pct,
+        taxable_gain_pct=settings.taxable_gain_pct,
+        pension_tax_pct=settings.pension_tax_pct,
     )
 
     # Each group compounds at its own rate, so the mix drifts toward the
@@ -453,6 +474,9 @@ def get_forecasting_projection() -> Response:
         # What the stated terms work out to: the payment an annuity's payoff
         # date implies, or the payoff date a fixed payment implies.
         "liability_terms_resolved": resolved_terms,
+        # Share of a withdrawal lost to capital gains tax, as a percentage.
+        # The FIRE number is grossed up by it, so it belongs on screen.
+        "withdrawal_tax_drag_pct": inputs.taxes.withdrawal_drag * 100,
         "swr_excluded_groups": settings.swr_excluded_groups or [],
         # What the withdrawal rate actually applies to, once excluded groups
         # and debt are taken out.

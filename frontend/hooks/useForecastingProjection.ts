@@ -74,6 +74,8 @@ export interface DerivedInputs {
   liabilityTerms: Record<string, LiabilityTerm>;
   /** What the stated terms work out to: derived payment, derived payoff date */
   liabilityTermsResolved: Record<string, ResolvedLiabilityTerm>;
+  /** Share of a withdrawal lost to capital gains tax, as a percentage */
+  withdrawalTaxDragPct: number;
   /** Groups kept in net worth but held out of the withdrawal base */
   swrExcludedGroups: string[];
   /** Capital the withdrawal rate applies to, after exclusions and debt */
@@ -164,6 +166,7 @@ function fromApiResult(api: ForecastingProjectionAPI): ForecastingProjection {
       liabilitiesByCategory: api.derived.liabilities_by_category ?? {},
       liabilityTerms: api.derived.liability_terms ?? {},
       liabilityTermsResolved: api.derived.liability_terms_resolved ?? {},
+      withdrawalTaxDragPct: api.derived.withdrawal_tax_drag_pct ?? 0,
       swrExcludedGroups: api.derived.swr_excluded_groups ?? [],
       swrBase: api.derived.swr_base,
       monthlySavingsIsOverride: api.derived.monthly_savings_is_override,
@@ -203,6 +206,7 @@ const DEFAULT_RESULT: ForecastingProjection = {
     liabilitiesByCategory: {},
     liabilityTerms: {},
     liabilityTermsResolved: {},
+    withdrawalTaxDragPct: 0,
     swrExcludedGroups: [],
     swrBase: 0,
     monthlySavingsIsOverride: false,

@@ -261,6 +261,22 @@ class ForecastingSettings(Base):
         Numeric(12, 2), nullable=False, default=Decimal("990.0")
     )
     life_expectancy: Mapped[int] = mapped_column(Integer, nullable=False, default=95)
+    # Tax. Retirement is funded from two taxed streams and the model charged
+    # neither: selling to live on realises a capital gain, and a TyEL pension
+    # is taxed as earned income.
+    capital_gains_tax_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("30.0")
+    )
+    # Share of a sale that is taxable gain rather than returned capital. 60% is
+    # what the 40% hankintameno-olettama leaves taxable on a holding of ten
+    # years or more, so 30% x 60% = 18% of a withdrawal.
+    taxable_gain_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("60.0")
+    )
+    # Effective rate on pension income, after the eläketulovähennys.
+    pension_tax_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("15.0")
+    )
     group_return_rates: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # Asset group new savings are paid into. NULL spreads them across the mix,
     # which credits them at the portfolio average rather than where they go.
@@ -313,6 +329,9 @@ class ForecastingSettings(Base):
             "pension_guarantee_enabled": self.pension_guarantee_enabled,
             "pension_guarantee_amount": float(self.pension_guarantee_amount),
             "life_expectancy": self.life_expectancy,
+            "capital_gains_tax_pct": float(self.capital_gains_tax_pct),
+            "taxable_gain_pct": float(self.taxable_gain_pct),
+            "pension_tax_pct": float(self.pension_tax_pct),
             "group_return_rates": self.group_return_rates or {},
             "contribution_group": self.contribution_group,
             "liability_terms": self.liability_terms or {},
