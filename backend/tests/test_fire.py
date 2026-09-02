@@ -4,6 +4,8 @@ from decimal import Decimal
 
 from app.fire import (
     FireInputs,
+    add_months,
+    annuity_payment,
     build_portfolio,
     calc_coast_fire_age,
     calc_coast_fire_number,
@@ -17,9 +19,12 @@ from app.fire import (
     default_return_for_group,
     generate_pension_scenarios,
     monthly_rate,
+    months_between,
+    months_to_payoff,
     pv_annuity,
     real_return_from_nominal,
     resolve_group_return_rates,
+    resolve_liability_terms,
     weighted_return,
 )
 
@@ -227,7 +232,7 @@ class TestLiabilities:
             {"Equities": 150000, "Cash": 50000},
             {"Equities": 8, "Cash": 1},
             Decimal("0"),
-            liabilities_by_group={"Mortgage": debt},
+            liability_balances={"Mortgage": debt},
             liability_terms={
                 "Mortgage": {"rate_pct": rate_pct, "monthly_payment": payment}
             },
@@ -257,7 +262,7 @@ class TestLiabilities:
             {"Cash": 10000},
             {"Cash": 0},
             Decimal("0"),
-            liabilities_by_group={"Loan": 1000},
+            liability_balances={"Loan": 1000},
             liability_terms={"Loan": {"rate_pct": 0, "monthly_payment": 500}},
         )
 
@@ -276,12 +281,13 @@ class TestLiabilities:
             {"Cash": 100000},
             {"Cash": 1},
             Decimal("0"),
-            liabilities_by_group={"Card": 1000},
+            liability_balances={"Card": 1000},
             liability_terms={"Card": {"rate_pct": 20, "monthly_payment": 5}},
+            liability_groups={"Card": "Credit"},
         )
 
         assert portfolio.liability_warnings() == [
-            {"code": "negative_amortization", "group": "Card"}
+            {"code": "negative_amortization", "name": "Card", "group": "Credit"}
         ]
 
     def test_serviceable_debt_does_not_warn(self):
@@ -304,14 +310,17 @@ class TestLiabilities:
             {"Cash": 1000},
             {"Cash": 1},
             Decimal("0"),
-            liabilities_by_group={"Card": 10000},
+            liability_balances={"Card": 10000},
             liability_terms={"Card": {"rate_pct": 20, "monthly_payment": 1}},
+            liability_groups={"Card": "Credit"},
         )
 
         result = calculate_fire(inputs, portfolio)
 
         assert result.years_to_fire is None
-        assert result.warnings == [{"code": "negative_amortization", "group": "Card"}]
+        assert result.warnings == [
+            {"code": "negative_amortization", "name": "Card", "group": "Credit"}
+        ]
 
     def test_untermed_debt_erodes_with_inflation(self):
         """A liability with no terms holds nominally, so inflation shrinks it."""
@@ -320,7 +329,7 @@ class TestLiabilities:
             {"Cash": 100000},
             {"Cash": 0},
             Decimal("3"),
-            liabilities_by_group={"Loan": 50000},
+            liability_balances={"Loan": 50000},
         )
 
         for _ in range(12):
@@ -328,6 +337,156 @@ class TestLiabilities:
 
         assert portfolio.liabilities_total < Decimal("50000")
         assert portfolio.liabilities_total > Decimal("48000")
+
+
+class TestLoanSchedules:
+    """A loan states a payment or a payoff date; each implies the other (#98)."""
+
+    def _amortize(self, balance, rate_pct, payment, months):
+        """Balance left after paying ``payment`` for ``months``."""
+        rate = monthly_rate(Decimal(str(rate_pct)))
+        left = Decimal(str(balance))
+        for _ in range(months):
+            left += left * rate - payment
+        return left
+
+    def test_annuity_payment_clears_the_balance_on_the_stated_month(self):
+        """The instalment a payoff date implies leaves nothing behind."""
+        payment = annuity_payment(Decimal("49372.04"), Decimal("3.108"), 304)
+
+        left = self._amortize("49372.04", "3.108", payment, 304)
+
+        assert abs(left) < Decimal("0.01")
+
+    def test_annuity_payment_matches_the_bank(self):
+        """A 49,372.04 mortgage at 3.108% to 2051-12 costs about 234/mo."""
+        payment = annuity_payment(Decimal("49372.04"), Decimal("3.108"), 304)
+
+        assert Decimal("233") < payment < Decimal("235")
+
+    def test_annuity_at_zero_rate_is_the_balance_split_evenly(self):
+        assert annuity_payment(Decimal("1200"), Decimal("0"), 12) == Decimal("100")
+
+    def test_expired_term_clears_next_month(self):
+        """A payoff date already in the past pays the balance plus one month."""
+        payment = annuity_payment(Decimal("1000"), Decimal("12"), -5)
+
+        assert payment > Decimal("1000")
+        assert self._amortize("1000", "12", payment, 1) == Decimal("0")
+
+    def test_months_to_payoff_inverts_the_annuity(self):
+        """The maturity a payment implies is the term it was derived from."""
+        payment = annuity_payment(Decimal("25483.55"), Decimal("2.434"), 124)
+
+        assert months_to_payoff(Decimal("25483.55"), Decimal("2.434"), payment) == 124
+
+    def test_months_to_payoff_is_none_below_interest(self):
+        """A payment that never amortises has no maturity to report."""
+        assert months_to_payoff(Decimal("10000"), Decimal("20"), Decimal("5")) is None
+
+    def test_months_between_and_add_months_round_trip(self):
+        assert months_between(2026, 8, 2051, 12) == 304
+        assert add_months(2026, 8, 304) == (2051, 12)
+        assert months_between(2026, 8, 2025, 8) == -12
+
+
+class TestResolveLiabilityTerms:
+    """Stated terms resolved to the payment the simulation amortises with."""
+
+    BALANCES = {"Home loan": 49372.04, "Student loan": 25483.55}
+
+    def test_annuity_terms_derive_the_payment_and_keep_the_payoff(self):
+        resolved = resolve_liability_terms(
+            self.BALANCES,
+            {
+                "Home loan": {
+                    "rate_pct": 3.108,
+                    "schedule": "annuity",
+                    "end_year": 2051,
+                    "end_month": 12,
+                },
+                "Student loan": {
+                    "rate_pct": 2.434,
+                    "schedule": "annuity",
+                    "end_year": 2036,
+                    "end_month": 12,
+                },
+            },
+            2026,
+            8,
+        )
+
+        assert (
+            Decimal("233") < resolved["Home loan"]["monthly_payment"] < Decimal("235")
+        )
+        assert (resolved["Home loan"]["payoff_year"]) == 2051
+        assert (resolved["Home loan"]["payoff_month"]) == 12
+        assert resolved["Student loan"]["payoff_year"] == 2036
+
+    def test_fixed_terms_derive_the_payoff_date(self):
+        resolved = resolve_liability_terms(
+            {"Home loan": 49372.04},
+            {"Home loan": {"rate_pct": 3.108, "monthly_payment": 233.74}},
+            2026,
+            8,
+        )
+
+        assert resolved["Home loan"]["monthly_payment"] == Decimal("233.74")
+        assert resolved["Home loan"]["payoff_year"] == 2051
+
+    def test_two_loans_in_one_group_keep_their_own_rates(self):
+        """The whole point: one rate for both was the bug."""
+        resolved = resolve_liability_terms(
+            self.BALANCES,
+            {
+                "Home loan": {"rate_pct": 3.108, "monthly_payment": 233.74},
+                "Student loan": {"rate_pct": 2.434, "monthly_payment": 231.44},
+            },
+            2026,
+            8,
+        )
+
+        assert resolved["Home loan"]["rate_pct"] == Decimal("3.108")
+        assert resolved["Student loan"]["rate_pct"] == Decimal("2.434")
+
+    def test_untermed_loan_resolves_to_no_payment(self):
+        """No terms means no amortization, not an invented one."""
+        resolved = resolve_liability_terms({"Home loan": 1000}, {}, 2026, 8)
+
+        assert resolved["Home loan"]["monthly_payment"] == Decimal("0.00")
+        assert resolved["Home loan"]["payoff_year"] == 0
+
+    def test_cleared_loans_are_dropped(self):
+        assert resolve_liability_terms({"Home loan": 0}, {}, 2026, 8) == {}
+
+    def test_annuity_loan_amortises_to_zero_in_the_projection(self):
+        """End to end: the derived payment clears the loan, freeing its cash."""
+        resolved = resolve_liability_terms(
+            {"Loan": 12000},
+            {
+                "Loan": {
+                    "rate_pct": 3,
+                    "schedule": "annuity",
+                    "end_year": 2027,
+                    "end_month": 8,
+                }
+            },
+            2026,
+            8,
+        )
+        portfolio = build_portfolio(
+            Decimal("50000"),
+            {"Cash": 50000},
+            {"Cash": 0},
+            Decimal("0"),
+            liability_balances={"Loan": 12000},
+            liability_terms=resolved,
+        )
+
+        for _ in range(12):
+            portfolio.step()
+
+        assert portfolio.liabilities_total == Decimal("0")
 
 
 class TestSwrExclusion:
@@ -1270,8 +1429,16 @@ class TestForecastingProjection:
         assert resp.status_code == 400
 
     def _seed_with_liability(self, client):
-        """Cash 10000 + Investments 30000, less a 5000 student loan."""
+        """Cash 10000 + Investments 30000, less a 5000 student loan.
+
+        A second loan goes in the same group, since one rate for both is the
+        thing per-loan terms exist to fix.
+        """
         client.post("/api/networth/categories/seed")
+        mortgage = client.post(
+            "/api/networth/categories",
+            json={"name": "Mortgage", "group_id": 5, "display_order": 51},
+        ).json["id"]
         client.post(
             "/api/networth",
             json={
@@ -1281,6 +1448,7 @@ class TestForecastingProjection:
                     {"category_id": 1, "amount": 10000},
                     {"category_id": 5, "amount": 30000},
                     {"category_id": 10, "amount": -5000},  # Student Loan
+                    {"category_id": mortgage, "amount": -20000},
                 ],
             },
         )
@@ -1292,8 +1460,51 @@ class TestForecastingProjection:
         derived = client.get("/api/forecasting/projection").json["derived"]
 
         assert derived["gross_assets"] == 40000
-        assert derived["liabilities_by_group"] == {"Loans": 5000}
-        assert derived["current_net_worth"] == 35000
+        assert derived["liabilities_by_group"] == {"Loans": 25000}
+        assert derived["current_net_worth"] == 15000
+
+    def test_liabilities_are_broken_out_per_loan(self, client):
+        """Each loan is listed on its own, with the group it sits under."""
+        self._seed_with_liability(client)
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+
+        assert derived["liabilities_by_category"] == {
+            "Student Loan": {"amount": 5000, "group": "Loans"},
+            "Mortgage": {"amount": 20000, "group": "Loans"},
+        }
+
+    def test_two_loans_in_one_group_amortise_on_their_own_terms(self, client):
+        """One rate and one payment for the whole group was the bug (#98)."""
+        self._seed_with_liability(client)
+
+        client.put(
+            "/api/forecasting/settings",
+            json={
+                "liability_terms": {
+                    "Student Loan": {"rate_pct": 2.434, "monthly_payment": 200},
+                    "Mortgage": {
+                        "rate_pct": 3.108,
+                        "schedule": "annuity",
+                        "end_year": 2045,
+                        "end_month": 1,
+                    },
+                }
+            },
+        )
+
+        resolved = client.get("/api/forecasting/projection").json["derived"][
+            "liability_terms_resolved"
+        ]
+
+        assert resolved["Student Loan"]["rate_pct"] == 2.434
+        assert resolved["Mortgage"]["rate_pct"] == 3.108
+        # The mortgage's payment is derived from its payoff date, the student
+        # loan's payoff date from its payment.
+        assert resolved["Mortgage"]["payoff_year"] == 2045
+        assert resolved["Mortgage"]["monthly_payment"] > 0
+        assert resolved["Student Loan"]["monthly_payment"] == 200
+        assert resolved["Student Loan"]["payoff_year"] == 2027
 
     def test_liability_terms_round_trip_and_warn(self, client):
         """Terms persist, and a payment below interest surfaces a warning."""
@@ -1301,14 +1512,22 @@ class TestForecastingProjection:
 
         resp = client.put(
             "/api/forecasting/settings",
-            json={"liability_terms": {"Loans": {"rate_pct": 20, "monthly_payment": 5}}},
+            json={
+                "liability_terms": {
+                    "Student Loan": {"rate_pct": 20, "monthly_payment": 5}
+                }
+            },
         )
         assert resp.status_code == 200
-        assert resp.json["liability_terms"]["Loans"]["rate_pct"] == 20
+        assert resp.json["liability_terms"]["Student Loan"]["rate_pct"] == 20
 
         result = client.get("/api/forecasting/projection").json
         assert result["warnings"] == [
-            {"code": "negative_amortization", "group": "Loans"}
+            {
+                "code": "negative_amortization",
+                "name": "Student Loan",
+                "group": "Loans",
+            }
         ]
 
     def test_serviceable_liability_has_no_warning(self, client):
@@ -1316,7 +1535,10 @@ class TestForecastingProjection:
         client.put(
             "/api/forecasting/settings",
             json={
-                "liability_terms": {"Loans": {"rate_pct": 2, "monthly_payment": 200}}
+                "liability_terms": {
+                    "Student Loan": {"rate_pct": 2, "monthly_payment": 200},
+                    "Mortgage": {"rate_pct": 2, "monthly_payment": 500},
+                }
             },
         )
 
@@ -1326,17 +1548,33 @@ class TestForecastingProjection:
         assert (
             client.put(
                 "/api/forecasting/settings",
-                json={"liability_terms": {"Loans": {"rate_pct": 99}}},
+                json={"liability_terms": {"Mortgage": {"rate_pct": 99}}},
             ).status_code
             == 400
         )
         assert (
             client.put(
                 "/api/forecasting/settings",
-                json={"liability_terms": {"Loans": {"monthly_payment": -5}}},
+                json={"liability_terms": {"Mortgage": {"monthly_payment": -5}}},
             ).status_code
             == 400
         )
+
+    def test_liability_terms_reject_bad_schedules(self, client):
+        """An annuity without a valid payoff date has no payment to derive."""
+        bad = [
+            {"rate_pct": 3, "schedule": "tasalyhennys"},
+            {"rate_pct": 3, "schedule": "annuity"},
+            {"rate_pct": 3, "schedule": "annuity", "end_year": 2045},
+            {"rate_pct": 3, "schedule": "annuity", "end_year": 2045, "end_month": 13},
+            {"rate_pct": 3, "schedule": "annuity", "end_year": 1800, "end_month": 1},
+        ]
+        for terms in bad:
+            resp = client.put(
+                "/api/forecasting/settings",
+                json={"liability_terms": {"Mortgage": terms}},
+            )
+            assert resp.status_code == 400, terms
 
     def test_swr_exclusion_round_trips(self, client):
         """An excluded group leaves net worth alone but shrinks the SWR base."""

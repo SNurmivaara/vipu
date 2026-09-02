@@ -261,6 +261,74 @@ MIGRATIONS: list[dict] = [
                 JSONB NOT NULL DEFAULT '[]';
         """,
     },
+    {
+        "id": "015_liability_terms_by_category",
+        "name": "Rekey liability_terms from group name to category name",
+        # Two loans in one group rarely share a rate or a maturity, so terms
+        # move down to the category. Each category inherits its group's rate
+        # and a share of its payment pro-rata by balance, which leaves the
+        # aggregate amortisation unchanged. Terms for a group with no balance
+        # in the latest snapshot are dropped: there is no loan to attach them
+        # to.
+        #
+        # The first statement is a no-op on a database that ran migration 013,
+        # but create_all makes the column plain `json` on a fresh one, and the
+        # `?` and `->` operators below need `jsonb`.
+        "sql": """
+            ALTER TABLE forecasting_settings
+                ALTER COLUMN liability_terms TYPE JSONB
+                USING liability_terms::jsonb;
+
+            WITH latest AS (
+                SELECT id FROM networth_snapshots
+                ORDER BY year DESC, month DESC LIMIT 1
+            ),
+            owed AS (
+                SELECT g.name AS group_name,
+                       c.name AS category_name,
+                       ABS(e.amount) AS amount
+                FROM networth_entries e
+                JOIN networth_categories c ON c.id = e.category_id
+                JOIN networth_groups g ON g.id = c.group_id
+                WHERE e.snapshot_id = (SELECT id FROM latest)
+                  AND g.group_type = 'liability'
+                  AND e.amount <> 0
+            ),
+            group_owed AS (
+                SELECT group_name, SUM(amount) AS total
+                FROM owed GROUP BY group_name
+            ),
+            rekeyed AS (
+                SELECT o.category_name,
+                       jsonb_build_object(
+                           'rate_pct',
+                           COALESCE(
+                               (s.liability_terms -> o.group_name ->> 'rate_pct')
+                                   ::numeric,
+                               0
+                           ),
+                           'schedule', 'fixed',
+                           'monthly_payment',
+                           ROUND(
+                               COALESCE(
+                                   (s.liability_terms -> o.group_name
+                                       ->> 'monthly_payment')::numeric,
+                                   0
+                               ) * o.amount / g.total,
+                               2
+                           )
+                       ) AS terms
+                FROM forecasting_settings s
+                CROSS JOIN owed o
+                JOIN group_owed g ON g.group_name = o.group_name
+                WHERE s.liability_terms ? o.group_name
+            )
+            UPDATE forecasting_settings SET liability_terms = COALESCE(
+                (SELECT jsonb_object_agg(category_name, terms) FROM rekeyed),
+                '{}'::jsonb
+            );
+        """,
+    },
 ]
 
 
