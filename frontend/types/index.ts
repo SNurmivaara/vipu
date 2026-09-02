@@ -372,6 +372,12 @@ export interface ForecastingSettings {
   pensionGuaranteeEnabled: boolean;
   pensionGuaranteeAmount: number;
   lifeExpectancy: number;
+  /** Capital gains rate on the taxable part of a sale */
+  capitalGainsTaxPct: number;
+  /** Share of a sale that is taxable gain rather than returned capital */
+  taxableGainPct: number;
+  /** Effective rate on pension income */
+  pensionTaxPct: number;
   /** Expected annual return % per net worth group name */
   groupReturnRates: Record<string, number>;
   /** Asset group monthly savings are paid into; null spreads them across the mix */
@@ -398,6 +404,9 @@ export interface ForecastingSettingsAPI {
   pension_guarantee_enabled: boolean;
   pension_guarantee_amount: number;
   life_expectancy: number;
+  capital_gains_tax_pct: number;
+  taxable_gain_pct: number;
+  pension_tax_pct: number;
   group_return_rates: Record<string, number>;
   contribution_group: string | null;
   liability_terms: Record<string, LiabilityTerm>;
@@ -510,6 +519,8 @@ export interface ForecastingDerivedAPI {
   liability_terms: Record<string, LiabilityTerm>;
   /** What the stated terms work out to: derived payment, derived payoff date */
   liability_terms_resolved: Record<string, ResolvedLiabilityTerm>;
+  /** Share of a withdrawal lost to capital gains tax, as a percentage */
+  withdrawal_tax_drag_pct: number;
   swr_excluded_groups: string[];
   /** Capital the withdrawal rate applies to, after exclusions and debt */
   swr_base: number;

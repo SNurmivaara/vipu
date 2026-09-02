@@ -36,6 +36,9 @@ const DEFAULT_SETTINGS: ForecastingSettings = {
   pensionGuaranteeEnabled: false,
   pensionGuaranteeAmount: 990,
   lifeExpectancy: 95,
+  capitalGainsTaxPct: 30,
+  taxableGainPct: 60,
+  pensionTaxPct: 15,
   groupReturnRates: {},
   contributionGroup: null,
   liabilityTerms: {},
@@ -419,6 +422,48 @@ export function ForecastingPanel() {
             </>
           )}
 
+          {/* Taxes: retirement is funded from two taxed streams */}
+          <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
+            <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
+              Tax in retirement
+            </div>
+            <div className="text-xs text-gray-500 dark:text-gray-500 mb-2">
+              Selling to live on realises a capital gain, so the FIRE number is
+              grossed up by{" "}
+              <span className="font-medium">
+                {derived.withdrawalTaxDragPct.toFixed(1)}%
+              </span>{" "}
+              of every withdrawal. Set the taxable share to 0 to model an
+              untaxed wrapper.
+            </div>
+          </div>
+          <NumberInput
+            label="Capital gains tax %"
+            value={settings.capitalGainsTaxPct}
+            onChange={(v) => updateSetting("capitalGainsTaxPct", v)}
+            min={0}
+            max={60}
+            step={1}
+          />
+          <NumberInput
+            label="Taxable share of a sale %"
+            value={settings.taxableGainPct}
+            onChange={(v) => updateSetting("taxableGainPct", v)}
+            min={0}
+            max={100}
+            step={5}
+          />
+          {pensionActive && (
+            <NumberInput
+              label="Pension income tax %"
+              value={settings.pensionTaxPct}
+              onChange={(v) => updateSetting("pensionTaxPct", v)}
+              min={0}
+              max={60}
+              step={1}
+            />
+          )}
+
           {/* Pension (TyEL) section */}
           <div className="col-span-full border-t border-gray-200 dark:border-gray-700 pt-3 mt-1">
             <div className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-2">
@@ -531,7 +576,7 @@ export function ForecastingPanel() {
           sublabel={
             result.coastFireReached
               ? "Reached — can stop saving!"
-              : `${formatCurrencyRounded(result.coastFireNumber - derived.currentNetWorth)} to go`
+              : `${formatCurrencyRounded(result.coastFireNumber - derived.swrBase)} to go`
           }
           highlight={result.coastFireReached}
         />

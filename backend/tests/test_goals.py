@@ -1,5 +1,6 @@
 """Tests for goals API endpoints."""
 
+from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 
 
@@ -930,6 +931,65 @@ class TestSavingsGoalPace:
         assert progress["status"] == "behind"
         assert progress["recent_monthly"] == 100.0
         assert progress["recent_monthly"] < progress["required_monthly"]
+
+    def test_a_deadline_later_this_month_has_not_passed(self, client):
+        """Counting whole calendar months read three weeks out as zero months.
+
+        A goal due on the 28th, seen on the 2nd, is 26 days away. The old
+        arithmetic gave (year diff) * 12 + (month diff) = 0 and reported the
+        target date as passed.
+        """
+        client.post("/api/networth/categories/seed")
+        _add_snapshot(client, 1, 2026, 1, 1000)
+        _add_snapshot(client, 2, 2026, 1, 1100)
+        _add_snapshot(client, 3, 2026, 1, 1200)
+
+        # The last moment of the current calendar month: always still ahead,
+        # and always zero months away under the old arithmetic.
+        today = datetime.now(UTC)
+        last_day = monthrange(today.year, today.month)[1]
+        end_of_month = datetime(today.year, today.month, last_day, 23, 59, tzinfo=UTC)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": end_of_month.isoformat(),
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+
+        assert progress["status_reason"] != "Target date has passed"
+        assert progress["months_remaining"] > 0
+        # Still behind, but for the honest reason: 100/mo is nowhere near
+        assert progress["status"] == "behind"
+        assert progress["recent_monthly"] == 100.0
+        assert progress["required_monthly"] > progress["recent_monthly"]
+
+    def test_a_passed_deadline_still_reads_as_passed(self, client):
+        client.post("/api/networth/categories/seed")
+        _add_snapshot(client, 1, 2026, 1, 1000)
+
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Vacation Fund",
+                "goal_type": "savings_goal",
+                "target_value": 5000,
+                "category_id": 1,
+                "target_date": _target_in(-2),
+            },
+        )
+
+        progress = client.get("/api/goals/progress").json[0]
+
+        assert progress["status"] == "behind"
+        assert progress["status_reason"] == "Target date has passed"
+        assert progress["months_remaining"] == 0
 
     def test_no_target_date_has_reason(self, client):
         """Without a target date, status is None but a reason is given."""

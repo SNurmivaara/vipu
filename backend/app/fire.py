@@ -39,6 +39,40 @@ class FireInputs:
     pension_guarantee_enabled: bool = False
     pension_guarantee_amount: Decimal = Decimal("990.0")
     life_expectancy: int = 95
+    # Tax. Zero by default, so a model built without them is untaxed rather
+    # than silently taxed at someone else's rates; the persisted settings
+    # carry the Finnish defaults.
+    capital_gains_tax_pct: Decimal = Decimal("0")
+    taxable_gain_pct: Decimal = Decimal("0")
+    pension_tax_pct: Decimal = Decimal("0")
+
+    @property
+    def taxes(self) -> "TaxAssumptions":
+        return TaxAssumptions(
+            withdrawal_drag=withdrawal_tax_drag(
+                self.capital_gains_tax_pct, self.taxable_gain_pct
+            ),
+            pension_pct=self.pension_tax_pct,
+        )
+
+
+@dataclass(frozen=True)
+class TaxAssumptions:
+    """What the tax office takes out of a retirement income.
+
+    Retirement is funded from two taxed streams and the model charged neither.
+    Selling to live on realises a capital gain; a TyEL pension is taxed as
+    earned income. Both are effective rates the user sets, not a tax engine.
+    """
+
+    # Share of a sale lost to capital gains tax, as a fraction of the proceeds.
+    withdrawal_drag: Decimal = Decimal("0")
+    # Effective rate on pension income, as a percentage.
+    pension_pct: Decimal = Decimal("0")
+
+    @property
+    def active(self) -> bool:
+        return self.withdrawal_drag > 0 or self.pension_pct > 0
 
 
 @dataclass
@@ -156,6 +190,34 @@ def monthly_rate(annual_pct: Decimal) -> Decimal:
     intervening months. Twelve of these steps reproduce the annual rate.
     """
     return _decimal_power(1 + annual_pct / 100, Decimal("1") / 12) - 1
+
+
+def withdrawal_tax_drag(
+    capital_gains_tax_pct: Decimal, taxable_gain_pct: Decimal
+) -> Decimal:
+    """Share of a sale lost to capital gains tax, as a fraction of the proceeds.
+
+    Only the gain in a sale is taxed, not the whole withdrawal, so the drag is
+    the tax rate scaled by how much of a sale is gain. Tracking the real cost
+    basis month by month would need a purchase history the app does not keep;
+    one assumed gain share is the honest approximation, and it is a setting so
+    it can be argued with.
+
+    Finnish default: 30% capital gains on 60% of the proceeds, the share left
+    taxable by the 40% hankintameno-olettama on a holding of ten years or more.
+    That is 18%, and it is an upper bound, since a seller may use the actual
+    cost basis when it is kinder.
+    """
+    return (capital_gains_tax_pct / 100) * (taxable_gain_pct / 100)
+
+
+def gross_up(net_amount: Decimal, tax_drag: Decimal) -> Decimal:
+    """Sale needed to be left with ``net_amount`` once the tax is paid."""
+    if net_amount <= 0 or tax_drag <= 0:
+        return net_amount
+    if tax_drag >= 1:
+        return Decimal("Infinity")
+    return net_amount / (1 - tax_drag)
 
 
 def annuity_payment(balance: Decimal, annual_rate_pct: Decimal, months: int) -> Decimal:
@@ -414,15 +476,58 @@ class PortfolioState:
         return {g.name: g.balance for g in self._groups}
 
     def step(self, flow: Decimal = Decimal("0")) -> None:
-        """Advance one month: grow assets, service debt, apply the cash flow."""
+        """Advance one month of accumulation: grow, service debt, apply the flow.
+
+        Loan payments are not charged here. They are already out of the budget
+        surplus that ``flow`` carries, so charging them again would count them
+        twice. Only the payment a cleared loan no longer needs is credited
+        back, which is the raise you give yourself the month it finishes.
+        """
+        self._grow()
+        _paid, freed = self._amortize()
+        self._apply_flow(flow + freed)
+        self._age_inflation()
+
+    def step_drawdown(
+        self,
+        monthly_expenses: Decimal,
+        pension_monthly: Decimal = Decimal("0"),
+        tax_drag: Decimal = Decimal("0"),
+    ) -> None:
+        """Advance one month of retirement: grow, service debt, sell to cover.
+
+        There is no budget surplus in retirement, so the loans are funded from
+        the portfolio like everything else. Leaving them out let a mortgage
+        amortise itself with money that never left the portfolio.
+
+        ``tax_drag`` is the share of a sale lost to capital gains tax, so the
+        withdrawal is grossed up to leave the spending money intact. Pension is
+        income the portfolio does not have to provide and is netted off first;
+        a pension larger than the spending is reinvested, untaxed here because
+        it was never a sale.
+        """
+        self._grow()
+        paid, _freed = self._amortize()
+        need = gross_up(monthly_expenses + paid - pension_monthly, tax_drag)
+        self._apply_flow(-need)
+        self._age_inflation()
+
+    def _grow(self) -> None:
         for group, monthly in zip(self._groups, self._monthly, strict=True):
             group.balance = group.balance * (1 + monthly)
-        # A paid-off loan frees its payment, which then feeds the contributions.
-        self._apply_flow(flow + self._amortize())
+
+    def _age_inflation(self) -> None:
         self._inflation_factor *= 1 + self._monthly_inflation
 
-    def _amortize(self) -> Decimal:
-        """Service every debt for a month. Returns cash freed by paid-off loans."""
+    def _amortize(self) -> tuple[Decimal, Decimal]:
+        """Service every debt for a month.
+
+        Returns ``(paid, freed)``: the cash a payer actually had to find this
+        month, and the scheduled payment that was not needed. The two always
+        sum to the full schedule, so a caller can charge the real cost or
+        credit the saving without the part-month at payoff going astray.
+        """
+        paid = Decimal("0")
         freed = Decimal("0")
         for liability in self._liabilities:
             if liability.balance <= 0:
@@ -431,10 +536,14 @@ class PortfolioState:
             interest = liability.balance * liability.monthly_interest_rate
             liability.balance += interest - liability.monthly_payment
             if liability.balance <= 0:
-                # The final payment overshoots; the excess comes back as cash.
-                freed += -liability.balance
+                # The final payment overshoots; only the shortfall was needed.
+                overshoot = -liability.balance
+                paid += liability.monthly_payment - overshoot
+                freed += overshoot
                 liability.balance = Decimal("0")
-        return freed
+            else:
+                paid += liability.monthly_payment
+        return paid, freed
 
     def _apply_flow(self, flow: Decimal) -> None:
         if flow == 0:
@@ -691,14 +800,24 @@ def build_portfolio(
 # ---------------------------------------------------------------------------
 
 
-def calc_fire_number(annual_expenses: Decimal, swr_pct: Decimal) -> Decimal:
+def calc_fire_number(
+    annual_expenses: Decimal,
+    swr_pct: Decimal,
+    taxes: "TaxAssumptions | None" = None,
+) -> Decimal:
     """Calculate the FIRE number based on annual expenses and safe withdrawal rate.
 
-    FIRE Number = Annual Expenses / (SWR / 100)
+    FIRE Number = grossed-up annual expenses / (SWR / 100)
+
+    ``annual_expenses`` is what you spend. Funding it means selling more than
+    that, because the gain in each sale is taxed, so the withdrawal is grossed
+    up before the withdrawal rate is applied. At the Finnish default drag of
+    18% that is about 22% more capital than the untaxed figure.
     """
     if swr_pct <= 0:
         return Decimal("Infinity")
-    return annual_expenses / (swr_pct / 100)
+    drag = taxes.withdrawal_drag if taxes else Decimal("0")
+    return gross_up(annual_expenses, drag) / (swr_pct / 100)
 
 
 def calc_coast_fire_number(
@@ -869,6 +988,7 @@ def calc_pension_fire_number(
     pension_start_age: int,
     swr_pct: Decimal,
     real_annual_return: Decimal,
+    taxes: "TaxAssumptions | None" = None,
 ) -> Decimal:
     """Pension-adjusted FIRE number using two-phase SWR + pension model.
 
@@ -881,15 +1001,25 @@ def calc_pension_fire_number(
     at pension start.
     """
     r = real_annual_return
+    taxes = taxes or TaxAssumptions()
+    drag = taxes.withdrawal_drag
     phase1_years = max(Decimal("0"), Decimal(pension_start_age) - fire_age)
 
-    # Portfolio needed at pension start to sustain the gap indefinitely via SWR
-    phase2_annual_gap = max(Decimal("0"), annual_expenses - annual_pension)
+    # A TyEL statement quotes gross pension, while annual_expenses is what you
+    # actually spend. Comparing the two directly credited the tax office's
+    # share as if it were yours to live on.
+    net_annual_pension = annual_pension * (1 - taxes.pension_pct / 100)
+
+    # Portfolio needed at pension start to sustain the gap indefinitely via
+    # SWR, grossed up for the tax on the sales that fund it
+    phase2_annual_gap = max(Decimal("0"), annual_expenses - net_annual_pension)
     phase2_portfolio = (
-        phase2_annual_gap / (swr_pct / 100) if swr_pct > 0 else Decimal("Infinity")
+        gross_up(phase2_annual_gap, drag) / (swr_pct / 100)
+        if swr_pct > 0
+        else Decimal("Infinity")
     )
 
-    phase1_pv = pv_annuity(annual_expenses, phase1_years, r)
+    phase1_pv = pv_annuity(gross_up(annual_expenses, drag), phase1_years, r)
 
     # Discount phase 2 portfolio back to FIRE age
     if phase1_years > 0:
@@ -931,6 +1061,7 @@ def generate_pension_scenarios(
     annual_expenses: Decimal,
     swr_pct: Decimal,
     real_annual_return: Decimal,
+    taxes: "TaxAssumptions | None" = None,
 ) -> list[PensionScenario]:
     """Generate the 3 pension scenarios (early / normal / late)."""
     configs: list[tuple[PensionLabel, int]] = [
@@ -955,6 +1086,7 @@ def generate_pension_scenarios(
             pension_start_age,
             swr_pct,
             real_annual_return,
+            taxes,
         )
         scenarios.append(
             PensionScenario(
@@ -986,6 +1118,7 @@ def calc_fire_number_for_age(
     pension_full_age: int,
     pension_guarantee_enabled: bool = False,
     pension_guarantee_amount: Decimal = Decimal("990.0"),
+    taxes: "TaxAssumptions | None" = None,
 ) -> Decimal:
     """Calculate the FIRE number for a specific retirement age.
 
@@ -1023,6 +1156,7 @@ def calc_fire_number_for_age(
         pension_full_age,
         safe_withdrawal_rate,
         real_return,
+        taxes,
     )
 
 
@@ -1040,6 +1174,7 @@ def calc_pension_aware_years_to_fire(
     pension_guarantee_enabled: bool = False,
     pension_guarantee_amount: Decimal = Decimal("990.0"),
     portfolio: PortfolioState | None = None,
+    taxes: "TaxAssumptions | None" = None,
 ) -> tuple[Decimal, Decimal] | None:
     """Calculate earliest FIRE age with pension awareness.
 
@@ -1064,6 +1199,7 @@ def calc_pension_aware_years_to_fire(
         pension_full_age,
         pension_guarantee_enabled,
         pension_guarantee_amount,
+        taxes,
     )
     starting_base = portfolio.swr_base if portfolio is not None else current_net_worth
     if starting_base >= current_fire_number:
@@ -1091,6 +1227,7 @@ def calc_pension_aware_years_to_fire(
             pension_full_age,
             pension_guarantee_enabled,
             pension_guarantee_amount,
+            taxes,
         )
 
         if state.swr_base >= fire_number_at_age:
@@ -1182,7 +1319,9 @@ def generate_projections(
     def calc_fire_number_for_projection_age(retirement_age: Decimal) -> Decimal:
         """Calculate FIRE number for a specific retirement age."""
         if not has_pension:
-            return calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate)
+            return calc_fire_number(
+                inputs.annual_expenses, inputs.safe_withdrawal_rate, inputs.taxes
+            )
 
         return calc_fire_number_for_age(
             retirement_age,
@@ -1196,6 +1335,7 @@ def generate_projections(
             inputs.pension_full_age,
             inputs.pension_guarantee_enabled,
             inputs.pension_guarantee_amount,
+            inputs.taxes,
         )
 
     def calc_coast_fire_number_for_projection_age(projection_age: Decimal) -> Decimal:
@@ -1215,7 +1355,7 @@ def generate_projections(
                 Decimal(target_retirement_age) - Decimal(inputs.current_age),
             )
             fire_num = calc_fire_number(
-                inputs.annual_expenses, inputs.safe_withdrawal_rate
+                inputs.annual_expenses, inputs.safe_withdrawal_rate, inputs.taxes
             )
             return calc_coast_fire_number(
                 fire_num, real_return_pct, years_to_retirement, coast_state
@@ -1274,10 +1414,14 @@ def generate_projections(
         if state.total <= 0:
             state.deplete()
             return
-        flow = -monthly_expenses
-        if age >= pension_start_age:
-            flow += pension_monthly
-        state.step(flow)
+        # A TyEL statement quotes gross pension; only what survives the tax is
+        # money the portfolio does not have to provide.
+        received = (
+            pension_monthly * (1 - inputs.taxes.pension_pct / 100)
+            if age >= pension_start_age
+            else Decimal("0")
+        )
+        state.step_drawdown(monthly_expenses, received, inputs.taxes.withdrawal_drag)
 
     for m in range(1, total_months + 1):
         age = Decimal(inputs.current_age) + Decimal(m) / 12
@@ -1412,6 +1556,7 @@ def calculate_fire(
             inputs.annual_expenses,
             inputs.safe_withdrawal_rate,
             real_return,
+            inputs.taxes,
         )
 
         # Apply guarantee floor to each scenario's pension
@@ -1428,6 +1573,7 @@ def calculate_fire(
                             scenario.pension_start_age,
                             inputs.safe_withdrawal_rate,
                             real_return,
+                            inputs.taxes,
                         ),
                         2,
                     )
@@ -1451,6 +1597,7 @@ def calculate_fire(
                 pension_full_age,
                 guarantee_enabled,
                 guarantee_amount,
+                inputs.taxes,
             ),
             0,
         )
@@ -1459,6 +1606,10 @@ def calculate_fire(
             fire_number,
             real_return_pct,
             max(Decimal("0"), retirement_age - inputs.current_age),
+            # Same portfolio the non-pension branch passes. Without it the
+            # coast number falls back to the blended rate and asks for more
+            # capital than the drifting mix actually needs.
+            portfolio,
         )
 
         crossover_age = (
@@ -1484,7 +1635,10 @@ def calculate_fire(
         )
     else:
         fire_number = _decimal_round(
-            calc_fire_number(inputs.annual_expenses, inputs.safe_withdrawal_rate), 0
+            calc_fire_number(
+                inputs.annual_expenses, inputs.safe_withdrawal_rate, inputs.taxes
+            ),
+            0,
         )
         # No pension: the FIRE number is independent of retirement age, so the
         # "retire now" figure is identical.
@@ -1523,6 +1677,7 @@ def calculate_fire(
             inputs.pension_guarantee_enabled,
             inputs.pension_guarantee_amount,
             portfolio,
+            inputs.taxes,
         )
         years_to_fire = pension_aware_result[0] if pension_aware_result else None
     else:
