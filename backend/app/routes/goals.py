@@ -558,6 +558,10 @@ def _get_category_amount_in_snapshot(
 # Minimum snapshots before we trust a measured saving pace.
 MIN_MONTHS_FOR_PACE = 3
 
+# Average Gregorian month, so "months remaining" does not lurch with the
+# length of the month the deadline happens to fall in.
+SECONDS_PER_MONTH = Decimal("2629746")
+
 
 def _months_between(later: NetWorthSnapshot, earlier: NetWorthSnapshot) -> int:
     """Whole months from the earlier snapshot to the later one."""
@@ -643,18 +647,21 @@ def _analyze_pace(
         return pace
 
     now = datetime.now(tz=goal.target_date.tzinfo)
-    months_remaining = (goal.target_date.year - now.year) * 12 + (
-        goal.target_date.month - now.month
-    )
-    pace["months_remaining"] = months_remaining
-
-    if goal.target_date <= now or months_remaining <= 0:
+    if goal.target_date <= now:
+        pace["months_remaining"] = 0.0
         pace["status"] = "behind"
         pace["status_reason"] = "Target date has passed"
         return pace
 
+    # Measured from the actual time left, not from whole calendar months.
+    # Counting months made a deadline later this month zero months away, so a
+    # goal due in three weeks reported that its date had already passed.
+    seconds_left = Decimal(str((goal.target_date - now).total_seconds()))
+    months_remaining = seconds_left / SECONDS_PER_MONTH
+    pace["months_remaining"] = round(float(months_remaining), 1)
+
     remaining = target_value - current_value
-    required_monthly = remaining / Decimal(months_remaining)
+    required_monthly = remaining / months_remaining
     pace["required_monthly"] = float(required_monthly)
 
     # Need enough history to measure a trustworthy pace.
@@ -695,7 +702,7 @@ def calculate_goal_progress(
     - required_monthly: monthly amount needed to hit the target by target_date
     - recent_monthly: actual recent monthly saving pace (from snapshots)
     - projected_value: value at target_date if the recent pace continues
-    - months_remaining: whole months until target_date
+    - months_remaining: months until target_date, part months included
     - data_months: number of months of snapshot data available
     - category_name: category name (for savings_goal type)
     """
