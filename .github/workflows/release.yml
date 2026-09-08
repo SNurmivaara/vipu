@@ -26,6 +26,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      mcp: ${{ steps.filter.outputs.mcp }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +51,8 @@ jobs:
               - 'backend/**'
             frontend:
               - 'frontend/**'
+            mcp:
+              - 'mcp-server/**'
 
   # Backend builds - parallel native builds per architecture
   build-backend-amd64:
@@ -132,6 +135,88 @@ jobs:
           docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-backend:latest \
             ghcr.io/snurmivaara/vipu-backend:${TAG}-amd64 \
             ghcr.io/snurmivaara/vipu-backend:${TAG}-arm64
+
+  # MCP server builds - parallel native builds per architecture
+  build-mcp-amd64:
+    name: MCP (amd64)
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true' || inputs.force_build == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/snurmivaara/vipu-mcp:${{ inputs.tag || github.ref_name }}-amd64
+          cache-from: type=gha,scope=mcp-amd64
+          cache-to: type=gha,mode=max,scope=mcp-amd64
+
+  build-mcp-arm64:
+    name: MCP (arm64)
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true' || inputs.force_build == true
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          push: true
+          platforms: linux/arm64
+          tags: ghcr.io/snurmivaara/vipu-mcp:${{ inputs.tag || github.ref_name }}-arm64
+          cache-from: type=gha,scope=mcp-arm64
+          cache-to: type=gha,mode=max,scope=mcp-arm64
+
+  merge-mcp-manifest:
+    name: MCP Manifest
+    needs: [build-mcp-amd64, build-mcp-arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-mcp:${TAG} \
+            ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64 \
+            ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64
+          docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-mcp:latest \
+            ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64 \
+            ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64
 
   # Frontend builds - parallel native builds per architecture
   build-frontend-amd64:

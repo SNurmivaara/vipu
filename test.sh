@@ -19,6 +19,24 @@ uv run pytest
 cd ..
 
 echo ""
+echo "=== MCP Server Checks ==="
+cd mcp-server
+
+echo ">> Black (formatting)"
+uv run black --check .
+
+echo ">> Ruff (linting)"
+uv run ruff check .
+
+echo ">> Mypy (type checking)"
+uv run mypy .
+
+echo ">> Pytest (tests)"
+uv run pytest
+
+cd ..
+
+echo ""
 echo "=== Frontend Checks ==="
 cd frontend
 
