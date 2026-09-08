@@ -53,5 +53,25 @@ services:
     depends_on:
       - backend
 
+  mcp:
+    image: ghcr.io/snurmivaara/vipu-mcp:${VERSION:-latest}
+    container_name: vipu-mcp
+    restart: unless-stopped
+    ports:
+      - "${MCP_PORT:-5100}:5100"
+    environment:
+      - VIPU_API_URL=http://backend:5000
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:?MCP_AUTH_TOKEN must be set}
+      - FLASK_ENV=production
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5100/health')"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
 volumes:
   vipu-db:

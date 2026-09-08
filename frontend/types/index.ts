@@ -537,3 +537,12 @@ export interface ForecastingDerivedAPI {
 export interface ForecastingProjectionAPI extends FireResultAPI {
   derived: ForecastingDerivedAPI;
 }
+
+// Response of GET /api/summary: the whole app state as one markdown digest,
+// built on the backend so the web UI, the MCP server and anything else pasting
+// it into a chat all read the same document.
+export interface FinancialSummary {
+  format_version: string;
+  generated_at: string;
+  markdown: string;
+}

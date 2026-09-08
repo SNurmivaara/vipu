@@ -4,6 +4,7 @@ from decimal import Decimal
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
 from marshmallow import Schema, ValidationError, fields, post_load, validate
+from sqlalchemy.orm import Session
 
 from app import get_session
 from app.fire import (
@@ -340,8 +341,7 @@ def calculate_fire_projection() -> Response | tuple[Response, int]:
     return jsonify(result_dict)
 
 
-@bp.get("/api/forecasting/projection")
-def get_forecasting_projection() -> Response:
+def build_projection(session: Session) -> dict:
     """Compute FIRE projections from persisted settings, snapshots and budget.
 
     All FIRE inputs (weighted return, monthly savings, annual expenses, pension
@@ -352,8 +352,8 @@ def get_forecasting_projection() -> Response:
 
     Returns the same shape as POST /api/forecasting/calculate, plus a "derived"
     block exposing the inputs used (and the resolved per-group return rates).
+    Decimals are already floats, so the payload is JSON-ready.
     """
-    session = get_session()
     settings = get_or_create_forecasting_settings()
 
     # Latest net worth snapshot -> current net worth + asset allocation
@@ -498,4 +498,10 @@ def get_forecasting_projection() -> Response:
     }
 
     # Convert all Decimals (result + derived) to float in one pass.
-    return jsonify(decimal_to_float(result_dict))
+    return {key: decimal_to_float(value) for key, value in result_dict.items()}
+
+
+@bp.get("/api/forecasting/projection")
+def get_forecasting_projection() -> Response:
+    """Compute FIRE projections from persisted settings, snapshots and budget."""
+    return jsonify(build_projection(get_session()))

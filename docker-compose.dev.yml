@@ -56,5 +56,21 @@ services:
     depends_on:
       - backend
 
+  mcp:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile.dev
+    container_name: vipu-mcp-dev
+    ports:
+      - "5100:5100"
+    environment:
+      - VIPU_API_URL=http://backend:5000
+      - MCP_AUTH_TOKEN=dev-mcp-token-not-for-production
+      - FLASK_ENV=development
+    volumes:
+      - ./mcp-server/vipu_mcp:/app/vipu_mcp:ro
+    depends_on:
+      - backend
+
 volumes:
   postgres-dev-data:

@@ -401,8 +401,7 @@ def _project_completions(
     return completions
 
 
-@bp.get("/api/goals/roadmap")
-def get_roadmap() -> Response:
+def build_roadmap(session: Session, today: date) -> dict:
     """The sequential financial roadmap, funded by the monthly budget surplus.
 
     Active savings_goal/debt_payoff goals in priority order form a waterfall:
@@ -411,8 +410,6 @@ def get_roadmap() -> Response:
     unfinished step until it completes, then cascades to the next. Returns
     per-step progress and projected completion dates at the current surplus.
     """
-    session = get_session()
-
     goals = (
         session.query(Goal)
         .filter(Goal.goal_type.in_(ROADMAP_TYPES), Goal.is_active.is_(True))
@@ -426,7 +423,6 @@ def get_roadmap() -> Response:
     snapshots = _get_snapshots(session, 1)
     latest = snapshots[0] if snapshots else None
 
-    today = date.today()
     settings = session.query(BudgetSettings).first()
     payday_day = settings.payday_day if settings else 25
 
@@ -521,20 +517,24 @@ def get_roadmap() -> Response:
             }
         )
 
-    return jsonify(
-        {
-            "surplus_monthly": float(surplus),
-            # Starting stock the plan is projected from: net cash across all
-            # accounts (cards assumed paid in full) plus pending one-time items,
-            # clamped so spare cash is never a head start. Zero or negative.
-            "starting_position": float(starting_position),
-            "pending_one_time_net": float(one_time_net),
-            "shortfall_months": (
-                round(float(shortfall_months), 1) if shortfall_months else 0.0
-            ),
-            "goals": steps,
-        }
-    )
+    return {
+        "surplus_monthly": float(surplus),
+        # Starting stock the plan is projected from: net cash across all
+        # accounts (cards assumed paid in full) plus pending one-time items,
+        # clamped so spare cash is never a head start. Zero or negative.
+        "starting_position": float(starting_position),
+        "pending_one_time_net": float(one_time_net),
+        "shortfall_months": (
+            round(float(shortfall_months), 1) if shortfall_months else 0.0
+        ),
+        "goals": steps,
+    }
+
+
+@bp.get("/api/goals/roadmap")
+def get_roadmap() -> Response:
+    """The sequential financial roadmap, funded by the monthly budget surplus."""
+    return jsonify(build_roadmap(get_session(), date.today()))
 
 
 @bp.put("/api/goals/reorder")
@@ -803,9 +803,8 @@ def calculate_goal_progress(
     }
 
 
-@bp.get("/api/goals/progress")
-def get_goals_progress() -> Response:
-    """Get progress for all active goals.
+def build_goal_progress(session: Session) -> list[dict]:
+    """Progress for all active goals.
 
     Calculates current progress based on:
     - net_worth: Latest net worth snapshot value
@@ -814,8 +813,6 @@ def get_goals_progress() -> Response:
 
     Returns a list of goal progress objects.
     """
-    session = get_session()
-
     # Get all active goals
     goals = (
         session.query(Goal)
@@ -825,12 +822,15 @@ def get_goals_progress() -> Response:
     )
 
     if not goals:
-        return jsonify([])
+        return []
 
     # Get snapshots (enough for calculating monthly changes)
     snapshots = _get_snapshots(session, 12)
 
-    # Calculate progress for each goal
-    progress_list = [calculate_goal_progress(goal, snapshots) for goal in goals]
+    return [calculate_goal_progress(goal, snapshots) for goal in goals]
 
-    return jsonify(progress_list)
+
+@bp.get("/api/goals/progress")
+def get_goals_progress() -> Response:
+    """Get progress for all active goals."""
+    return jsonify(build_goal_progress(get_session()))

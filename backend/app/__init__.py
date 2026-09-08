@@ -81,6 +81,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
         networth,
         seed,
         settings,
+        summary,
     )
 
     app.register_blueprint(health.bp)
@@ -94,6 +95,7 @@ def create_app(config_class: type | None = None) -> APIFlask:
     app.register_blueprint(networth.bp)
     app.register_blueprint(goals.bp)
     app.register_blueprint(forecasting.bp)
+    app.register_blueprint(summary.bp)
 
     @app.teardown_appcontext
     def shutdown_session(exception: BaseException | None = None) -> None:

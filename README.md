@@ -61,11 +61,20 @@ For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu
 - Seed data for demos
 - Prefill snapshots from budget account balances
 
+### MCP Server
+- Talk to Vipu from Claude Desktop or Claude Code instead of filling in forms
+- Read the whole position as one digest, record balances and snapshots, run
+  what-if projections
+- Bearer-token authenticated, served from its own container
+- See [MCP Server](#mcp-server-1) below and
+  [`mcp-server/README.md`](mcp-server/README.md)
+
 ## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
 | Backend | Python 3.11+, APIFlask, SQLAlchemy |
+| MCP Server | Python 3.11+, MCP SDK, httpx, uvicorn |
 | Database | PostgreSQL |
 | Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | Charts | Recharts |
@@ -88,13 +97,14 @@ cd vipu
 
 # Create environment file
 cp .env.example .env
-# Edit .env with your own SECRET_KEY and POSTGRES_PASSWORD
+# Edit .env with your own SECRET_KEY, POSTGRES_PASSWORD and MCP_AUTH_TOKEN
 
 # Start all services
 docker compose up
 
 # Frontend: http://localhost:3000
 # Backend API: http://localhost:5000
+# MCP server: http://localhost:5100
 ```
 
 ### Verify it works
@@ -136,10 +146,11 @@ docker compose -f docker-compose.dev.yml up --build
 
 # Frontend: http://localhost:3000 (hot reload enabled)
 # Backend API: http://localhost:5000 (hot reload enabled)
+# MCP server: http://localhost:5100 (hot reload enabled)
 # API Docs: http://localhost:5000/docs
 ```
 
-Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`) and backend (`app/`) directories will automatically reload.
+Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`), backend (`app/`) and MCP server (`vipu_mcp/`) directories will automatically reload.
 
 ```bash
 # Stop development environment
@@ -201,6 +212,35 @@ uv run black --check .
 uv run mypy .
 ```
 
+### MCP Server (without Docker)
+
+```bash
+cd mcp-server
+
+# Install dependencies (includes the backend, for the tests)
+uv sync --extra dev
+
+# Run against a local backend
+MCP_AUTH_TOKEN=dev-token uv run uvicorn vipu_mcp.server:create_app \
+  --factory --host 0.0.0.0 --port 5100 --reload
+
+# Run tests
+uv run pytest
+
+# Linting and formatting
+uv run ruff check .
+uv run black --check .
+uv run mypy .
+```
+
+Inspect the tool surface interactively:
+
+```bash
+npx @modelcontextprotocol/inspector
+# Transport: Streamable HTTP, URL http://localhost:5100/mcp
+# Header: Authorization: Bearer dev-token
+```
+
 ### Database
 
 The project uses PostgreSQL. With Docker Compose, it runs on port 5433 (to avoid conflicts with local PostgreSQL).
@@ -209,6 +249,98 @@ The project uses PostgreSQL. With Docker Compose, it runs on port 5433 (to avoid
 # Connect to the database (when using Docker)
 docker compose exec postgres psql -U vipu -d vipu
 ```
+
+## MCP Server
+
+Vipu ships an [MCP](https://modelcontextprotocol.io) server so the monthly
+ritual can happen in a conversation rather than through forms. It runs as its
+own container on port 5100, calls the REST API, and stores nothing itself.
+
+Full details, including the tool surface and the design rules behind it, are in
+[`mcp-server/README.md`](mcp-server/README.md).
+
+### Set a token
+
+`MCP_AUTH_TOKEN` is required and has no default, the same fail-fast treatment
+`SECRET_KEY` and `POSTGRES_PASSWORD` already get:
+
+```bash
+echo "MCP_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
+docker compose up -d
+curl -s localhost:5100/health                  # {"status": "ok"}
+curl -si -X POST localhost:5100/mcp | head -1  # HTTP/1.1 401 Unauthorized
+```
+
+### Expose it through the tunnel
+
+The Cloudflare tunnel configuration lives outside this repository. Add an
+ingress rule mapping the MCP hostname to the container, above the catch-all:
+
+```yaml
+ingress:
+  - hostname: vipu.<domain>
+    service: http://frontend:3000
+  - hostname: vipu-mcp.<domain>
+    service: http://mcp:5100
+  - service: http_status:404
+```
+
+Then confirm the token is what gates it:
+
+```bash
+curl -si -X POST https://vipu-mcp.<domain>/mcp | head -1   # 401
+```
+
+### Connect Claude Desktop
+
+Desktop's custom-connector UI has no field for arbitrary headers, so the static
+bearer token goes through the [`mcp-remote`](https://www.npmjs.com/package/mcp-remote)
+bridge. In `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "vipu": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://vipu-mcp.<domain>/mcp",
+               "--header", "Authorization:${VIPU_AUTH}"],
+      "env": { "VIPU_AUTH": "Bearer <token>" }
+    }
+  }
+}
+```
+
+The colon with no following space is the documented workaround for
+`mcp-remote`'s argument splitting. Putting the value in `env` keeps the secret
+out of the args list.
+
+Restart Desktop, then ask "how am I doing this month?".
+
+### Connect Claude Code
+
+No bridge needed; it takes `--header` directly:
+
+```bash
+claude mcp add --transport http vipu https://vipu-mcp.<domain>/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+### Prompts
+
+Claude Desktop shows the server's prompts in its picker. Three ship with it:
+`monthly_review` walks the current position and ends with what changed since
+the last snapshot, `record_the_month` drives the recording ritual in the only
+order that is correct (balances, then the budget snapshot, then net worth), and
+`what_if` turns a proposal in plain language into a projection delta. Every
+argument is optional.
+
+Two resources, `vipu://summary` and `vipu://budget`, let a client attach state
+to a conversation without spending a tool call.
+
+### Read-only mode
+
+Set `VIPU_MCP_READ_ONLY=1` on the container to unregister every write tool.
+Useful when pointing a new client at live data for the first time.
 
 ## Contributing
 
