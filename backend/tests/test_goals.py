@@ -1289,21 +1289,32 @@ class TestRoadmap:
                 date.fromisoformat(card["start"]), date.fromisoformat(card["end"])
             )
 
-        assert float(funding) == card["net"]
+        assert float(funding.net) == card["net"]
 
     def test_a_step_completes_when_the_money_actually_lands(self, client, monkeypatch):
-        """The next paycheck covers the step, so it completes on that payday.
+        """A lump lands in one period and finishes the step in that period.
 
-        At the smoothed 2 500/mo the annual bill drags every month down and this
-        goal would have waited until 2026-08-25, even though the June paycheck
-        arrives long before the July bill does.
+        One-time items are left out of the smoothed rate altogether, so at
+        2 500/mo the bonus does nothing for this goal at all. The walk banks the
+        period it falls in and completes on that period's payday.
         """
         self._freeze(monkeypatch, 2026, 6, 10)
         self._annual_bill_budget(client)
+        client.post(
+            "/api/income",
+            json={
+                "name": "Bonus",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": "2026-08-01",
+            },
+        )
         self._goal(client, target=3900)
 
         data = client.get("/api/goals/roadmap").json
-        assert data["goals"][0]["projected_completion_date"] == "2026-06-25"
+        # Without the bonus the same goal waits until 2026-10-25
+        assert data["goals"][0]["projected_completion_date"] == "2026-08-25"
 
     def test_a_yearly_bill_delays_the_step_it_lands_on(self, client, monkeypatch):
         """The other side of the same coin: a step that isn't reached before the
@@ -1315,7 +1326,7 @@ class TestRoadmap:
 
         data = client.get("/api/goals/roadmap").json
         # Smoothed, 8 000 at 2 500/mo would land on 2026-09-25
-        assert data["goals"][0]["projected_completion_date"] == "2026-10-25"
+        assert data["goals"][0]["projected_completion_date"] == "2026-11-25"
 
     def test_projection_starts_from_zero_when_square(self, client, monkeypatch):
         """No cash and no one-time items: the plan starts from a clean zero."""
@@ -1568,6 +1579,100 @@ class TestRoadmap:
         done = client.get("/api/goals/roadmap").json["goals"][0]
         completion = date.fromisoformat(done["projected_completion_date"])
         assert completion > tomorrow
+
+    def test_the_paycheck_at_the_rollover_is_not_the_plan_s_money(
+        self, client, monkeypatch
+    ):
+        """A part-period cannot bank a whole month's pay against a few days
+        of bills.
+
+        3 830 landing on the 15th against 3 622.34 of rent due on the 1st is a
+        207.66 period. Standing on the 8th, the part-period ahead of us holds
+        the entire paycheck and none of the rent, which was paid a week ago out
+        of cash the plan has deliberately disclaimed. Banking it settled two
+        goals, 3 829.70 between them, on that first payday.
+        """
+        self._freeze(monkeypatch, 2026, 9, 8)
+        client.put("/api/settings", json={"payday_day": 15})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 3830,
+                "is_taxed": False,
+                "due_day": 15,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 3622.34, "due_day": 1}
+        )
+        client.post("/api/accounts", json={"name": "Checking", "balance": 199.06})
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Stable savings",
+                "goal_type": "savings_goal",
+                "target_value": 2000,
+                "current_amount": 170.30,
+            },
+        )
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Alps 2027",
+                "goal_type": "savings_goal",
+                "target_value": 2000,
+                "current_amount": 0,
+            },
+        )
+
+        # What the front page says the plan has to work with
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["unallocated_next_period"] == 207.66
+
+        first, second = client.get("/api/goals/roadmap").json["goals"]
+        assert first["projected_completion_date"] != "2026-09-15"
+        assert second["projected_completion_date"] != "2026-09-15"
+        # 1 829.70 remaining at 207.66 a period is nine paydays, not one
+        assert first["projected_completion_date"] >= "2027-05-15"
+
+    def _payday_salary_budget(self, client):
+        """3 830 landing on the 15th, 3 622.34 of rent due on the 1st.
+
+        A 207.66 period, with the pay arriving on the payday that closes it.
+        """
+        client.put("/api/settings", json={"payday_day": 15})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 3830,
+                "is_taxed": False,
+                "due_day": 15,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 3622.34, "due_day": 1}
+        )
+
+    def test_the_rollover_does_not_move_the_projection(self, client, monkeypatch):
+        """Standing on payday reaches the same date as standing the day before.
+
+        The day before, the part-period ahead of us is a stub the plan can't
+        bank; on payday it is a whole period and all of it counts. Both have to
+        put the first period's money on the same day, or the projection lurches
+        every time a payday passes.
+        """
+        self._freeze(monkeypatch, 2026, 9, 14)
+        self._payday_salary_budget(client)
+        self._goal(client, target=207.66)
+        eve = client.get("/api/goals/roadmap").json["goals"][0]
+
+        self._freeze(monkeypatch, 2026, 9, 15)
+        payday = client.get("/api/goals/roadmap").json["goals"][0]
+
+        assert eve["projected_completion_date"] == "2026-10-15"
+        assert payday["projected_completion_date"] == "2026-10-15"
 
 
 class TestReorder:
