@@ -95,6 +95,22 @@ when testing against live data.
 | `record_net_worth` | `POST`/`PUT /api/networth`, taking `{category_name: amount}` |
 | `settle_expense` / `settle_income` | `PUT /api/{expenses,income}/<id>/occurrence` |
 
+**Plan**
+
+| Tool | Backing call |
+| --- | --- |
+| `project_fire` | `POST /api/forecasting/calculate`. The what-if tool. |
+| `forecast_net_worth` | `GET /api/networth/forecast` |
+| `update_forecasting_settings` | `PUT /api/forecasting/settings` |
+| `update_budget_settings` | `PUT /api/settings` |
+
+`project_fire` computes and stores nothing, so it stays available in read-only
+mode alongside `forecast_net_worth`. It reports its result as a delta against a
+baseline run of the same endpoint rather than against `get_fire_projection`:
+the stored projection compounds each asset group at its own rate and amortises
+debt separately, so the two models disagree on levels for identical inputs and
+a cross-model comparison would credit the difference to the change being tested.
+
 ## What is deliberately not exposed
 
 `POST /api/reset`, `/api/networth/reset`, `/api/import`, `/api/seed`,

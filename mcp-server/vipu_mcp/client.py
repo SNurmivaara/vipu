@@ -223,3 +223,38 @@ class VipuClient:
                 {"occurrence_date": occurrence_date, "settled": settled},
             )
         )
+
+    # -- plan -------------------------------------------------------------
+
+    def get_forecasting_settings(self) -> dict:
+        """GET /api/forecasting/settings."""
+        return dict(self._get("/api/forecasting/settings"))
+
+    def calculate_fire(self, inputs: dict[str, Any]) -> dict:
+        """POST /api/forecasting/calculate.
+
+        Computes from the posted body and stores nothing, which is what makes
+        it usable as a what-if.
+        """
+        return dict(self._post("/api/forecasting/calculate", inputs))
+
+    def forecast_net_worth(self, period: str, months_ahead: int) -> dict:
+        """GET /api/networth/forecast."""
+        return dict(
+            self._get(
+                "/api/networth/forecast",
+                params={"period": period, "months_ahead": months_ahead},
+            )
+        )
+
+    def update_forecasting_settings(self, fields: dict[str, Any]) -> dict:
+        """PUT /api/forecasting/settings."""
+        return dict(self._put("/api/forecasting/settings", fields))
+
+    def get_budget_settings(self) -> dict:
+        """GET /api/settings."""
+        return dict(self._get("/api/settings"))
+
+    def update_budget_settings(self, fields: dict[str, Any]) -> dict:
+        """PUT /api/settings."""
+        return dict(self._put("/api/settings", fields))
