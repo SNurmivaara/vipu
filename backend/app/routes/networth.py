@@ -486,16 +486,20 @@ def _validate_snapshot_data(data: dict) -> tuple[bool, str | None]:
     return True, None
 
 
-@bp.get("/api/networth")
-def list_snapshots() -> Response:
-    """List all net worth snapshots, sorted by date descending."""
-    session = get_session()
+def list_snapshot_dicts(session: Session) -> list[dict]:
+    """All net worth snapshots, newest first."""
     snapshots = (
         session.query(NetWorthSnapshot)
         .order_by(NetWorthSnapshot.year.desc(), NetWorthSnapshot.month.desc())
         .all()
     )
-    return jsonify([s.to_dict() for s in snapshots])
+    return [s.to_dict() for s in snapshots]
+
+
+@bp.get("/api/networth")
+def list_snapshots() -> Response:
+    """List all net worth snapshots, sorted by date descending."""
+    return jsonify(list_snapshot_dicts(get_session()))
 
 
 @bp.get("/api/networth/<int:year>/<int:month>")

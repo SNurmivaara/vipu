@@ -240,15 +240,17 @@ def occurrence_entry(
     return entry
 
 
-@bp.get("/api/budget/current")
-def get_current_budget() -> Response:
-    """Get current budget state with calculated totals.
+def build_budget_payload(session: Session, today: date) -> dict:
+    """Current budget state with calculated totals.
 
     Returns all income, accounts, expenses, settings, and computed totals.
     Includes deadline-aware calculations for amounts due before next payday.
-    """
-    session = get_session()
 
+    Performs the housekeeping GET /api/budget/current has always done as a side
+    effect: occurrence overrides the calendar has caught up with are cleared and
+    past ephemeral items archived, then committed. Callers depend on that, so it
+    lives here rather than in the handler.
+    """
     # Get or create settings
     settings = session.query(BudgetSettings).first()
     if not settings:
@@ -261,7 +263,6 @@ def get_current_budget() -> Response:
     accounts = session.query(Account).order_by(Account.name).all()
     expenses = session.query(ExpenseItem).order_by(ExpenseItem.name).all()
 
-    today = date.today()
     now = datetime.now()
     period_start = get_previous_payday(today, settings.payday_day)
 
@@ -452,58 +453,66 @@ def get_current_budget() -> Response:
         entry["can_settle"] = checkpoint is not None
         income_list.append(entry)
 
-    return jsonify(
-        {
-            "settings": settings.to_dict(),
-            "income": income_list,
-            "accounts": [a.to_dict() for a in accounts],
-            "expenses": [e.to_dict() for e in active_expenses],
-            "archived_income": [i.to_dict() for i in archived_income],
-            "archived_expenses": [e.to_dict() for e in archived_expenses],
-            "totals": {
-                # Existing totals (backward compat)
-                "gross_income": float(gross_income),
-                "net_income": float(net_income),
-                "current_balance": float(current_balance),
-                # Split view: cash in hand, and what the cards owe against it
-                "cash_balance": float(cash_balance),
-                "card_debt": float(card_debt),
-                "total_expenses": float(total_expenses),
-                "net_position": float(net_position),
-                # Frequency-normalized monthly rates (one-time items excluded)
-                "monthly_expenses": float(totals["monthly_expenses"]),
-                "monthly_net_income": float(totals["monthly_net_income"]),
-                "monthly_surplus": float(totals["monthly_surplus"]),
-                # The lowest the cash gets while the two periods below play out
-                "cash_low_point": {
-                    "date": low_date.isoformat(),
-                    "balance": float(low_balance),
-                },
-                # The two periods, each straight off the shared calculator
-                "period_current": period_dict(current_period),
-                "period_next": period_dict(next_period),
-                # Deadline-aware totals, flattened from the same two periods
-                "next_payday": next_payday.isoformat(),
-                "expenses_before_payday": float(current_period.bills),
-                "income_before_payday": float(current_period.money_in),
-                "savings_before_payday": float(current_period.savings),
-                "cc_payments_before_payday": float(current_period.card_payments),
-                # Next period totals (payday to following payday)
-                "next_period_end": next_period_end.isoformat(),
-                "expenses_next_period": float(next_period.bills),
-                "savings_next_period": float(next_period.savings),
-                "cc_payments_next_period": float(next_period.card_payments),
-                "income_next_period": float(next_period.money_in),
-                # Next period's own money, less next period's obligations
-                "unallocated_next_period": float(next_period.net),
-                # Expense IDs for each period (for frontend filtering) - backward compat
-                "expenses_before_payday_ids": expenses_before_payday_ids,
-                "expenses_next_period_ids": expenses_next_period_ids,
-                "expenses_future_ids": expenses_future_ids,
-                # Expenses with occurrence dates for each period
-                "expenses_before_payday_list": expenses_before_payday_list,
-                "expenses_next_period_list": expenses_next_period_list,
-                "expenses_future_list": expenses_future_list,
+    return {
+        "settings": settings.to_dict(),
+        "income": income_list,
+        "accounts": [a.to_dict() for a in accounts],
+        "expenses": [e.to_dict() for e in active_expenses],
+        "archived_income": [i.to_dict() for i in archived_income],
+        "archived_expenses": [e.to_dict() for e in archived_expenses],
+        "totals": {
+            # Existing totals (backward compat)
+            "gross_income": float(gross_income),
+            "net_income": float(net_income),
+            "current_balance": float(current_balance),
+            # Split view: cash in hand, and what the cards owe against it
+            "cash_balance": float(cash_balance),
+            "card_debt": float(card_debt),
+            "total_expenses": float(total_expenses),
+            "net_position": float(net_position),
+            # Frequency-normalized monthly rates (one-time items excluded)
+            "monthly_expenses": float(totals["monthly_expenses"]),
+            "monthly_net_income": float(totals["monthly_net_income"]),
+            "monthly_surplus": float(totals["monthly_surplus"]),
+            # The lowest the cash gets while the two periods below play out
+            "cash_low_point": {
+                "date": low_date.isoformat(),
+                "balance": float(low_balance),
             },
-        }
-    )
+            # The two periods, each straight off the shared calculator
+            "period_current": period_dict(current_period),
+            "period_next": period_dict(next_period),
+            # Deadline-aware totals, flattened from the same two periods
+            "next_payday": next_payday.isoformat(),
+            "expenses_before_payday": float(current_period.bills),
+            "income_before_payday": float(current_period.money_in),
+            "savings_before_payday": float(current_period.savings),
+            "cc_payments_before_payday": float(current_period.card_payments),
+            # Next period totals (payday to following payday)
+            "next_period_end": next_period_end.isoformat(),
+            "expenses_next_period": float(next_period.bills),
+            "savings_next_period": float(next_period.savings),
+            "cc_payments_next_period": float(next_period.card_payments),
+            "income_next_period": float(next_period.money_in),
+            # Next period's own money, less next period's obligations
+            "unallocated_next_period": float(next_period.net),
+            # Expense IDs for each period (for frontend filtering) - backward compat
+            "expenses_before_payday_ids": expenses_before_payday_ids,
+            "expenses_next_period_ids": expenses_next_period_ids,
+            "expenses_future_ids": expenses_future_ids,
+            # Expenses with occurrence dates for each period
+            "expenses_before_payday_list": expenses_before_payday_list,
+            "expenses_next_period_list": expenses_next_period_list,
+            "expenses_future_list": expenses_future_list,
+        },
+    }
+
+
+@bp.get("/api/budget/current")
+def get_current_budget() -> Response:
+    """Get current budget state with calculated totals.
+
+    Returns all income, accounts, expenses, settings, and computed totals.
+    Includes deadline-aware calculations for amounts due before next payday.
+    """
+    return jsonify(build_budget_payload(get_session(), date.today()))
