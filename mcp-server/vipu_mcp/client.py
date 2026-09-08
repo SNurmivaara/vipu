@@ -110,3 +110,39 @@ class VipuClient:
         """GET /api/summary: the whole app state as one markdown digest."""
         result = self._get("/api/summary")
         return dict(result)
+
+    def get_budget(self) -> dict:
+        """GET /api/budget/current.
+
+        Not a pure read: the handler clears occurrence overrides the calendar
+        has caught up with and auto-archives past ephemeral items, then commits.
+        """
+        result = self._get("/api/budget/current")
+        return dict(result)
+
+    def list_net_worth(self) -> list[dict]:
+        """GET /api/networth: every snapshot, newest first."""
+        result = self._get("/api/networth")
+        return list(result)
+
+    def get_roadmap(self) -> dict:
+        """GET /api/goals/roadmap: the sequential plan and its projections."""
+        result = self._get("/api/goals/roadmap")
+        return dict(result)
+
+    def get_goal_progress(self) -> list[dict]:
+        """GET /api/goals/progress: per-goal pace against target."""
+        result = self._get("/api/goals/progress")
+        return list(result)
+
+    def get_projection(self) -> dict:
+        """GET /api/forecasting/projection: FIRE from the persisted settings."""
+        result = self._get("/api/forecasting/projection")
+        return dict(result)
+
+    def list_budget_snapshots(self, limit: int = 50, offset: int = 0) -> dict:
+        """GET /api/budget/snapshots: cash history, newest first."""
+        result = self._get(
+            "/api/budget/snapshots", params={"limit": limit, "offset": offset}
+        )
+        return dict(result)
