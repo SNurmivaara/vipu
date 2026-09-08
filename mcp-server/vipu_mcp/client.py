@@ -22,15 +22,21 @@ one that cannot express them at all.
 from typing import Any
 
 import httpx
+from mcp.server.mcpserver.exceptions import ToolError
 
 from vipu_mcp import config
 
 
-class VipuApiError(RuntimeError):
+class VipuApiError(ToolError):
     """The backend refused a call, with the reason it gave.
 
     ``message`` is the backend's own ``{"error": ...}`` text where there was
     one, since that wording already explains the domain rule that was broken.
+
+    A ToolError rather than a plain exception, because that is the difference
+    between the model reading "due_day must be between 1 and 31" and reading
+    "Error executing tool add_expense". The SDK surfaces a ToolError's message
+    as an is_error result and reduces anything else to the tool's name.
     """
 
     def __init__(self, message: str, status_code: int | None = None) -> None:
@@ -146,3 +152,74 @@ class VipuClient:
             "/api/budget/snapshots", params={"limit": limit, "offset": offset}
         )
         return dict(result)
+
+    def list_accounts(self) -> list[dict]:
+        """GET /api/accounts."""
+        return list(self._get("/api/accounts"))
+
+    def list_expenses(self) -> list[dict]:
+        """GET /api/expenses."""
+        return list(self._get("/api/expenses"))
+
+    def list_income(self) -> list[dict]:
+        """GET /api/income."""
+        return list(self._get("/api/income"))
+
+    def list_net_worth_categories(self) -> list[dict]:
+        """GET /api/networth/categories."""
+        return list(self._get("/api/networth/categories"))
+
+    def get_net_worth_month(self, year: int, month: int) -> dict | None:
+        """GET /api/networth/<year>/<month>, or None when nothing is recorded."""
+        try:
+            return dict(self._get(f"/api/networth/{year}/{month}"))
+        except VipuApiError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+
+    # -- write ------------------------------------------------------------
+
+    def update_account(self, account_id: int, **fields: Any) -> dict:
+        """PUT /api/accounts/<id>."""
+        return dict(self._put(f"/api/accounts/{account_id}", fields))
+
+    def create_budget_snapshot(self, notes: str | None = None) -> dict:
+        """POST /api/budget/snapshots. Upserts on today's date."""
+        return dict(self._post("/api/budget/snapshots", {"notes": notes}))
+
+    def create_net_worth_snapshot(
+        self, year: int, month: int, entries: list[dict]
+    ) -> dict:
+        """POST /api/networth. 409s when the month already has a snapshot."""
+        return dict(
+            self._post(
+                "/api/networth", {"year": year, "month": month, "entries": entries}
+            )
+        )
+
+    def update_net_worth_snapshot(self, snapshot_id: int, entries: list[dict]) -> dict:
+        """PUT /api/networth/<id>. Entries replace the whole set."""
+        return dict(self._put(f"/api/networth/{snapshot_id}", {"entries": entries}))
+
+    def set_expense_occurrence(
+        self, expense_id: int, occurrence_date: str, settled: bool
+    ) -> dict:
+        """PUT /api/expenses/<id>/occurrence."""
+        return dict(
+            self._put(
+                f"/api/expenses/{expense_id}/occurrence",
+                {"occurrence_date": occurrence_date, "settled": settled},
+            )
+        )
+
+    def set_income_occurrence(
+        self, income_id: int, occurrence_date: str, settled: bool
+    ) -> dict:
+        """PUT /api/income/<id>/occurrence."""
+        return dict(
+            self._put(
+                f"/api/income/{income_id}/occurrence",
+                {"occurrence_date": occurrence_date, "settled": settled},
+            )
+        )

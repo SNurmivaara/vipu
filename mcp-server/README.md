@@ -73,6 +73,28 @@ What makes this AI-first rather than an API wrapper.
 Plus `VIPU_MCP_READ_ONLY=1`, which unregisters every write tool, as insurance
 when testing against live data.
 
+## Tools
+
+**Read and talk**
+
+| Tool | Backing call |
+| --- | --- |
+| `get_financial_summary` | `GET /api/summary`. The entry point for any open-ended question. |
+| `get_budget` | `GET /api/budget/current` |
+| `get_net_worth` | `GET /api/networth` |
+| `get_goals` | `GET /api/goals/roadmap` + `GET /api/goals/progress`, merged |
+| `get_fire_projection` | `GET /api/forecasting/projection` |
+| `list_budget_snapshots` | `GET /api/budget/snapshots` |
+
+**Record**
+
+| Tool | Backing call |
+| --- | --- |
+| `set_account_balance` | `PUT /api/accounts/<id>`, resolved by name |
+| `record_budget_snapshot` | `POST /api/budget/snapshots` |
+| `record_net_worth` | `POST`/`PUT /api/networth`, taking `{category_name: amount}` |
+| `settle_expense` / `settle_income` | `PUT /api/{expenses,income}/<id>/occurrence` |
+
 ## What is deliberately not exposed
 
 `POST /api/reset`, `/api/networth/reset`, `/api/import`, `/api/seed`,

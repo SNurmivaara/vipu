@@ -62,6 +62,18 @@ def seeded(backend: httpx.BaseTransport, client: VipuClient) -> VipuClient:
 
 
 @pytest.fixture
+def raw(backend: httpx.BaseTransport) -> Iterator[httpx.Client]:
+    """A plain HTTP client for arranging fixtures.
+
+    Some setup needs endpoints VipuClient does not wrap, either because they are
+    deliberately unreachable over MCP or because the tool that will wrap them
+    lands in a later issue. Going around the client keeps that explicit.
+    """
+    with httpx.Client(base_url="http://backend", transport=backend) as http:
+        yield http
+
+
+@pytest.fixture
 def server(client: VipuClient):
     """The MCP server, wired to that client."""
     return build_server(client)

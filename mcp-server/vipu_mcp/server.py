@@ -14,7 +14,7 @@ from starlette.types import ASGIApp
 from vipu_mcp import config
 from vipu_mcp.auth import BearerTokenMiddleware
 from vipu_mcp.client import VipuClient
-from vipu_mcp.tools import read
+from vipu_mcp.tools import read, record
 
 INSTRUCTIONS = """\
 Vipu is a balance-based personal finance tracker: it follows account balances \
@@ -27,8 +27,16 @@ figure the other tools return.\
 """
 
 
-def build_server(client: VipuClient) -> MCPServer:
-    """An MCPServer with every tool this deployment should expose."""
+def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer:
+    """An MCPServer with every tool this deployment should expose.
+
+    ``read_only`` defaults to the VIPU_MCP_READ_ONLY flag. When set, the write
+    tools are not registered at all rather than registered and refused: a tool
+    the model cannot see is one it cannot plan around.
+    """
+    if read_only is None:
+        read_only = config.VIPU_MCP_READ_ONLY
+
     server = MCPServer(
         name="vipu",
         title="Vipu",
@@ -42,6 +50,8 @@ def build_server(client: VipuClient) -> MCPServer:
         return JSONResponse({"status": "ok"})
 
     read.register(server, client)
+    if not read_only:
+        record.register(server, client)
     return server
 
 
