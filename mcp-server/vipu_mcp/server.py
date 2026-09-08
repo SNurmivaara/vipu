@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp
 
-from vipu_mcp import config
+from vipu_mcp import config, prompts, resources
 from vipu_mcp.auth import BearerTokenMiddleware
 from vipu_mcp.client import VipuClient
 from vipu_mcp.tools import manage, plan, read, record
@@ -56,6 +56,9 @@ def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer
     if not read_only:
         record.register(server, client)
         manage.register(server, client)
+
+    resources.register(server, client)
+    prompts.register(server, read_only=read_only)
     return server
 
 

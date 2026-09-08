@@ -124,6 +124,33 @@ the stored projection compounds each asset group at its own rate and amortises
 debt separately, so the two models disagree on levels for identical inputs and
 a cross-model comparison would credit the difference to the change being tested.
 
+## Prompts and resources
+
+Tools make things possible; prompts make them habitual.
+
+| Prompt | What it drives |
+| --- | --- |
+| `monthly_review` | Walk the position, flag a negative cash low point, check goals against pace, end with what changed since the last snapshot |
+| `record_the_month` | Balances, then the budget snapshot, then net worth, in that order |
+| `what_if` | Turn a proposal in plain language into a `project_fire` call and report the delta |
+
+Every argument is optional, so each is usable straight from Claude Desktop's
+prompt picker.
+
+`record_the_month` fixes the order for a reason. `POST /api/budget/snapshots`
+captures whatever the account balances currently are, so snapshotting before
+updating them records stale figures with no error and no way to notice
+afterwards. The prompt says so where it cannot be missed, and it is not
+registered at all in read-only mode, where it would be a dead end.
+
+| Resource | Content |
+| --- | --- |
+| `vipu://summary` | The digest, as markdown |
+| `vipu://budget` | The current budget, as JSON |
+
+Resources let a client attach state to a conversation without spending a tool
+call, which matters for the opening turn of any of the prompts above.
+
 ## What is deliberately not exposed
 
 `POST /api/reset`, `/api/networth/reset`, `/api/import`, `/api/seed`,

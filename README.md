@@ -325,6 +325,18 @@ claude mcp add --transport http vipu https://vipu-mcp.<domain>/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
+### Prompts
+
+Claude Desktop shows the server's prompts in its picker. Three ship with it:
+`monthly_review` walks the current position and ends with what changed since
+the last snapshot, `record_the_month` drives the recording ritual in the only
+order that is correct (balances, then the budget snapshot, then net worth), and
+`what_if` turns a proposal in plain language into a projection delta. Every
+argument is optional.
+
+Two resources, `vipu://summary` and `vipu://budget`, let a client attach state
+to a conversation without spending a tool call.
+
 ### Read-only mode
 
 Set `VIPU_MCP_READ_ONLY=1` on the container to unregister every write tool.
