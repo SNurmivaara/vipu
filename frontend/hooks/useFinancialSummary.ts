@@ -1,37 +1,29 @@
-import { useBudget } from "@/hooks/useBudget";
-import { useGoalsProgress, useRoadmap } from "@/hooks/useGoals";
-import { useNetWorthSnapshots } from "@/hooks/useNetWorth";
-import { useForecastingProjection } from "@/hooks/useForecastingProjection";
-import { buildFinancialSummary } from "@/lib/aiSummary";
+import { useCallback } from "react";
+import { fetchSummary } from "@/lib/api";
 
 /**
- * Gathers everything the combined "Copy for AI" export needs.
+ * The combined "Copy for AI" export, fetched from GET /api/summary.
  *
- * The export spans budget and wealth, so both pages need the same five
- * sources. React Query dedupes and caches them, so pulling the other page's
- * data here costs nothing once it is warm.
+ * The digest used to be assembled client-side from five queries by
+ * lib/aiSummary.ts. It is built on the backend now, so the web UI, the MCP
+ * server and anything else pasting it into a chat read one document rather
+ * than three implementations of it.
  *
- * Returns null until the budget has loaded, since the export is built around
- * it; the wealth half degrades to "no snapshots yet" on its own.
+ * Fetched when the button is pressed rather than held in a query. Invalidation
+ * is spread across a dozen call sites, so a cached digest would have needed a
+ * key added to every one of them and would have gone quietly stale behind the
+ * first one anybody forgot. Fetching on demand removes the failure instead of
+ * guarding against it.
+ *
+ * Returns null when the request fails, which the callers already handle as
+ * "nothing to copy".
  */
-export function useFinancialSummary(): () => string | null {
-  const { data: budget } = useBudget();
-  const { data: roadmap } = useRoadmap();
-  const { data: snapshots } = useNetWorthSnapshots();
-  const { data: goalsProgress } = useGoalsProgress();
-  // Falls back to an all-zero default rather than undefined, so gate on the
-  // load state: a FIRE section full of zeros reads as a real projection.
-  const { result: projection, isLoading: projectionLoading } =
-    useForecastingProjection();
-
-  return () => {
-    if (!budget) return null;
-    return buildFinancialSummary(
-      budget,
-      roadmap,
-      snapshots ?? [],
-      goalsProgress ?? [],
-      projectionLoading ? null : projection
-    );
-  };
+export function useFinancialSummary(): () => Promise<string | null> {
+  return useCallback(async () => {
+    try {
+      return (await fetchSummary()).markdown;
+    } catch {
+      return null;
+    }
+  }, []);
 }

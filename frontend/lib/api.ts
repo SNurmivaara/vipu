@@ -27,6 +27,7 @@ import {
   FireCalculateInput,
   FireResultAPI,
   ForecastingProjectionAPI,
+  FinancialSummary,
 } from "@/types";
 
 export const api = axios.create({
@@ -480,3 +481,9 @@ export const fetchForecastingProjection =
     );
     return data;
   };
+
+// The whole app state as one markdown digest, assembled on the backend
+export const fetchSummary = async (): Promise<FinancialSummary> => {
+  const { data } = await api.get<FinancialSummary>("/summary");
+  return data;
+};

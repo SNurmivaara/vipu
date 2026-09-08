@@ -131,7 +131,7 @@ export default function BudgetPage() {
   };
 
   const handleCopyForAI = async () => {
-    const summary = buildSummary();
+    const summary = await buildSummary();
     if (!summary) return;
     const copied = await copyToClipboard(summary);
     toast(

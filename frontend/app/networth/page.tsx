@@ -2,8 +2,9 @@
 
 import { useState, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNetWorthSnapshots, useNetWorthCategories } from "@/hooks/useNetWorth";
+import { useGoalsProgress } from "@/hooks/useGoals";
 import { useTheme } from "@/hooks/useTheme";
 import { useFinancialSummary } from "@/hooks/useFinancialSummary";
 import { copyToClipboard } from "@/lib/clipboard";
@@ -26,17 +27,13 @@ import {
   resetNetWorth,
   exportBudget,
   importBudget,
-  fetchGoalsProgress,
   ExportData,
 } from "@/lib/api";
 
 export default function NetWorthPage() {
   const { data: snapshots, isLoading: snapshotsLoading, error: snapshotsError } = useNetWorthSnapshots();
   const { data: categories, isLoading: categoriesLoading, error: categoriesError } = useNetWorthCategories();
-  const { data: goalsProgress = [] } = useQuery({
-    queryKey: ["goals-progress"],
-    queryFn: fetchGoalsProgress,
-  });
+  const { data: goalsProgress = [] } = useGoalsProgress();
   const buildSummary = useFinancialSummary();
   const { resolvedTheme, setTheme } = useTheme();
   const queryClient = useQueryClient();
@@ -136,7 +133,7 @@ export default function NetWorthPage() {
   };
 
   const handleCopyForAI = async () => {
-    const summary = buildSummary();
+    const summary = await buildSummary();
     if (!summary) return;
     const copied = await copyToClipboard(summary);
     toast(
