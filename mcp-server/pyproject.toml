@@ -1,37 +1,29 @@
 [project]
-name = "vipu-backend"
+name = "vipu-mcp"
 version = "0.1.0"
-description = "Personal finance tracker backend"
+description = "MCP server for Vipu, the personal finance tracker"
 requires-python = ">=3.11"
 dependencies = [
-    "apiflask>=2.0",
-    "flask-cors>=4.0",
-    "psycopg2-binary>=2.9",
-    "sqlalchemy>=2.0",
-    "python-dotenv>=1.2.2",
-    "gunicorn>=21.0",
+    "mcp>=2.2",
+    "httpx>=0.27",
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=9.0.3",
     "pytest-cov>=4.0",
+    "anyio>=4.0",
     "ruff>=0.4",
     "black>=24.0",
     "mypy>=1.10",
-    "types-Flask-Cors>=4.0",
+    # The tools are tested against the real Flask app over httpx.WSGITransport,
+    # not against mocked JSON. Dev only: the running container talks HTTP.
+    "vipu-backend",
 ]
 
-# Declared so the mcp-server dev extras can take this package as a uv path
-# dependency and run its tools against the real Flask app. Without it the build
-# falls back to setuptools, which leaves a build/ tree in the source directory
-# that then shadows app/ for mypy.
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
+[tool.uv.sources]
+vipu-backend = { path = "../backend" }
 
 [tool.ruff]
 target-version = "py311"

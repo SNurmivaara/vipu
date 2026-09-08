@@ -1,0 +1,68 @@
+"""The MCP server: registration, transport and the ASGI app.
+
+Transport is stateless streamable HTTP with JSON responses. Stateless removes
+session affinity concerns behind the tunnel, and JSON responses avoid streaming
+SSE through Cloudflare entirely.
+"""
+
+from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp
+
+from vipu_mcp import config
+from vipu_mcp.auth import BearerTokenMiddleware
+from vipu_mcp.client import VipuClient
+from vipu_mcp.tools import read
+
+INSTRUCTIONS = """\
+Vipu is a balance-based personal finance tracker: it follows account balances \
+and recurring obligations rather than individual transactions. There is no \
+"log a spend" tool, because there are no transactions to log; the equivalent is \
+updating a balance and taking a snapshot.
+
+Start with get_financial_summary for anything open-ended. It frames every \
+figure the other tools return.\
+"""
+
+
+def build_server(client: VipuClient) -> MCPServer:
+    """An MCPServer with every tool this deployment should expose."""
+    server = MCPServer(
+        name="vipu",
+        title="Vipu",
+        version="0.1.0",
+        instructions=INSTRUCTIONS,
+    )
+
+    @server.custom_route("/health", methods=["GET"], include_in_schema=False)
+    async def health(_request: Request) -> JSONResponse:
+        """Unauthenticated liveness probe for the compose healthcheck."""
+        return JSONResponse({"status": "ok"})
+
+    read.register(server, client)
+    return server
+
+
+def build_app(server: MCPServer, token: str) -> ASGIApp:
+    """The ASGI app: /health open, /mcp behind the bearer token."""
+    app = server.streamable_http_app(
+        streamable_http_path="/mcp",
+        stateless_http=True,
+        json_response=True,
+        # DNS rebinding protection off, explicitly rather than by omission:
+        # passing None here would auto-enable it for the default 127.0.0.1 host
+        # and reject every request, since the Cloudflare tunnel forwards the
+        # public hostname as Host and this container cannot enumerate it. The
+        # bearer token below is the gate that actually matters.
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
+    )
+    return BearerTokenMiddleware(app, token)
+
+
+def create_app() -> ASGIApp:
+    """Entry point for uvicorn: uvicorn vipu_mcp.server:create_app --factory."""
+    return build_app(build_server(VipuClient()), config.require_auth_token())
