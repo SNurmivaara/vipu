@@ -258,3 +258,45 @@ class VipuClient:
     def update_budget_settings(self, fields: dict[str, Any]) -> dict:
         """PUT /api/settings."""
         return dict(self._put("/api/settings", fields))
+
+    # -- manage -----------------------------------------------------------
+
+    def create_expense(self, fields: dict[str, Any]) -> dict:
+        """POST /api/expenses."""
+        return dict(self._post("/api/expenses", fields))
+
+    def update_expense(self, expense_id: int, fields: dict[str, Any]) -> dict:
+        """PUT /api/expenses/<id>.
+
+        Also how an item is archived: set archived_at. DELETE /api/expenses/<id>
+        exists but removes the row outright, with no undo, so it is not wrapped.
+        """
+        return dict(self._put(f"/api/expenses/{expense_id}", fields))
+
+    def create_income(self, fields: dict[str, Any]) -> dict:
+        """POST /api/income."""
+        return dict(self._post("/api/income", fields))
+
+    def update_income(self, income_id: int, fields: dict[str, Any]) -> dict:
+        """PUT /api/income/<id>. Archiving goes through here too."""
+        return dict(self._put(f"/api/income/{income_id}", fields))
+
+    def create_account(self, fields: dict[str, Any]) -> dict:
+        """POST /api/accounts."""
+        return dict(self._post("/api/accounts", fields))
+
+    def list_goals(self) -> list[dict]:
+        """GET /api/goals, roadmap steps first in plan order."""
+        return list(self._get("/api/goals"))
+
+    def create_goal(self, fields: dict[str, Any]) -> dict:
+        """POST /api/goals."""
+        return dict(self._post("/api/goals", fields))
+
+    def update_goal(self, goal_id: int, fields: dict[str, Any]) -> dict:
+        """PUT /api/goals/<id>."""
+        return dict(self._put(f"/api/goals/{goal_id}", fields))
+
+    def reorder_goals(self, goal_ids: list[int]) -> list[dict]:
+        """PUT /api/goals/reorder. Sets priority, the roadmap funding order."""
+        return list(self._put("/api/goals/reorder", {"goal_ids": goal_ids}))

@@ -14,7 +14,7 @@ from starlette.types import ASGIApp
 from vipu_mcp import config
 from vipu_mcp.auth import BearerTokenMiddleware
 from vipu_mcp.client import VipuClient
-from vipu_mcp.tools import plan, read, record
+from vipu_mcp.tools import manage, plan, read, record
 
 INSTRUCTIONS = """\
 Vipu is a balance-based personal finance tracker: it follows account balances \
@@ -55,6 +55,7 @@ def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer
     plan.register(server, client, read_only=read_only)
     if not read_only:
         record.register(server, client)
+        manage.register(server, client)
     return server
 
 

@@ -95,6 +95,19 @@ when testing against live data.
 | `record_net_worth` | `POST`/`PUT /api/networth`, taking `{category_name: amount}` |
 | `settle_expense` / `settle_income` | `PUT /api/{expenses,income}/<id>/occurrence` |
 
+**Manage**
+
+| Tool | Backing call |
+| --- | --- |
+| `add_expense` / `update_expense` / `archive_expense` | `POST`/`PUT /api/expenses` |
+| `add_income` / `update_income` / `archive_income` | `POST`/`PUT /api/income` |
+| `add_account` | `POST /api/accounts` |
+| `set_goal` / `update_goal` / `reorder_goals` | `POST`/`PUT /api/goals`, `PUT /api/goals/reorder` |
+
+The `archive_*` tools set `archived_at` through `PUT`, which retires an item
+and can be undone with `restore=true`. `DELETE /api/{expenses,income}/<id>`
+removes the row outright with no undo, so it is not wrapped.
+
 **Plan**
 
 | Tool | Backing call |

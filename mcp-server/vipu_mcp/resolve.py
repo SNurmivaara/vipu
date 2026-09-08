@@ -84,3 +84,14 @@ def net_worth_categories(client: VipuClient, names: list[str]) -> dict[str, dict
     return {
         name: match_by_name(catalogue, name, "net worth category") for name in names
     }
+
+
+def goal(client: VipuClient, name: str) -> dict:
+    """The goal called ``name``."""
+    return match_by_name(client.list_goals(), name, "goal")
+
+
+def goals(client: VipuClient, names: list[str]) -> list[dict]:
+    """Resolve several goal names in one listing call, in the order given."""
+    catalogue = client.list_goals()
+    return [match_by_name(catalogue, name, "goal") for name in names]
