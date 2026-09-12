@@ -1,9 +1,4 @@
-"""Bearer-token gate in front of the MCP mount.
-
-A deliberate simplification over the MCP spec's OAuth flow, sized to a
-single-user homelab behind a Cloudflare tunnel: one static token, compared in
-constant time. Recorded here as a decision rather than an oversight. If Vipu
-ever grows a second user, this is the piece to replace.
+"""Legacy bearer-token gate for deployments without OAuth configured.
 
 Pure ASGI rather than Starlette middleware so it sits outside the session
 manager and rejects before any MCP machinery runs.
