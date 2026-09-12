@@ -1,0 +1,70 @@
+# Merge into Authelia's configuration after replacing every REPLACE_* value.
+# Requires Authelia >= 4.39.23 (resource-indicator fixes); see mcp-server/OAUTH.md.
+# Keep real keys, secrets and the resulting file outside Git.
+identity_providers:
+  oidc:
+    hmac_secret: REPLACE_WITH_RANDOM_HMAC_SECRET
+    jwks:
+      - key_id: vipu-rs256
+        algorithm: RS256
+        use: sig
+        key: |
+          REPLACE_WITH_PEM_RSA_PRIVATE_KEY
+    lifespans:
+      custom:
+        vipu:
+          access_token: 10m
+          refresh_token: 30d
+    scopes:
+      vipu:
+        claims: [preferred_username]
+    claims_policies:
+      vipu:
+        access_token: [preferred_username]
+    authorization_policies:
+      vipu:
+        default_policy: deny
+        rules:
+          - policy: two_factor
+            subject: user:REPLACE_WITH_YOUR_USERNAME
+    clients:
+      - client_id: vipu-chatgpt
+        client_name: Vipu for ChatGPT
+        client_secret: REPLACE_WITH_CHATGPT_SECRET_HASH
+        public: false
+        authorization_policy: vipu
+        claims_policy: vipu
+        lifespan: vipu
+        consent_mode: explicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          # Use the exact callback ChatGPT displays. This shared callback
+          # requires issuer identification (RFC 9207) in provider metadata.
+          - https://chatgpt.com/connector_platform_oauth_redirect
+        scopes: [openid, profile, email, address, phone, groups, offline_access, vipu]
+        audience: [https://vipu-mcp.example.com/mcp]
+        requested_audience_mode: explicit
+        grant_types: [authorization_code, refresh_token]
+        response_types: [code]
+        token_endpoint_auth_method: client_secret_basic
+        access_token_signed_response_alg: RS256
+      - client_id: vipu-claude
+        client_name: Vipu for Claude
+        client_secret: REPLACE_WITH_CLAUDE_SECRET_HASH
+        public: false
+        authorization_policy: vipu
+        claims_policy: vipu
+        lifespan: vipu
+        consent_mode: explicit
+        require_pkce: true
+        pkce_challenge_method: S256
+        redirect_uris:
+          - https://claude.ai/api/mcp/auth_callback
+        scopes: [openid, profile, email, address, phone, groups, offline_access, vipu]
+        audience: [https://vipu-mcp.example.com/mcp]
+        requested_audience_mode: explicit
+        grant_types: [authorization_code, refresh_token]
+        response_types: [code]
+        token_endpoint_auth_method: client_secret_basic
+        access_token_signed_response_alg: RS256

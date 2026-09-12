@@ -20,7 +20,12 @@ MCP_AUTH_TOKEN=$(openssl rand -hex 32) \
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `VIPU_API_URL` | `http://localhost:5000` | Where the REST API lives |
-| `MCP_AUTH_TOKEN` | *(required)* | Static bearer token for `/mcp` |
+| `MCP_AUTH_TOKEN` | *(required without OAuth)* | Legacy bearer token; optional during OAuth migration |
+| `MCP_OAUTH_ISSUER` | unset | Exact external OAuth issuer from discovery |
+| `MCP_OAUTH_RESOURCE_URL` | unset | Public HTTPS MCP URL ending in `/mcp` |
+| `MCP_OAUTH_JWKS_URL` | unset | Trusted provider's HTTPS signing-key endpoint |
+| `MCP_OAUTH_ALLOWED_CLIENTS` | unset | Comma-separated OAuth client IDs |
+| `MCP_OAUTH_ALLOWED_USERS` | unset | Comma-separated, case-sensitive provider usernames |
 | `VIPU_MCP_READ_ONLY` | off | Unregister every write tool |
 | `PORT` | `5100` | Port the container listens on |
 
@@ -31,20 +36,27 @@ curl -s localhost:5100/health                 # {"status": "ok"}
 curl -si -X POST localhost:5100/mcp | head -1 # HTTP/1.1 401 Unauthorized
 ```
 
-## Authentication is one static token, on purpose
+## Authentication
+
+Use [OAuth](OAUTH.md) for ChatGPT and Claude web. Configure all five OAuth
+variables to enable the MCP SDK's resource-server authentication and protected
+resource metadata. Authelia (or another RFC 9068 provider) handles the browser
+login and token exchange. Vipu verifies the signature, issuer, audience,
+expiry, scopes, client and user on every MCP request.
+
+Setting `MCP_AUTH_TOKEN` alongside OAuth preserves the existing credential
+during migration. Remove it once the clients have reconnected with OAuth.
+Incomplete OAuth settings fail at startup even if a legacy token exists.
+
+For deployments without OAuth:
 
 `/mcp` requires `Authorization: Bearer <MCP_AUTH_TOKEN>`, compared with
 `hmac.compare_digest`. `/health` stays open so the compose healthcheck can
 reach it.
 
-That is a deliberate simplification over the MCP specification's OAuth flow,
-sized to a single-user homelab behind a Cloudflare tunnel. It is recorded here
-as a decision rather than left as an oversight: if Vipu ever grows a second
-user, this is the piece to replace.
-
 DNS rebinding protection is off, also deliberately. The tunnel forwards the
 public hostname as `Host` and the container has no way to enumerate it, so the
-check would reject every real request. The bearer token is the gate.
+check would reject every real request. Access-token validation is the gate.
 
 ## Transport
 

@@ -259,10 +259,18 @@ own container on port 5100, calls the REST API, and stores nothing itself.
 Full details, including the tool surface and the design rules behind it, are in
 [`mcp-server/README.md`](mcp-server/README.md).
 
-### Set a token
+### Connect ChatGPT and Claude web with OAuth
 
-`MCP_AUTH_TOKEN` is required and has no default, the same fail-fast treatment
-`SECRET_KEY` and `POSTGRES_PASSWORD` already get:
+Both clients can use the same remote `/mcp` endpoint with OAuth. Vipu publishes
+MCP discovery metadata and validates signed access tokens; an external provider
+such as Authelia handles browser login, consent and refresh. Follow the
+[OAuth setup guide](mcp-server/OAUTH.md) for the provider configuration, exact
+connector settings and migration from the existing bearer token.
+
+### Set a token for a legacy client
+
+Without OAuth, `MCP_AUTH_TOKEN` is required and has no default. A deployment
+with neither authentication method fails at startup:
 
 ```bash
 echo "MCP_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env

@@ -5,6 +5,8 @@ session affinity concerns behind the tunnel, and JSON responses avoid streaming
 SSE through Cloudflare entirely.
 """
 
+from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
@@ -14,6 +16,7 @@ from starlette.types import ASGIApp
 from vipu_mcp import config, prompts, resources
 from vipu_mcp.auth import BearerTokenMiddleware
 from vipu_mcp.client import VipuClient
+from vipu_mcp.oauth import REQUIRED_SCOPES, OAuthTokenVerifier
 from vipu_mcp.tools import manage, plan, read, record
 
 INSTRUCTIONS = """\
@@ -27,7 +30,13 @@ figure the other tools return.\
 """
 
 
-def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer:
+def build_server(
+    client: VipuClient,
+    read_only: bool | None = None,
+    *,
+    oauth: config.OAuthConfig | None = None,
+    token_verifier: TokenVerifier | None = None,
+) -> MCPServer:
     """An MCPServer with every tool this deployment should expose.
 
     ``read_only`` defaults to the VIPU_MCP_READ_ONLY flag. When set, the write
@@ -42,6 +51,21 @@ def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer
         title="Vipu",
         version="0.1.0",
         instructions=INSTRUCTIONS,
+        auth=(
+            AuthSettings.model_validate(
+                {
+                    # Let AuthSettings preserve the issuer's exact spelling;
+                    # constructing AnyHttpUrl first adds a spurious slash.
+                    "issuer_url": oauth.issuer,
+                    "resource_server_url": oauth.resource_url,
+                    "required_scopes": REQUIRED_SCOPES,
+                    "validate_token_resource": True,
+                }
+            )
+            if oauth
+            else None
+        ),
+        token_verifier=token_verifier,
     )
 
     @server.custom_route("/health", methods=["GET"], include_in_schema=False)
@@ -62,8 +86,10 @@ def build_server(client: VipuClient, read_only: bool | None = None) -> MCPServer
     return server
 
 
-def build_app(server: MCPServer, token: str) -> ASGIApp:
-    """The ASGI app: /health open, /mcp behind the bearer token."""
+def build_app(server: MCPServer, token: str = "") -> ASGIApp:
+    """The ASGI app: public health/discovery, authenticated MCP requests."""
+    if server.settings.auth is None and not token:
+        raise ValueError("Configure OAuth or a non-empty MCP_AUTH_TOKEN")
     app = server.streamable_http_app(
         streamable_http_path="/mcp",
         stateless_http=True,
@@ -72,14 +98,23 @@ def build_app(server: MCPServer, token: str) -> ASGIApp:
         # passing None here would auto-enable it for the default 127.0.0.1 host
         # and reject every request, since the Cloudflare tunnel forwards the
         # public hostname as Host and this container cannot enumerate it. The
-        # bearer token below is the gate that actually matters.
+        # access token is the gate that actually matters.
         transport_security=TransportSecuritySettings(
             enable_dns_rebinding_protection=False
         ),
     )
+    if server.settings.auth is not None:
+        return app
     return BearerTokenMiddleware(app, token)
 
 
 def create_app() -> ASGIApp:
     """Entry point for uvicorn: uvicorn vipu_mcp.server:create_app --factory."""
-    return build_app(build_server(VipuClient()), config.require_auth_token())
+    oauth = config.oauth_config()
+    if oauth is not None:
+        verifier = OAuthTokenVerifier(oauth, legacy_token=config.MCP_AUTH_TOKEN)
+        return build_app(
+            build_server(VipuClient(), oauth=oauth, token_verifier=verifier)
+        )
+    token = config.require_auth_token()
+    return build_app(build_server(VipuClient()), token)

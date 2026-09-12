@@ -9,7 +9,13 @@ from vipu_mcp import config
 
 def reloaded(monkeypatch, **env):
     """Re-import config with a patched environment, since it reads once."""
-    for key in ("MCP_AUTH_TOKEN", "FLASK_ENV", "VIPU_MCP_READ_ONLY", "VIPU_API_URL"):
+    for key in (
+        "MCP_AUTH_TOKEN",
+        "FLASK_ENV",
+        "VIPU_MCP_READ_ONLY",
+        "VIPU_API_URL",
+        *config.OAUTH_ENV,
+    ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
@@ -56,3 +62,33 @@ def test_api_url_loses_its_trailing_slash(monkeypatch):
     """Otherwise every request path would carry a double slash."""
     module = reloaded(monkeypatch, VIPU_API_URL="http://backend:5000/")
     assert module.VIPU_API_URL == "http://backend:5000"
+
+
+def test_oauth_is_opt_in(monkeypatch):
+    assert reloaded(monkeypatch).oauth_config() is None
+
+
+@pytest.mark.parametrize("key", config.OAUTH_ENV)
+def test_partial_oauth_never_falls_back_to_legacy_auth(monkeypatch, key):
+    module = reloaded(monkeypatch, MCP_AUTH_TOKEN="legacy", **{key: "configured"})
+    with pytest.raises(ValueError, match="Incomplete OAuth"):
+        module.oauth_config()
+
+
+def test_complete_oauth_does_not_need_a_static_token(monkeypatch):
+    module = reloaded(
+        monkeypatch,
+        MCP_OAUTH_ISSUER="https://auth.example.com",
+        MCP_OAUTH_RESOURCE_URL="https://mcp.example.com/mcp",
+        MCP_OAUTH_JWKS_URL="https://auth.example.com/jwks.json",
+        MCP_OAUTH_ALLOWED_CLIENTS="chatgpt, claude, ",
+        MCP_OAUTH_ALLOWED_USERS="owner",
+    )
+    oauth = module.oauth_config()
+    assert oauth is not None
+    assert oauth.allowed_clients == frozenset({"chatgpt", "claude"})
+    assert oauth.allowed_users == frozenset({"owner"})
+    assert module.MCP_AUTH_TOKEN == ""
+    monkeypatch.setenv("MCP_OAUTH_ALLOWED_USERS", " , ")
+    with pytest.raises(ValueError, match="allowlists"):
+        module.oauth_config()

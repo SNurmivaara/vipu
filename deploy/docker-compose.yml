@@ -61,7 +61,12 @@ services:
       - "${MCP_PORT:-5100}:5100"
     environment:
       - VIPU_API_URL=http://backend:5000
-      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:?MCP_AUTH_TOKEN must be set}
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - MCP_OAUTH_ISSUER=${MCP_OAUTH_ISSUER:-}
+      - MCP_OAUTH_RESOURCE_URL=${MCP_OAUTH_RESOURCE_URL:-}
+      - MCP_OAUTH_JWKS_URL=${MCP_OAUTH_JWKS_URL:-}
+      - MCP_OAUTH_ALLOWED_CLIENTS=${MCP_OAUTH_ALLOWED_CLIENTS:-}
+      - MCP_OAUTH_ALLOWED_USERS=${MCP_OAUTH_ALLOWED_USERS:-}
       - FLASK_ENV=production
     depends_on:
       backend:
