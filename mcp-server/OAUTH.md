@@ -112,8 +112,8 @@ Configure this client's `token_endpoint_auth_method: client_secret_post` in
 Authelia. ChatGPT's predefined-client flow sends the credentials in the token
 request body. If Authelia requires `client_secret_basic`, login and consent
 can succeed but the token exchange fails with `invalid_client`, and ChatGPT
-reports a generic registration error. The example keeps Claude's separate
-client on `client_secret_basic`.
+reports a generic registration error. Claude's hosted connector also uses
+`client_secret_post`; the example configures that method for both clients.
 
 Register the **exact callback URI shown by ChatGPT** in Authelia. Providers
 advertising `authorization_response_iss_parameter_supported: true` and
@@ -130,6 +130,9 @@ mobile depends on the client and account; check separately after web works.
 
 In Settings → Connectors → Add custom connector, enter the same MCP server
 URL. In the advanced OAuth fields enter `vipu-claude` and its original secret.
+Configure this client's `token_endpoint_auth_method: client_secret_post` in
+Authelia too. Requiring `client_secret_basic` causes the hosted connector's
+token exchange to fail after login and consent.
 Register `https://claude.ai/api/mcp/auth_callback` in Authelia. Connect, sign in,
 grant consent, then enable Vipu in a chat and ask for your financial summary.
 The hosted Claude connector also serves Desktop and mobile. A local
