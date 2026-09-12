@@ -9,6 +9,7 @@ import hmac
 import logging
 import time
 from collections.abc import Callable
+from typing import Any
 
 import anyio
 import httpx
@@ -21,6 +22,29 @@ logger = logging.getLogger(__name__)
 REQUIRED_SCOPES = ["openid", "vipu"]
 KEY_CACHE_SECONDS = 300
 KEY_REFRESH_SECONDS = 30
+
+
+def token_scopes(claims: dict[str, Any]) -> list[str] | None:
+    """Accept RFC 9068's scope string or Authelia's scp array, never their union."""
+    scopes: list[str] | None = None
+    if "scope" in claims:
+        scope = claims["scope"]
+        if not isinstance(scope, str):
+            return None
+        scopes = scope.split()
+        if "scp" not in claims:
+            return scopes
+    scp = claims.get("scp")
+    if not isinstance(scp, list):
+        return None
+    items: list[str] = []
+    for item in scp:
+        if not isinstance(item, str) or not item or any(c.isspace() for c in item):
+            return None
+        items.append(item)
+    if scopes is not None and set(scopes) != set(items):
+        return None
+    return items
 
 
 class OAuthTokenVerifier:
@@ -122,13 +146,13 @@ class OAuthTokenVerifier:
             )
             client_id = claims["client_id"]
             username = claims.get("preferred_username")
-            scope = claims.get("scope")
+            scopes = token_scopes(claims)
             if (
                 not isinstance(client_id, str)
                 or client_id not in self.settings.allowed_clients
                 or not isinstance(username, str)
                 or username not in self.settings.allowed_users
-                or not isinstance(scope, str)
+                or scopes is None
                 or not isinstance(claims["sub"], str)
                 or not claims["sub"]
                 or type(claims["exp"]) is not int
@@ -138,7 +162,7 @@ class OAuthTokenVerifier:
             return AccessToken(
                 token=token,
                 client_id=client_id,
-                scopes=scope.split(),
+                scopes=scopes,
                 expires_at=claims["exp"],
                 resource=self.settings.resource_url,
                 subject=claims["sub"],

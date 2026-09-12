@@ -111,8 +111,16 @@ async def test_discovery_is_public_and_challenge_points_to_it(oauth_app):
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("client_id", ["vipu-chatgpt", "vipu-claude"])
-async def test_both_clients_can_initialize_and_list_tools(oauth_app, mint, client_id):
-    headers = {"Authorization": f"Bearer {mint(client_id=client_id)}"}
+@pytest.mark.parametrize("scope_format", ["scope", "scp"])
+async def test_both_clients_can_initialize_and_list_tools(
+    oauth_app, mint, client_id, scope_format
+):
+    extra = (
+        {"remove": ("scope",), "scp": ["openid", "vipu", "offline_access"]}
+        if scope_format == "scp"
+        else {}
+    )
+    headers = {"Authorization": f"Bearer {mint(client_id=client_id, **extra)}"}
     async with running(oauth_app) as http:
         response = await initialize(http, headers)
         assert response.status_code == 200
@@ -146,6 +154,13 @@ async def test_both_clients_can_initialize_and_list_tools(oauth_app, mint, clien
         {"preferred_username": None},
         {"sub": ""},
         {"scope": ["openid", "vipu"]},
+        {"remove": ("scope",), "scp": "openid vipu"},
+        {"remove": ("scope",), "scp": ["openid vipu"]},
+        {"remove": ("scope",), "scp": ["openid", 123]},
+        {"remove": ("scope",), "scp": ["openid", ""]},
+        {"scope": "openid", "scp": ["openid", "vipu"]},
+        {"scope": None, "scp": ["openid", "vipu"]},
+        {"remove": ("scope",)},
         {"headers": {"typ": "JWT"}},
         {"headers": {"kid": "not-a-signing-key"}},
         {"remove": ("exp",)},
@@ -177,6 +192,20 @@ async def test_scope_is_enforced_on_every_mcp_method(oauth_app, mint):
                 json={"jsonrpc": "2.0", "id": 1, "method": method},
             )
             assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_matching_scope_claims_and_missing_authelia_scope(oauth_app, mint):
+    async with running(oauth_app) as http:
+        for claims, status in [
+            ({"scp": ["openid", "vipu", "offline_access"]}, 200),
+            ({"remove": ("scope",), "scp": ["openid"]}, 403),
+            ({"remove": ("scope",), "scp": []}, 403),
+        ]:
+            response = await initialize(
+                http, {"Authorization": f"Bearer {mint(**claims)}"}
+            )
+            assert response.status_code == status
 
 
 @pytest.mark.anyio
