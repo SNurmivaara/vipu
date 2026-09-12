@@ -108,6 +108,13 @@ with MCP support (the setting names depend on your account). Enter:
 | OAuth client ID | `vipu-chatgpt` |
 | OAuth client secret | Original ChatGPT client secret, not its hash |
 
+Configure this client's `token_endpoint_auth_method: client_secret_post` in
+Authelia. ChatGPT's predefined-client flow sends the credentials in the token
+request body. If Authelia requires `client_secret_basic`, login and consent
+can succeed but the token exchange fails with `invalid_client`, and ChatGPT
+reports a generic registration error. The example keeps Claude's separate
+client on `client_secret_basic`.
+
 Register the **exact callback URI shown by ChatGPT** in Authelia. Providers
 advertising `authorization_response_iss_parameter_supported: true` and
 returning the correct `iss` in authorization responses can use
