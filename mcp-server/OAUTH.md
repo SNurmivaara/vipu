@@ -82,6 +82,8 @@ RS256 access tokens with the `at+jwt` type (also `application/at+jwt`); ID token
 unsigned tokens and tokens signed by another issuer fail authentication.
 Signing keys are cached for five minutes with bounded refresh on rotation.
 Expired key caches fail closed if the provider cannot be reached.
+Both the standard `scope` string and Authelia's signed `scp` array are
+supported; malformed or conflicting scope claims are rejected.
 
 Release code through a PR and a published GitHub release. The release workflow
 publishes the MCP image to GHCR, and WUD can update the deployed `latest` image.
