@@ -42,7 +42,7 @@ identity_providers:
           # Use the exact callback ChatGPT displays. This shared callback
           # requires issuer identification (RFC 9207) in provider metadata.
           - https://chatgpt.com/connector_platform_oauth_redirect
-        scopes: [openid, profile, email, groups, offline_access, vipu]
+        scopes: [openid, profile, email, address, phone, groups, offline_access, vipu]
         audience: [https://vipu-mcp.example.com/mcp]
         requested_audience_mode: explicit
         grant_types: [authorization_code, refresh_token]
@@ -61,7 +61,7 @@ identity_providers:
         pkce_challenge_method: S256
         redirect_uris:
           - https://claude.ai/api/mcp/auth_callback
-        scopes: [openid, profile, email, groups, offline_access, vipu]
+        scopes: [openid, profile, email, address, phone, groups, offline_access, vipu]
         audience: [https://vipu-mcp.example.com/mcp]
         requested_audience_mode: explicit
         grant_types: [authorization_code, refresh_token]
