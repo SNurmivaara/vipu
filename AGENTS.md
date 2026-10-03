@@ -60,7 +60,10 @@ review notes and asks
 and alone decides merges, releases, and deployments. The one exception is Dependabot
 minor and patch PRs, which merge themselves once **CI Status** passes; majors stay
 manual. The `@claude` app cannot push changes under `.github/workflows/`, so the
-maintainer commits workflow changes.
+maintainer commits workflow changes. `@claude` runs only for users with write access
+and refuses PRs from forks, because it runs their code next to its tokens. Text that
+other people wrote in issues, PRs or comments reaches Claude when you tag it there,
+so read it before tagging.
 
 Keep task progress and handoffs in issue/PR comments when available and authorized;
 otherwise include the handoff in the final response. Keep lasting knowledge in
