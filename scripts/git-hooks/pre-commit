@@ -27,6 +27,8 @@ RUN_MCP=0
 RUN_FRONTEND=0
 # MCP tests run against the real Flask app, so backend changes affect them too.
 if has_staged backend; then RUN_BACKEND=1; RUN_MCP=1; fi
+# The spec is generated from the backend, so a hand edit runs the backend checks.
+if echo "$STAGED" | grep -qx "docs/openapi.json"; then RUN_BACKEND=1; fi
 if has_staged mcp-server; then RUN_MCP=1; fi
 if has_staged frontend; then RUN_FRONTEND=1; fi
 
