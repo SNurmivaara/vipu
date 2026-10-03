@@ -252,7 +252,7 @@ export function SnapshotForm({
     let liabilities = 0;
 
     categories.forEach((cat) => {
-      const amount = amounts[cat.id] || 0;
+      const amount = amounts[cat.id] ?? 0;
       const group = groups.find((g) => g.id === cat.group_id);
       if (group?.group_type === "asset") {
         assets += amount;
@@ -272,7 +272,8 @@ export function SnapshotForm({
     e.preventDefault();
 
     const entries = categories
-      .filter((cat) => amounts[cat.id] && amounts[cat.id] > 0)
+      // A missing key means blank (not recorded); 0 is a real balance.
+      .filter((cat) => amounts[cat.id] !== undefined)
       .map((cat) => {
         const group = groups.find((g) => g.id === cat.group_id);
         const isLiability = group?.group_type === "liability";
@@ -560,13 +561,19 @@ function GroupSection({
               <input
                 type="number"
                 id={`cat-${cat.id}`}
-                value={amounts[cat.id] || ""}
-                onChange={(e) =>
-                  setAmounts((prev) => ({
-                    ...prev,
-                    [cat.id]: parseFloat(e.target.value) || 0,
-                  }))
-                }
+                value={amounts[cat.id] ?? ""}
+                onChange={(e) => {
+                  const parsed = parseFloat(e.target.value);
+                  setAmounts((prev) => {
+                    const next = { ...prev };
+                    if (Number.isNaN(parsed)) {
+                      delete next[cat.id];
+                    } else {
+                      next[cat.id] = parsed;
+                    }
+                    return next;
+                  });
+                }}
                 min={0}
                 step={0.01}
                 placeholder="0,00"
