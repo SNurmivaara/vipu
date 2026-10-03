@@ -18,17 +18,47 @@ jobs:
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 75
     permissions:
       contents: read
       pull-requests: read
       issues: read
+      checks: read
+      actions: read
       id-token: write
 
     steps:
+      # Review code that CI has tested. Waiting costs runner time, not subscription
+      # quota. On a claude/ branch a failure may be followed by a fix from
+      # claude-ci-fix.yml, so follow the PR head until CI passes or time runs out.
+      - name: Wait for CI
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          deadline=$(( $(date +%s) + 50 * 60 ))
+          while :; do
+            sha=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
+            result=$(gh api "repos/$REPO/commits/$sha/check-runs?check_name=CI%20Status" \
+              --jq '.check_runs[0] | select(.status == "completed") | .conclusion')
+            if [[ "$result" == success ]] || (( $(date +%s) > deadline )); then
+              break
+            fi
+            if [[ -n "$result" && "$BRANCH" != claude/* ]]; then
+              break
+            fi
+            sleep 30
+          done
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "result=${result:-not finished}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.ci.outputs.sha }}
           fetch-depth: 1
 
       - name: Run Claude Code Review
@@ -36,14 +66,30 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Claude opens its own PRs; the action otherwise refuses bot-triggered runs.
+          allowed_bots: claude
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            HEAD: ${{ steps.ci.outputs.sha }}
+            CI STATUS ON HEAD: ${{ steps.ci.outputs.result }}
 
-            Review this pull request against AGENTS.md. Focus on correctness bugs,
-            financial calculation and migration risks, and missing regression tests.
+            Review this pull request against AGENTS.md and the issue it closes.
+
+            1. Read the PR body and the linked issue (gh issue view). For each
+               acceptance criterion, find the test or check that proves it. A
+               criterion without evidence is a finding even when the code looks right.
+            2. If CI did not succeed, read the failed logs (gh run list, then
+               gh run view --log-failed) and report the cause.
+            3. Look for correctness bugs, financial calculation and migration risks,
+               and missing regression tests.
+
             Post each concrete issue as an inline comment with
             mcp__github_inline_comment__create_inline_comment. Then post one summary
-            comment with `gh pr comment`, saying "No issues found" if there are none.
+            comment with `gh pr comment`: the CI result, each acceptance criterion
+            marked covered (naming its test or check) or missing, and the findings,
+            or "No issues found" if there are none. Report what you found, not the
+            checks you did not run.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --model claude-opus-5-5
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run list:*),Bash(gh run view:*)"

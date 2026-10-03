@@ -1,0 +1,142 @@
+name: Claude CI Fix
+
+# When CI fails on a pull request from a claude/ branch, Claude fixes it on that
+# branch, at most twice per PR. Its push reruns CI, and the review in
+# claude-code-review.yml waits for that result.
+#
+# Like claude.yml, this runs branch code with secrets. Only people with write
+# access can push claude/ branches; they are the trust boundary.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+concurrency:
+  group: claude-ci-fix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  MAX_ATTEMPTS: 2
+  MARKER: "<!-- claude-ci-fix -->"
+  EXHAUSTED_MARKER: "<!-- claude-ci-fix-exhausted -->"
+
+jobs:
+  fix:
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'claude/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      pull-requests: write # The attempt comments below use the workflow token.
+      issues: read
+      actions: read
+      id-token: write
+    steps:
+      - name: Find the PR and count attempts
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          # workflow_run.pull_requests is empty for runs that Claude's pushes start.
+          pr=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+            --json number,headRefOid --jq ".[] | select(.headRefOid == \"$SHA\") | .number")
+          if [[ -z "$pr" ]]; then
+            echo "No open PR has $SHA as its head; nothing to fix."
+            exit 0
+          fi
+          count() {
+            gh api "repos/$REPO/issues/$pr/comments" --paginate \
+              --jq ".[] | select(.body | contains(\"$1\")) | .id" | wc -l
+          }
+          attempts=$(count "$MARKER")
+          if (( attempts >= MAX_ATTEMPTS )); then
+            if (( $(count "$EXHAUSTED_MARKER") == 0 )); then
+              gh pr comment "$pr" --repo "$REPO" --body "CI still fails after $MAX_ATTEMPTS automatic fix attempts ([run]($RUN_URL)). Over to the maintainer. $EXHAUSTED_MARKER"
+            fi
+            exit 0
+          fi
+          attempt=$(( attempts + 1 ))
+          gh pr comment "$pr" --repo "$REPO" --body "CI failed on ${SHA:0:7} ([run]($RUN_URL)). Claude is attempting fix $attempt of $MAX_ATTEMPTS. $MARKER"
+          echo "number=$pr" >> "$GITHUB_OUTPUT"
+          echo "attempt=$attempt" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout branch
+        if: steps.pr.outputs.number
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 1
+
+      # Match the CI toolchain so Claude can rerun the failing checks.
+      - name: Install uv
+        if: steps.pr.outputs.number
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+          enable-cache: true
+
+      - name: Set up Python
+        if: steps.pr.outputs.number
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        if: steps.pr.outputs.number
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        if: steps.pr.outputs.number
+        run: |
+          (cd backend && uv sync --locked --extra dev)
+          (cd mcp-server && uv sync --locked --extra dev)
+          (cd frontend && npm ci)
+
+      - name: Fix CI with Claude
+        if: steps.pr.outputs.number
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # CI runs that Claude's own pushes start have claude[bot] as their actor.
+          allowed_bots: claude
+          additional_permissions: |
+            actions: read
+          settings: |
+            {"env": {"BASH_DEFAULT_TIMEOUT_MS": "900000", "BASH_MAX_TIMEOUT_MS": "1800000"}}
+          prompt: |
+            CI failed on pull request #${{ steps.pr.outputs.number }} in ${{ github.repository }}.
+            Branch: ${{ github.event.workflow_run.head_branch }} (checked out)
+            Commit: ${{ github.event.workflow_run.head_sha }}
+            Failed run: ${{ github.event.workflow_run.html_url }} (id ${{ github.event.workflow_run.id }})
+            This is automatic fix attempt ${{ steps.pr.outputs.attempt }} of ${{ env.MAX_ATTEMPTS }}.
+
+            1. Read the failure with gh run view ${{ github.event.workflow_run.id }} --log-failed,
+               and the PR and its linked issue with gh pr view and gh issue view.
+            2. If the PR caused the failure, reproduce it with the check that failed
+               (./scripts/test-docker.sh for the Docker job, the package commands in
+               AGENTS.md for the others), fix it, and rerun that check until it passes.
+               Follow AGENTS.md and the verification steps of
+               .claude/skills/implement-issue/SKILL.md.
+            3. If the PR did not cause it (a flaky test or an infrastructure error),
+               change nothing.
+            4. Commit with a conventional subject and push to the branch. If the
+               evidence in the PR body changed, update it with gh pr edit.
+            5. Post one comment with gh pr comment: the cause, what you changed, and
+               the commands you ran with their results. Name any tool call that was
+               denied. Add no Generated with Claude Code signature.
+          claude_args: >-
+            --model claude-opus-5-5
+            --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *)"

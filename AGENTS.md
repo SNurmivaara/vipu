@@ -51,7 +51,11 @@ needs them, and opens the PR itself, as a draft when a criterion lacks evidence.
 tool allow-list does not match commands that start with an environment variable
 (`VAR=value uv run ...`), so wrap such checks in a script under `scripts/`.
 Every PR gets one advisory Claude review; only
-**CI Status** is required to merge. The maintainer triages review notes and asks
+**CI Status** is required to merge. The review waits for CI on the PR head, then
+checks each acceptance criterion of the linked issue for evidence. When CI fails on a
+`claude/` branch, `claude-ci-fix.yml` lets Claude fix it, at most twice per PR, and
+comments when it gives up. Claude workflows run on Opus 5.5. The maintainer triages
+review notes and asks
 `@claude` to fix the accepted ones, comments `@claude review` after large changes,
 and alone decides merges, releases, and deployments. The one exception is Dependabot
 minor and patch PRs, which merge themselves once **CI Status** passes; majors stay
