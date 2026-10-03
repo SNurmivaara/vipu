@@ -82,7 +82,8 @@ status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' -X POST \
 frontend_address=$("${compose[@]}" port frontend 3000)
 (
   cd "$repo_root/frontend"
-  npx playwright install chromium
+  # CI runners lack Chromium's system libraries; --with-deps installs them via apt.
+  npx playwright install ${GITHUB_ACTIONS:+--with-deps} chromium
   E2E_BASE_URL="http://$frontend_address" E2E_API_URL="http://$backend_address" \
     npm run test:e2e
 )

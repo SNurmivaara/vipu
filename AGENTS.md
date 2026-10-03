@@ -44,10 +44,11 @@ overrides; do not assume every GET or MCP read tool is free of writes.
    issue and showing how the acceptance criteria were met. Tiny fixes may start
    directly with a PR. Use conventional commit subjects (`feat:`, `fix:`, `docs:`, etc.).
 
-In GitHub, `@claude implement this` on an issue runs step 3 onwards in Actions with the
-CI toolchain. That runner has no PostgreSQL service; it runs the migration tests with
-`./scripts/test-migrations-postgres.sh`, which starts a disposable database. Its tool
-allow-list does not match commands that start with an environment variable
+In GitHub, `@claude implement this` on an issue runs the `/implement-issue` skill from
+step 3 in Actions, on Opus 5.5 with the CI toolchain and Docker. It runs
+`./scripts/test-docker.sh` and `./scripts/test-migrations-postgres.sh` when the change
+needs them, and opens the PR itself, as a draft when a criterion lacks evidence. Its
+tool allow-list does not match commands that start with an environment variable
 (`VAR=value uv run ...`), so wrap such checks in a script under `scripts/`.
 Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The maintainer triages review notes and asks

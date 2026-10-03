@@ -21,7 +21,7 @@ jobs:
         (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: read
       pull-requests: read
@@ -66,7 +66,20 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
+          # ./scripts/test-docker.sh takes several minutes; let one Bash call wait for it.
+          settings: |
+            {"env": {"BASH_DEFAULT_TIMEOUT_MS": "900000", "BASH_MAX_TIMEOUT_MS": "1800000"}}
           # uv run already allows arbitrary code, so a narrow list only blocks
           # verification. Write access and branch protection are the boundary.
+          # The appended prompt replaces the action's default of posting a
+          # "Create PR" link with a signature: the implement-issue skill opens the PR.
           claude_args: >-
+            --model claude-opus-5-5
             --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *)"
+            --append-system-prompt "This repository runs you in GitHub Actions. For implementation
+            requests follow .claude/skills/implement-issue/SKILL.md, including its GitHub Actions
+            notes. Its pull request steps replace your default ones: do not post a Create PR link;
+            open the pull request yourself with gh pr create, or update an existing one with
+            gh pr edit, and add no Generated with Claude Code signature anywhere. Docker works on
+            this runner, so run the checks the skill asks for, including ./scripts/test-docker.sh,
+            before pushing. If a tool call is denied, name the denied command in your final comment."
