@@ -9,6 +9,10 @@ This skill walks the lightweight change workflow in `AGENTS.md` with concrete
 commands. `AGENTS.md` stays the authority on conventions, checks and migrations;
 reread the relevant section there rather than relying on this summary.
 
+The same steps apply when `@claude` runs this in GitHub Actions. There, the trigger
+comment is your only conversation with the user: put questions and the hand-off in
+your comment, and treat `@claude implement this` as the request to open the PR.
+
 ## 1. Read the issue
 
 ```sh
@@ -20,6 +24,7 @@ prerequisites are closed (`gh issue view <prereq> --json state`). Stop and ask t
 user when a prerequisite is open, the issue is still waiting on a decision (for
 example "needs the maintainer's approval"), or an acceptance criterion is too vague
 to test. Check for an existing branch or PR with `gh pr list --search "<n>"`.
+In GitHub Actions, post the question in your comment and stop.
 
 ## 2. Branch from main
 
@@ -31,6 +36,7 @@ git switch -c <type>/<n>-<short-slug> origin/main
 ```
 
 Use the conventional commit type as the prefix (`feat`, `fix`, `docs`, `ci`, ...).
+In GitHub Actions the action has already created a `claude/` branch; stay on it.
 
 ## 3. Investigate
 
@@ -50,16 +56,25 @@ regenerate `docs/openapi.json` and update `docs/api.html` and `docs/guide.html` 
 
 ## 5. Verify
 
-Run the narrow checks for the touched package first, then `./test.sh`. Run the
-PostgreSQL migration tests or Playwright smoke tests when the change needs them;
-`AGENTS.md` lists the commands and their prerequisites. Map each acceptance
-criterion to the evidence that proves it, and note anything you could not check.
+Run the narrow checks for the touched package first, then `./test.sh`. When the
+change touches `frontend/`, the API, startup or the Docker setup, also run
+`./scripts/test-docker.sh`: it builds the production images, checks health and
+migrations, and runs the Playwright smoke tests, including any you added. For
+migration changes run `./scripts/test-migrations-postgres.sh`. Both need only
+Docker, which GitHub Actions runners have, and take several minutes, so give the
+command a long timeout. Never leave a new or changed test for CI to run first.
+
+Map each acceptance criterion to the test or check that proves it. When a
+criterion has no evidence, add the test; if you cannot, open the PR as a draft
+(step 6) and say which criterion is missing and why. Report the checks you ran and
+the evidence that is missing, not checks the change never needed.
 
 ## 6. Commit and open the PR
 
-Commit with a conventional subject (`feat: ...`, `fix: ...`). Show the user the
-diff summary and the PR draft before pushing, unless they already asked you to
-open the PR.
+Commit with a conventional subject (`feat: ...`, `fix: ...`). Locally, show the
+user the diff summary and the PR draft before pushing, unless they already asked
+you to open the PR. In GitHub Actions, open it yourself instead of posting a
+"Create PR" link.
 
 ```sh
 git push -u origin HEAD
@@ -68,12 +83,19 @@ gh pr create --base main --title "<type>: <summary>" --body-file <file>
 
 Write the body in the sections of `.github/pull_request_template.md`, starting with
 `Closes #<n>` (or `Part of #<n>` when the PR does not finish the issue). Under
-acceptance evidence, list the exact commands run and their results. Use synthetic
-data only. Do not merge, release or deploy.
+acceptance evidence, list each criterion with the test or check that proves it,
+and the exact commands run with their results. Add `--draft` when a criterion
+lacks evidence or a check fails. Add no "Generated with Claude Code" line. Use
+synthetic data only. Do not merge, release or deploy.
+
+After pushing more commits to an open PR, rewrite its body with
+`gh pr edit <n> --body-file <file>` so the evidence matches the code, and run
+`gh pr ready <n>` once every criterion has evidence and the checks pass.
 
 ## 7. Hand off
 
 Reply with the PR link, what was verified, and what remains. When work stops
 before a PR, post the `AGENTS.md` handoff block as an issue comment with
 `gh issue comment <n> --body-file <file>` if the user agrees, otherwise include
-it in the reply.
+it in the reply. In GitHub Actions the hand-off goes in your comment, together with
+any tool call that was denied.

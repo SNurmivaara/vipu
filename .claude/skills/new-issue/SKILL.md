@@ -43,10 +43,11 @@ Use the sections of `.github/ISSUE_TEMPLATE/change-request.md`, in order:
   including edge cases. Name exact expected values where it matters (dates, totals,
   rounding). Vague criteria such as "works correctly" cost a review round later.
 - **Approach**: optional, only what the investigation settled.
-- **Verification**: the commands and tests that prove each criterion. Note when the
-  work needs something the GitHub Actions runner lacks, such as a visual check of the
-  UI. PostgreSQL migration tests run there through
-  `./scripts/test-migrations-postgres.sh`.
+- **Verification**: the commands and tests that prove each criterion. GitHub Actions
+  runners have Docker, so `./scripts/test-docker.sh` (full stack and Playwright) and
+  `./scripts/test-migrations-postgres.sh` run there; never tell the implementer to
+  leave a check to CI. Note only what no runner can do, such as a visual check of
+  the UI.
 - **Rollout and recovery**: migrations, compatibility, backups, or "No special
   rollout or recovery steps".
 
