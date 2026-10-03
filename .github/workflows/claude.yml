@@ -1,23 +1,25 @@
 name: Claude Code
 
+# Only comments and reviews start a run. Issue bodies are specifications that may
+# mention @claude in passing, so opening or assigning an issue never does.
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  issues:
-    types: [opened, assigned]
   pull_request_review:
     types: [submitted]
 
 jobs:
   claude:
-    # The action also rejects actors without write access to the repository.
+    # Bots never start a run, so Claude's own comments mentioning @claude are
+    # ignored. The action also rejects actors without write access.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      github.event.sender.type != 'Bot' && (
+        (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+        (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
