@@ -64,5 +64,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           additional_permissions: |
             actions: read
+          # uv run already allows arbitrary code, so a narrow list only blocks
+          # verification. Write access and branch protection are the boundary.
           claude_args: >-
-            --allowedTools "Bash(./test.sh),Bash(uv run --locked *),Bash(npm run *),Bash(git diff *),Bash(git status),Bash(git log *)"
+            --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *)"
