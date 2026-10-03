@@ -1,0 +1,36 @@
+# Weekly grouped version updates. Security updates are configured separately in
+# the repository settings. Base images are not tracked here: Dependabot would
+# propose Python and Node major upgrades through the image tags.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: uv
+    directory: /mcp-server
+    schedule:
+      interval: weekly
+    groups:
+      mcp-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
