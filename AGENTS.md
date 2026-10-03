@@ -49,7 +49,10 @@ step 3 in Actions, on Opus 5.5 with the CI toolchain and Docker. It runs
 `./scripts/test-docker.sh` and `./scripts/test-migrations-postgres.sh` when the change
 needs them, and opens the PR itself, as a draft when a criterion lacks evidence. Its
 tool allow-list does not match commands that start with an environment variable
-(`VAR=value uv run ...`), so wrap such checks in a script under `scripts/`.
+(`VAR=value uv run ...`), so wrap such checks in a script under `scripts/`. Claude Code
+also refuses `cd dir && ...` and `(cd dir && ...)` there; use `git -C`,
+`uv --directory`, `npm --prefix` or paths instead, and write scratch files such as a
+PR body under `/tmp`.
 Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The review waits for CI on the PR head, then
 checks each acceptance criterion of the linked issue for evidence. When CI fails on a
@@ -245,7 +248,8 @@ uv run --locked python scripts/export_openapi.py
 ```
 
 The exporter uses the testing configuration and in-memory SQLite; no external
-database is needed. Keep `docs/api.html` and `docs/guide.html` current where relevant.
+database is needed. `./test.sh`, the pre-commit hook and CI regenerate it and fail
+when the committed file differs. Keep `docs/api.html` and `docs/guide.html` current where relevant.
 The Pages workflow deploys docs on qualifying pushes to `main` or manual dispatch.
 
 The release workflow publishes GHCR images when a GitHub release is published, or

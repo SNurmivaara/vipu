@@ -13,6 +13,10 @@ uv run --locked ruff check .
 echo ">> Mypy (type checking)"
 uv run --locked mypy .
 
+echo ">> OpenAPI spec (regenerates docs/openapi.json; commit any change)"
+uv run --locked python scripts/export_openapi.py > /dev/null
+git diff --exit-code --stat -- ../docs/openapi.json
+
 echo ">> Pytest (tests)"
 uv run --locked pytest
 
