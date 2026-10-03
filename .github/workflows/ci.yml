@@ -9,10 +9,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Detect which parts of the codebase changed
   changes:
     name: Detect Changes
+    permissions:
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
@@ -27,15 +34,18 @@ jobs:
             backend:
               - 'backend/**'
               - '.github/workflows/ci.yml'
+              - 'test.sh'
             frontend:
               - 'frontend/**'
               - '.github/workflows/ci.yml'
+              - 'test.sh'
             mcp:
               - 'mcp-server/**'
               # The MCP tests run against the real Flask app, so a backend
               # change can break them without touching mcp-server/.
               - 'backend/**'
               - '.github/workflows/ci.yml'
+              - 'test.sh'
 
   # Backend: Lint + Typecheck
   backend-lint:
@@ -61,16 +71,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Check formatting with Black
-        run: uv run black --check .
+        run: uv run --locked black --check .
 
       - name: Lint with Ruff
-        run: uv run ruff check .
+        run: uv run --locked ruff check .
 
       - name: Type check with mypy
-        run: uv run mypy .
+        run: uv run --locked mypy .
 
   # Backend: Tests
   backend-test:
@@ -96,10 +106,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Run tests with coverage
-        run: uv run pytest --cov=app --cov-report=xml --cov-report=term-missing
+        run: uv run --locked pytest --cov=app --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -134,16 +144,16 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Check formatting with Black
-        run: uv run black --check .
+        run: uv run --locked black --check .
 
       - name: Lint with Ruff
-        run: uv run ruff check .
+        run: uv run --locked ruff check .
 
       - name: Type check with mypy
-        run: uv run mypy .
+        run: uv run --locked mypy .
 
   # MCP server: Tests
   mcp-test:
@@ -169,10 +179,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Run tests with coverage
-        run: uv run pytest --cov=vipu_mcp --cov-report=xml --cov-report=term-missing
+        run: uv run --locked pytest --cov=vipu_mcp --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -303,6 +313,9 @@ jobs:
           echo "Health response: $response"
           echo "$response" | grep -q "ok"
 
+      - name: Verify PostgreSQL migrations
+        run: docker compose exec -T backend python < scripts/check-migrations.py
+
       - name: Wait for MCP server
         run: |
           for i in {1..30}; do
@@ -337,6 +350,12 @@ jobs:
     steps:
       - name: Check CI status
         run: |
+          # Failed or cancelled detection must never produce a green gate
+          if [[ "${{ needs.changes.result }}" != "success" ]]; then
+            echo "Change detection did not succeed"
+            exit 1
+          fi
+
           # Docker must always pass
           if [[ "${{ needs.docker.result }}" != "success" ]]; then
             echo "Docker build/test failed"

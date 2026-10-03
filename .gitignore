@@ -40,6 +40,9 @@ secrets/
 # Claude
 .claude/
 
+# Machine-specific Codex permissions
+.codex/config.toml
+
 # Next.js (for later)
 .next/
 out/
