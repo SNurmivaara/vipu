@@ -57,7 +57,8 @@ async function seedSnapshot(api: Api) {
 
 async function openEdit(page: Page) {
   await page.goto("/networth");
-  const row = page.getByText("February 1999").locator("xpath=ancestor::div[2]");
+  // The third ancestor is the history row, which holds the label and the buttons.
+  const row = page.getByText("February 1999").locator("xpath=ancestor::div[3]");
   await row.getByTitle("Edit").click();
   return page.getByRole("dialog");
 }
