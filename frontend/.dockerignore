@@ -29,6 +29,10 @@ Dockerfile
 *.test.ts
 *.test.tsx
 __tests__/
+e2e/
+playwright.config.ts
+test-results/
+playwright-report/
 
 # Documentation
 README.md
