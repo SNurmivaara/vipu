@@ -104,6 +104,8 @@ jobs:
       # with "REVIEW: APPROVE" or "REVIEW: REQUEST CHANGES" for skimming. It is a
       # plain comment, not a GitHub review approval; only CI Status gates merging.
       - name: Post the review summary
+        # Empty when the action skips itself, e.g. on a PR that edits this file.
+        if: steps.claude-review.outputs.structured_output != ''
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
