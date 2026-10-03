@@ -5,18 +5,20 @@ This directory contains git hooks that are used to validate code before commits.
 ## Available Hooks
 
 ### pre-commit
-Validates code formatting and runs tests for both backend and frontend:
+Mirrors `./test.sh` for the components with staged changes, minus the slow
+frontend production build. Commits touching only docs, workflows, etc. skip the
+component checks. Python checks use `uv run --locked`.
 
-**Backend (Python):**
-- `black --check` - Code formatting
-- `ruff check` - Linting
-- `mypy` - Type checking
-- `pytest` - Unit tests
+**Backend (Python)** - when `backend/` files are staged:
+- `black --check`, `ruff check`, `mypy`, `pytest`
 
-**Frontend (TypeScript):**
-- `tsc --noEmit` - TypeScript type checking
-- `eslint` - Linting (if config exists)
-- `prettier --check` - Formatting (if config exists)
+**MCP server (Python)** - when `mcp-server/` or `backend/` files are staged
+(MCP tests run against the real Flask app):
+- `black --check`, `ruff check`, `mypy`, `pytest`
+
+**Frontend (TypeScript)** - when `frontend/` files are staged:
+- `npm run lint` (ESLint)
+- `npm run typecheck`
 
 ## Installation
 
@@ -51,12 +53,11 @@ For common formatting issues, you can auto-fix them:
 
 **Backend:**
 ```bash
-uv run black .
-uv run ruff check . --fix
+uv run --locked black .
+uv run --locked ruff check . --fix
 ```
 
 **Frontend:**
 ```bash
-npx prettier --write .
-npx eslint . --fix
+npm run lint -- --fix
 ```

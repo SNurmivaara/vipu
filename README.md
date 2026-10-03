@@ -373,8 +373,8 @@ Tiny fixes can start directly with a PR. New task-plan files are not required;
 existing historical plans are preserved. Never include credentials or personal
 financial data in issues, PRs, or handoffs.
 
-For this solo workflow, requiring **CI Status** on `main` is recommended; mandatory
-reviewer approval is optional. Repository settings are managed separately.
+`main` requires the **CI Status** check; reviewer approval is not required for this
+solo workflow. Repository settings are managed separately.
 
 ## License
 
