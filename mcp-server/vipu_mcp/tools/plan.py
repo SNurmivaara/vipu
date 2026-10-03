@@ -28,6 +28,11 @@ projection compounds each asset group at its own rate and amortises debt \
 separately, while this one grows a single pot at one rate. Trust the \
 difference, and quote get_fire_projection for levels.
 
+Coast FIRE is not reported here. It depends on the per-group growth and the \
+withdrawal base that only the headline model has, so this model could call it \
+reached when the wealth page says it is not. Quote get_fire_projection for \
+Coast FIRE.
+
 `annual_expenses` is the retirement spending the FIRE number is built from, not \
 necessarily today's expenses. `years_to_fire` is when the portfolio covers it, \
 which is when work becomes optional, not the planned retirement age.
@@ -102,6 +107,10 @@ _SETTING_FALLBACKS = {
     "pension_tax_pct": "pension_tax_pct",
 }
 
+# Coast FIRE fields of POST /api/forecasting/calculate that project_fire drops:
+# the calculate endpoint models Coast FIRE differently from the projection.
+_COAST_FIELDS = ("coast_fire_number", "coast_fire_reached", "coast_fire_age")
+
 
 def _delta(scenario: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
     """What the scenario moves, against an unchanged run of the same model.
@@ -139,11 +148,6 @@ def _delta(scenario: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]
             "from": baseline.get("fire_number"),
             "to": scenario.get("fire_number"),
             "change": difference("fire_number"),
-        },
-        "coast_fire_number": {
-            "from": baseline.get("coast_fire_number"),
-            "to": scenario.get("coast_fire_number"),
-            "change": difference("coast_fire_number"),
         },
     }
 
@@ -234,6 +238,12 @@ def register(server: MCPServer, client: VipuClient, read_only: bool = False) -> 
         for result in (baseline, scenario):
             # The month-by-month walk is hundreds of rows of no use here.
             result.pop("projections", None)
+            # Coast FIRE here can disagree with get_fire_projection on whether
+            # it is reached, so it is not reported at all.
+            for key in _COAST_FIELDS:
+                result.pop(key, None)
+            if result.get("pension"):
+                result["pension"].pop("pension_coast_fire_number", None)
 
         return {
             "scenario": scenario,
