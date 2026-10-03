@@ -1,4 +1,6 @@
-"""Tests for app/engine configuration (issue #55)."""
+"""Tests for app/engine configuration (issues #55 and #147)."""
+
+from sqlalchemy import create_engine
 
 from app import POOL_RECYCLE_SECONDS, build_engine_options
 
@@ -15,3 +17,15 @@ class TestEngineOptions:
         # SQLite has its own pooling; pre-ping/recycle don't apply.
         assert build_engine_options("sqlite:///:memory:") == {}
         assert build_engine_options("sqlite:////tmp/vipu.db") == {}
+
+
+class TestPostgresDriver:
+    """Plain postgresql:// URLs, as deployments use, resolve to an installed driver."""
+
+    def test_plain_url_uses_psycopg(self):
+        # Fails with ModuleNotFoundError if the default driver is not installed.
+        engine = create_engine("postgresql://u:p@localhost/db")
+        try:
+            assert engine.dialect.driver == "psycopg"
+        finally:
+            engine.dispose()
