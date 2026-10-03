@@ -337,6 +337,12 @@ jobs:
           echo "Unauthenticated /mcp status: $status"
           [ "$status" = "401" ]
 
+      - name: Show service diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --no-color --tail=200
+
       - name: Stop services
         if: always()
         run: docker compose down -v
