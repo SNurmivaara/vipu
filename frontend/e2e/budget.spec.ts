@@ -44,6 +44,14 @@ test("budget page shows totals from seeded data", async ({ page, api }) => {
 
 test("adds a budget line in the UI and archives it", async ({ page, api }) => {
   const name = `${RUN} rent`;
+  // Registered before the UI creates it, so a failed run cleans up too.
+  // Delete also works on archived expenses.
+  api.defer(async () => {
+    const budget = await api.get<Budget>("/api/budget/current");
+    for (const e of [...budget.expenses, ...budget.archived_expenses]) {
+      if (e.name === name) await api.request.delete(`/api/expenses/${e.id}`);
+    }
+  });
   await page.goto("/");
 
   await page.getByRole("button", { name: "Add Expense" }).click();
@@ -59,7 +67,6 @@ test("adds a budget line in the UI and archives it", async ({ page, api }) => {
   );
   expect(created).toBeDefined();
   const path = `/api/expenses/${created!.id}`;
-  api.track(path);
 
   await expandExpenses(page);
   // It recurs, so it is listed under both months.

@@ -13,8 +13,8 @@ export interface Api {
     path: string,
     data: Record<string, unknown>
   ) => Promise<T>;
-  /** Delete this path when the test ends (for records the UI created). */
-  track: (path: string) => void;
+  /** Run this when the test ends, even if it failed (for records the UI creates). */
+  defer: (cleanup: () => Promise<void>) => void;
   get: <T>(path: string) => Promise<T>;
   put: (path: string, data: Record<string, unknown>) => Promise<void>;
 }
@@ -36,18 +36,20 @@ export const test = base.extend<{ api: Api }>({
 
   api: async ({ playwright }, provide) => {
     const request = await playwright.request.newContext({ baseURL: API_URL });
-    const created: string[] = [];
+    const cleanups: (() => Promise<void>)[] = [];
     const api: Api = {
       request,
       seed: async (path, data) => {
         const response = await request.post(path, { data });
         expect(response.status(), `POST ${path}`).toBe(201);
         const item = await response.json();
-        created.push(`${path}/${item.id}`);
+        cleanups.push(async () => {
+          await request.delete(`${path}/${item.id}`);
+        });
         return item;
       },
-      track: (path) => {
-        created.push(path);
+      defer: (cleanup) => {
+        cleanups.push(cleanup);
       },
       get: async (path) => {
         const response = await request.get(path);
@@ -60,11 +62,14 @@ export const test = base.extend<{ api: Api }>({
       },
     };
     await provide(api);
-    // Newest first, so a category goes before the group that owns it.
-    for (const path of created.reverse()) {
-      await request.delete(path);
+    // Newest first, so a category goes before the group that owns it. One
+    // failed cleanup must not leave the rest of the test data behind.
+    const errors: unknown[] = [];
+    for (const cleanup of cleanups.reverse()) {
+      await cleanup().catch((error) => errors.push(error));
     }
     await request.dispose();
+    if (errors.length) throw errors[0];
   },
 });
 
