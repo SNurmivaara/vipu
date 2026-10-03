@@ -34,6 +34,8 @@ overrides; do not assume every GET or MCP read tool is free of writes.
 2. Use the [change request](.github/ISSUE_TEMPLATE/change-request.md) to record the
    problem, scope, and observable acceptance criteria. Refine the approach in the
    issue after investigation; an issue need not prescribe the implementation.
+   In Claude Code, the `/new-issue` skill drafts issues (or an epic with PR-sized
+   children) in this format and files them after the maintainer approves.
 3. Implement on a branch. Keep changes focused and add regression coverage for
    changed behavior, especially financial calculations and migrations.
 4. Run the relevant checks below, then the full suite when appropriate. Report
@@ -41,6 +43,13 @@ overrides; do not assume every GET or MCP read tool is free of writes.
 5. Open a PR using the [PR template](.github/pull_request_template.md), linking the
    issue and showing how the acceptance criteria were met. Tiny fixes may start
    directly with a PR. Use conventional commit subjects (`feat:`, `fix:`, `docs:`, etc.).
+
+In GitHub, `@claude implement this` on an issue runs step 3 onwards in Actions with the
+CI toolchain; the `@claude` runner has no PostgreSQL service, so start one with
+`docker run` when a check needs it. Every PR gets one advisory Claude review; only
+**CI Status** is required to merge. The maintainer triages review notes and asks
+`@claude` to fix the accepted ones, comments `@claude review` after large changes,
+and alone decides merges, releases, and deployments.
 
 Keep task progress and handoffs in issue/PR comments when available and authorized;
 otherwise include the handoff in the final response. Keep lasting knowledge in
