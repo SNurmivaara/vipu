@@ -221,5 +221,3 @@ an implicit part of implementing a feature.
 - Improve production dependency reproducibility further by pinning the moving
   base-image and uv tags. The backend image installs from its committed lockfile.
 - Agree and test a rounding policy before attempting consistency changes.
-- Recommend requiring **CI Status** on `main`, without mandatory reviewer approval
-  for the solo workflow. This is a settings recommendation, not an automatic change.

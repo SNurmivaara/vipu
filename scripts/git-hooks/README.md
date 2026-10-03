@@ -17,7 +17,7 @@ component checks. Python checks use `uv run --locked`.
 - `black --check`, `ruff check`, `mypy`, `pytest`
 
 **Frontend (TypeScript)** - when `frontend/` files are staged:
-- `npm run lint` (ESLint; flat `eslint.config.*` or legacy `.eslintrc.*`)
+- `npm run lint` (ESLint)
 - `npm run typecheck`
 
 ## Installation
