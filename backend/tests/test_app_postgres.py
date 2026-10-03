@@ -1,7 +1,9 @@
 """Application startup against PostgreSQL.
 
 Runs only when TEST_POSTGRES_URL points at a disposable PostgreSQL database
-(see test_migrations_postgres.py). The app starts in a throwaway schema.
+(see test_migrations_postgres.py). The app starts in a throwaway schema. Use a
+plain postgresql:// URL so the app starts on SQLAlchemy's default driver, as in
+production.
 """
 
 import os

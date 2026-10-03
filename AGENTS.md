@@ -211,7 +211,7 @@ disposable PostgreSQL database and skips otherwise, for example:
 
 ```sh
 cd backend
-TEST_POSTGRES_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/postgres \
+TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/postgres \
   uv run --locked pytest tests/test_migrations_postgres.py
 ```
 

@@ -5,7 +5,7 @@ throwaway PostgreSQL schema, apply migrations up to a historical point, insert
 synthetic rows, run the remaining migrations and assert on the transformed data.
 
 Runs only when TEST_POSTGRES_URL points at a disposable PostgreSQL database,
-e.g. postgresql+psycopg2://postgres:postgres@localhost:5432/postgres. Each test
+e.g. postgresql://postgres:postgres@localhost:5432/postgres. Each test
 works in its own schema, which is dropped afterwards.
 """
 
