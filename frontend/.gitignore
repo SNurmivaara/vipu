@@ -26,6 +26,10 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Playwright
+test-results/
+playwright-report/
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

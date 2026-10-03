@@ -138,6 +138,13 @@ npm run typecheck
 npm run build
 ```
 
+The Playwright smoke tests (`frontend/e2e/`) are not part of `./test.sh`: they need a
+running stack. Against `./dev.sh`, run `npm run test:e2e` in `frontend/` (first time:
+`npx playwright install chromium`). They seed synthetic data through the REST API,
+clean it up afterwards, and read `E2E_BASE_URL` (default `http://localhost:3000`) and
+`E2E_API_URL` (default `http://localhost:5000`). `./scripts/test-docker.sh` and the CI
+`docker` job run them against the disposable Compose stack.
+
 Run `./scripts/test-docker.sh` from the repository root for disposable Docker
 integration checks. It uses the existing production Dockerfiles with an isolated
 Compose project, generated container names, ephemeral loopback ports, and its own

@@ -183,6 +183,11 @@ npm run dev
 # Linting and type checking
 npm run lint
 npm run typecheck
+
+# Playwright smoke tests (needs a running stack, e.g. ./dev.sh; first run:
+# npx playwright install chromium). Set E2E_BASE_URL / E2E_API_URL if the
+# frontend / backend are not on localhost:3000 / localhost:5000.
+npm run test:e2e
 ```
 
 ### Backend (without Docker)
@@ -365,7 +370,8 @@ For the next feature:
 3. Implement on a feature branch. Keep progress and handoffs in issue/PR comments;
    keep lasting knowledge in existing documentation and code comments.
 4. Install locked dependencies and run `./test.sh`. Use `./scripts/test-docker.sh`
-   for disposable PostgreSQL/Docker validation; report exact results and limitations.
+   for disposable PostgreSQL/Docker validation (it also runs the Playwright smoke
+   tests, `npm run test:e2e` in `frontend/`, against that stack); report exact results and limitations.
 5. Use conventional commits and open a PR with acceptance and verification evidence
    using the [PR template](.github/pull_request_template.md).
 

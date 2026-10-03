@@ -48,9 +48,9 @@ for name, service in config["services"].items():
     service.pop("container_name", None)
     service.pop("ports", None)
     service["restart"] = "no"
-    if name in ("backend", "mcp"):
+    if name in ("backend", "mcp", "frontend"):
         service["ports"] = [{
-            "target": 5000 if name == "backend" else 5100,
+            "target": {"backend": 5000, "mcp": 5100, "frontend": 3000}[name],
             "published": "0",
             "host_ip": "127.0.0.1",
             "protocol": "tcp",
@@ -77,4 +77,13 @@ status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' -X POST \
 [[ "$status" == 401 ]]
 
 "${compose[@]}" exec -T backend python < "$repo_root/scripts/check-migrations.py"
-echo 'Docker health, MCP authentication, and PostgreSQL migration checks passed'
+
+# Browser smoke tests against this stack. Needs `npm ci` in frontend/ first.
+frontend_address=$("${compose[@]}" port frontend 3000)
+(
+  cd "$repo_root/frontend"
+  npx playwright install chromium
+  E2E_BASE_URL="http://$frontend_address" E2E_API_URL="http://$backend_address" \
+    npm run test:e2e
+)
+echo 'Docker health, MCP authentication, PostgreSQL migration, and Playwright checks passed'
