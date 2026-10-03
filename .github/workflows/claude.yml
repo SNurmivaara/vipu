@@ -75,7 +75,7 @@ jobs:
           # "Create PR" link with a signature: the implement-issue skill opens the PR.
           claude_args: >-
             --model claude-opus-5-5
-            --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *)"
+            --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *),Bash(sed *),Read(//tmp/**),Write(//tmp/**),Edit(//tmp/**)"
             --append-system-prompt "This repository runs you in GitHub Actions. For implementation
             requests follow .claude/skills/implement-issue/SKILL.md, including its GitHub Actions
             notes. Its pull request steps replace your default ones: do not post a Create PR link;

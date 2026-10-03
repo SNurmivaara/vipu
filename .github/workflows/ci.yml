@@ -33,6 +33,8 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
+              # Generated from the backend and checked by the lint job.
+              - 'docs/openapi.json'
               - '.github/workflows/ci.yml'
               - 'test.sh'
             frontend:
@@ -81,6 +83,15 @@ jobs:
 
       - name: Type check with mypy
         run: uv run --locked mypy .
+
+      # The committed spec drifted silently once (29 of 39 paths); keep it current.
+      - name: Check docs/openapi.json is current
+        run: |
+          uv run --locked python scripts/export_openapi.py
+          git diff --exit-code -- ../docs/openapi.json || {
+            echo "::error file=docs/openapi.json::Out of date. Run 'uv run --locked python scripts/export_openapi.py' in backend/ and commit the result."
+            exit 1
+          }
 
   # Backend: Tests
   backend-test:
