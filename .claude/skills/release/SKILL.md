@@ -91,7 +91,7 @@ Only after approval, write the notes to a file and run:
 
 ```sh
 gh release create vX.Y.Z --target <commit from step 1> --title "<title>" --notes-file <file>
-gh run list --workflow release.yml --limit 1 --json databaseId
+gh run list --workflow release.yml --event release --limit 1 --json databaseId,headSha,status
 gh run watch <id> --exit-status
 ```
 
