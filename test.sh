@@ -5,16 +5,16 @@ echo "=== Backend Checks ==="
 cd backend
 
 echo ">> Black (formatting)"
-uv run black --check .
+uv run --locked black --check .
 
 echo ">> Ruff (linting)"
-uv run ruff check .
+uv run --locked ruff check .
 
 echo ">> Mypy (type checking)"
-uv run mypy .
+uv run --locked mypy .
 
 echo ">> Pytest (tests)"
-uv run pytest
+uv run --locked pytest
 
 cd ..
 
@@ -23,16 +23,16 @@ echo "=== MCP Server Checks ==="
 cd mcp-server
 
 echo ">> Black (formatting)"
-uv run black --check .
+uv run --locked black --check .
 
 echo ">> Ruff (linting)"
-uv run ruff check .
+uv run --locked ruff check .
 
 echo ">> Mypy (type checking)"
-uv run mypy .
+uv run --locked mypy .
 
 echo ">> Pytest (tests)"
-uv run pytest
+uv run --locked pytest
 
 cd ..
 
@@ -44,7 +44,7 @@ echo ">> ESLint"
 npm run lint
 
 echo ">> TypeScript"
-npx tsc --noEmit
+npm run typecheck
 
 echo ">> Build"
 npm run build

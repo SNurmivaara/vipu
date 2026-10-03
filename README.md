@@ -162,7 +162,7 @@ Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`), backend
 # Rebuild containers (after dependency changes)
 ./dev.sh build
 
-# Reset database (removes volumes)
+# Reset database (DESTRUCTIVE: removes the development database volume)
 ./dev.sh reset
 ```
 
@@ -172,7 +172,7 @@ Changes to frontend (`app/`, `components/`, `lib/`, `hooks/`, `types/`), backend
 cd frontend
 
 # Install dependencies
-npm install
+npm ci
 
 # Set up environment (optional - no config needed for default setup)
 cp .env.example .env.local
@@ -194,22 +194,22 @@ cd backend
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install dependencies
-uv sync --extra dev
+uv sync --locked --extra dev
 
 # Set up environment
 cp .env.example .env
 # Edit .env with your database connection
 
 # Run development server
-uv run flask run --debug
+uv run --locked flask --app app:create_app run --debug
 
 # Run tests
-uv run pytest
+uv run --locked pytest
 
 # Linting and formatting
-uv run ruff check .
-uv run black --check .
-uv run mypy .
+uv run --locked ruff check .
+uv run --locked black --check .
+uv run --locked mypy .
 ```
 
 ### MCP Server (without Docker)
@@ -218,19 +218,19 @@ uv run mypy .
 cd mcp-server
 
 # Install dependencies (includes the backend, for the tests)
-uv sync --extra dev
+uv sync --locked --extra dev
 
 # Run against a local backend
-MCP_AUTH_TOKEN=dev-token uv run uvicorn vipu_mcp.server:create_app \
+MCP_AUTH_TOKEN=dev-token uv run --locked uvicorn vipu_mcp.server:create_app \
   --factory --host 0.0.0.0 --port 5100 --reload
 
 # Run tests
-uv run pytest
+uv run --locked pytest
 
 # Linting and formatting
-uv run ruff check .
-uv run black --check .
-uv run mypy .
+uv run --locked ruff check .
+uv run --locked black --check .
+uv run --locked mypy .
 ```
 
 Inspect the tool surface interactively:
@@ -352,12 +352,29 @@ Useful when pointing a new client at live data for the first time.
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests and linting (`uv run pytest && uv run ruff check . && uv run black --check .`)
-5. Commit with conventional commits (`feat:`, `fix:`, `docs:`, etc.)
-6. Push and open a Pull Request
+Read [AGENTS.md](AGENTS.md) for the authoritative assistant guidance, architecture,
+financial conventions, migration constraints, and exact development/check commands.
+Claude reads the same guidance through `CLAUDE.md`.
+
+For the next feature:
+
+1. Open a [change request](.github/ISSUE_TEMPLATE/change-request.md) describing the
+   problem, scope, and observable acceptance criteria.
+2. Give either assistant the issue and repository. Inspect the relevant code and
+   refine the criteria and approach in the issue before implementation.
+3. Implement on a feature branch. Keep progress and handoffs in issue/PR comments;
+   keep lasting knowledge in existing documentation and code comments.
+4. Install locked dependencies and run `./test.sh`. Use `./scripts/test-docker.sh`
+   for disposable PostgreSQL/Docker validation; report exact results and limitations.
+5. Use conventional commits and open a PR with acceptance and verification evidence
+   using the [PR template](.github/pull_request_template.md).
+
+Tiny fixes can start directly with a PR. New task-plan files are not required;
+existing historical plans are preserved. Never include credentials or personal
+financial data in issues, PRs, or handoffs.
+
+For this solo workflow, requiring **CI Status** on `main` is recommended; mandatory
+reviewer approval is optional. Repository settings are managed separately.
 
 ## License
 

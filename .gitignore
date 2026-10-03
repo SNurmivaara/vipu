@@ -37,8 +37,12 @@ Thumbs.db
 secrets/
 .private/
 
-# Claude
-.claude/
+# Claude: share settings.json, skills and agents; keep personal state local
+.claude/settings.local.json
+.claude/worktrees/
+
+# Machine-specific Codex permissions
+.codex/config.toml
 
 # Next.js (for later)
 .next/
