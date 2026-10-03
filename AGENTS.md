@@ -221,7 +221,3 @@ an implicit part of implementing a feature.
 - Improve production dependency reproducibility further by pinning the moving
   base-image and uv tags. The backend image installs from its committed lockfile.
 - Agree and test a rounding policy before attempting consistency changes.
-- Update the optional git hook: it omits MCP checks and only detects legacy ESLint
-  config files, whereas the frontend uses `eslint.config.mjs`. Use `./test.sh` now.
-- Recommend requiring **CI Status** on `main`, without mandatory reviewer approval
-  for the solo workflow. This is a settings recommendation, not an automatic change.
