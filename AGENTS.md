@@ -256,9 +256,12 @@ The Pages workflow deploys docs on qualifying pushes to `main` or manual dispatc
 
 The release workflow publishes GHCR images when a GitHub release is published, or
 through manual dispatch with a tag (and optional forced builds). An ordinary push
-does not publish release images. Production uses `deploy/docker-compose.yml` and
-`deploy/.env` (or copies of these on the server); `VERSION` selects an image tag and
-defaults to `latest`. Existing commands, from that deployment directory:
+does not publish release images. In Claude Code, the `/release` skill lists the
+changes since the last release, chooses the semver bump against the public contract
+it defines, and drafts the notes; it publishes only after the maintainer approves.
+Production uses `deploy/docker-compose.yml` and `deploy/.env` (or copies of these on
+the server); `VERSION` selects an image tag and defaults to `latest`. Existing
+commands, from that deployment directory:
 
 ```sh
 docker compose pull

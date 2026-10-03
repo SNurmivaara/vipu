@@ -24,7 +24,9 @@
       "Bash(gh pr checks *)",
       "Bash(gh run view *)",
       "Bash(gh run list *)",
-      "Bash(gh run watch *)"
+      "Bash(gh run watch *)",
+      "Bash(gh release list *)",
+      "Bash(gh release view *)"
     ],
     "deny": [
       "Bash(./dev.sh reset *)",
