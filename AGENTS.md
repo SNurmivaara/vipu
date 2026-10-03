@@ -55,7 +55,9 @@ also refuses `cd dir && ...` and `(cd dir && ...)` there; use `git -C`,
 PR body under `/tmp`.
 Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The review waits for CI on the PR head, then
-checks each acceptance criterion of the linked issue for evidence. When CI fails on a
+checks each acceptance criterion of the linked issue for evidence. Its summary comment
+starts with `REVIEW: APPROVE` or `REVIEW: REQUEST CHANGES`, and so does any review
+requested with `@claude review`; neither is a GitHub approval. When CI fails on a
 `claude/` branch, `claude-ci-fix.yml` lets Claude fix it, at most twice per PR, and
 comments when it gives up. Claude workflows run on Opus 5.5. The maintainer triages
 review notes and asks

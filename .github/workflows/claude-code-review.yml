@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write # The summary comment is posted with the workflow token.
       issues: read
       checks: read
       actions: read
@@ -85,11 +85,37 @@ jobs:
                and missing regression tests.
 
             Post each concrete issue as an inline comment with
-            mcp__github_inline_comment__create_inline_comment. Then post one summary
-            comment with `gh pr comment`: the CI result, each acceptance criterion
-            marked covered (naming its test or check) or missing, and the findings,
-            or "No issues found" if there are none. Report what you found, not the
-            checks you did not run.
+            mcp__github_inline_comment__create_inline_comment. Do not post a summary
+            comment yourself: return it as `body` in the structured output, without a
+            heading, and the workflow posts it. The body covers the CI result, each
+            acceptance criterion marked covered (naming its test or check) or
+            missing, and the findings, or "No issues found" if there are none.
+            Report what you found, not the checks you did not run.
+
+            Set `verdict` to REQUEST_CHANGES when CI did not succeed, an acceptance
+            criterion has no evidence, or a finding should be fixed before merging.
+            Otherwise set it to APPROVE; minor notes can go in the body.
           claude_args: |
             --model claude-opus-5-5
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run list:*),Bash(gh run view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh issue view:*),Bash(gh run list:*),Bash(gh run view:*)"
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVE","REQUEST_CHANGES"]},"body":{"type":"string"}},"required":["verdict","body"]}'
+
+      # The heading comes from the schema-checked verdict, so every summary starts
+      # with "REVIEW: APPROVE" or "REVIEW: REQUEST CHANGES" for skimming. It is a
+      # plain comment, not a GitHub review approval; only CI Status gates merging.
+      - name: Post the review summary
+        # Empty when the action skips itself, e.g. on a PR that edits this file.
+        if: steps.claude-review.outputs.structured_output != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          OUTPUT: ${{ steps.claude-review.outputs.structured_output }}
+        run: |
+          case "$(jq -r '.verdict // empty' <<< "$OUTPUT")" in
+            APPROVE) heading="REVIEW: APPROVE" ;;
+            REQUEST_CHANGES) heading="REVIEW: REQUEST CHANGES" ;;
+            *) echo "::error::The review returned no verdict."; exit 1 ;;
+          esac
+          { printf '## %s\n\n' "$heading"; jq -r '.body' <<< "$OUTPUT"; } > "$RUNNER_TEMP/review.md"
+          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review.md"
