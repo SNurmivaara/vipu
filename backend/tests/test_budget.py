@@ -1,6 +1,6 @@
 """Tests for budget API endpoints."""
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -1441,3 +1441,36 @@ class TestMonthlyNormalization:
         totals = client.get("/api/budget/current").json["totals"]
         # 70 * 30.4375/7 = 304.375
         assert totals["monthly_expenses"] == pytest.approx(304.375)
+
+    def test_net_position_subtracts_every_active_expense_line(self, client):
+        """net_position is balance minus face-value total_expenses, not monthly.
+
+        A one-time item a year away still counts in full; it only drops out of
+        the monthly rate.
+        """
+        client.post("/api/accounts", json={"name": "Checking", "balance": 1000})
+        client.post("/api/expenses", json={"name": "Rent", "amount": 300})
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Water",
+                "amount": 90,
+                "frequency_value": 3,
+                "frequency_unit": "months",
+            },
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "Trip",
+                "amount": 200,
+                "is_ephemeral": True,
+                "start_date": (date.today() + timedelta(days=365)).isoformat(),
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        assert totals["total_expenses"] == 590.0
+        assert totals["monthly_expenses"] == pytest.approx(330.0)
+        assert totals["net_position"] == 410.0

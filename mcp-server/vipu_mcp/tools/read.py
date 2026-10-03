@@ -51,7 +51,11 @@ pay that covers those bills arrives. The period can still end comfortably.
 `monthly_expenses`, `monthly_net_income` and `monthly_surplus` are the \
 frequency-normalized rates: a quarterly bill counts as a third, a yearly one as \
 a twelfth, and one-time items are excluded entirely. The monthly rates are what \
-fund the roadmap and FIRE; the face-value totals are not.\
+fund the roadmap and FIRE; the face-value totals are not.
+- `net_position` is `current_balance - total_expenses`: the balance if every \
+active expense line came due at once, one-time items included however far \
+ahead they fall due. It is not a monthly or cash-flow figure, and a negative \
+value does not mean an account is overdrawn.\
 """
 
 NET_WORTH_DESCRIPTION = """\
