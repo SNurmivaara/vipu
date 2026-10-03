@@ -16,6 +16,7 @@ conversation, and never deploy.
 ```sh
 git fetch origin --tags
 gh release view --json tagName,publishedAt
+git tag --sort=-creatordate | head -n 1
 gh run list --workflow CI --branch main --limit 1 --json headSha,conclusion
 git rev-parse origin/main
 ```
@@ -23,6 +24,10 @@ git rev-parse origin/main
 The release target is `origin/main`. Stop and report when the latest CI run on
 `main` is not for that commit or did not succeed, or when nothing landed since the
 last release tag.
+
+The notes cover changes since the latest release's tag, but `release.yml` compares
+against the most recently created tag. They are normally the same; when they differ
+(a tag pushed without a release), say so, and use the newest tag for step 4.
 
 ## 2. Collect the changes
 
@@ -64,15 +69,20 @@ call is close, give both options and the reason for your recommendation.
 ## 4. Check the images
 
 The release workflow builds only the components whose directories changed since the
-previous tag. An unchanged component gets no `vX.Y.Z` image, and a deployment that
-pins `VERSION=vX.Y.Z` then fails to pull it. Report which of `backend/`,
-`frontend/` and `mcp-server/` changed. If one did not, plan the forced build in
-step 6.
+most recently created tag (the second tag from step 1). An unchanged component gets
+no `vX.Y.Z` image, and a deployment that pins `VERSION=vX.Y.Z` then fails to pull
+it. Report which of `backend/`, `frontend/` and `mcp-server/` changed:
+
+```sh
+git diff --stat <newest-tag> origin/main -- backend frontend mcp-server
+```
+
+If one did not, plan the forced build in step 6.
 
 ## 5. Draft the notes and ask for approval
 
-Match the tone of `gh release view v2.1.0`: short, plain and written for users and
-deployers, without AI attribution or real financial data.
+Match the tone of the latest release (`gh release view`): short, plain and written
+for users and deployers, without AI attribution or real financial data.
 
 - Title: `vX.Y.Z: <headline>`, naming the most important change.
 - One or two opening paragraphs on what changes for users and deployers.
