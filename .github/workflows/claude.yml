@@ -29,6 +29,22 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
+      # Claude runs the test suite, so a fork's install scripts and tests would
+      # execute next to the OAuth token and a repository write token. The write
+      # check passes for the maintainer who comments, so refuse forks here.
+      - name: Refuse pull requests from forks
+        if: github.event.issue.pull_request || github.event.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          fork=$(gh pr view "$PR" --repo "$REPO" --json isCrossRepository --jq .isCrossRepository)
+          if [[ "$fork" != false ]]; then
+            echo "::error::PR #$PR is from a fork (or could not be checked); @claude does not run on fork code."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
