@@ -179,8 +179,22 @@ failure rolls back that migration, not earlier successful migrations.
 Migration SQL runs only on PostgreSQL. SQLite tests skip it and cannot prove
 PostgreSQL DDL or data transformations. The Docker check proves startup on a fresh
 database records every registered migration and a repeat applies zero migrations
-without changing those records. It does not prove upgrades from populated historical
-schemas. Include appropriate PostgreSQL fixtures for migration behavior changes.
+without changing those records.
+
+`backend/tests/test_migrations_postgres.py` covers populated upgrades: it builds a
+legacy schema in a throwaway PostgreSQL schema, migrates to a historical point,
+inserts synthetic rows, runs the next migrations and asserts the transformed data
+(currently 009, 011 and 015). It runs only when `TEST_POSTGRES_URL` names a
+disposable PostgreSQL database and skips otherwise, for example:
+
+```sh
+cd backend
+TEST_POSTGRES_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/postgres \
+  uv run --locked pytest tests/test_migrations_postgres.py
+```
+
+Add a test there for every new data-transforming migration. The legacy schema
+contains only the columns migrations touch, not full historical DDL.
 
 There is no automatic downgrade mechanism. For schema/data changes, describe backup,
 compatibility, and recovery in the PR: a tested forward fix or restoration of a
@@ -217,7 +231,8 @@ an implicit part of implementing a feature.
 
 ## Follow-ups
 
-- Add populated historical PostgreSQL fixtures for data-transforming migrations.
+- Extend the populated PostgreSQL migration tests to the remaining migrations and
+  to full historical DDL snapshots rather than minimal legacy tables.
 - Improve production dependency reproducibility further by pinning the moving
   base-image and uv tags. The backend image installs from its committed lockfile.
 - Agree and test a rounding policy before attempting consistency changes.
