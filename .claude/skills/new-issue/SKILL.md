@@ -44,8 +44,9 @@ Use the sections of `.github/ISSUE_TEMPLATE/change-request.md`, in order:
   rounding). Vague criteria such as "works correctly" cost a review round later.
 - **Approach**: optional, only what the investigation settled.
 - **Verification**: the commands and tests that prove each criterion. Note when the
-  work needs something the `@claude` runner lacks, such as PostgreSQL (start one with
-  `docker run`) or a visual check of the UI.
+  work needs something the GitHub Actions runner lacks, such as a visual check of the
+  UI. PostgreSQL migration tests run there through
+  `./scripts/test-migrations-postgres.sh`.
 - **Rollout and recovery**: migrations, compatibility, backups, or "No special
   rollout or recovery steps".
 

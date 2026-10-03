@@ -45,8 +45,11 @@ overrides; do not assume every GET or MCP read tool is free of writes.
    directly with a PR. Use conventional commit subjects (`feat:`, `fix:`, `docs:`, etc.).
 
 In GitHub, `@claude implement this` on an issue runs step 3 onwards in Actions with the
-CI toolchain; the `@claude` runner has no PostgreSQL service, so start one with
-`docker run` when a check needs it. Every PR gets one advisory Claude review; only
+CI toolchain. That runner has no PostgreSQL service; it runs the migration tests with
+`./scripts/test-migrations-postgres.sh`, which starts a disposable database. Its tool
+allow-list does not match commands that start with an environment variable
+(`VAR=value uv run ...`), so wrap such checks in a script under `scripts/`.
+Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The maintainer triages review notes and asks
 `@claude` to fix the accepted ones, comments `@claude review` after large changes,
 and alone decides merges, releases, and deployments. The one exception is Dependabot
@@ -207,12 +210,15 @@ without changing those records.
 legacy schema in a throwaway PostgreSQL schema, migrates to a historical point,
 inserts synthetic rows, runs the next migrations and asserts the transformed data
 (currently 009, 011 and 015). It runs only when `TEST_POSTGRES_URL` names a
-disposable PostgreSQL database and skips otherwise, for example:
+disposable PostgreSQL database and skips otherwise. From the repository root,
+`./scripts/test-migrations-postgres.sh` starts a throwaway `postgres:16` container on
+an ephemeral loopback port, runs the file and removes the container; extra arguments
+go to pytest. With `TEST_POSTGRES_URL` already set it uses that database instead:
 
 ```sh
-cd backend
+./scripts/test-migrations-postgres.sh -v
 TEST_POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/postgres \
-  uv run --locked pytest tests/test_migrations_postgres.py
+  ./scripts/test-migrations-postgres.sh
 ```
 
 Add a test there for every new data-transforming migration. The legacy schema
