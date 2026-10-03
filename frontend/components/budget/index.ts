@@ -9,7 +9,6 @@ export { ExpensesGroupSection } from "./ExpensesGroupSection";
 export { SettleToggle } from "./SettleToggle";
 export { RoadmapSection } from "./RoadmapSection";
 export { GoalsSection } from "./GoalsSection";
-export { TotalsCard } from "./TotalsCard";
 export { SettingsCard } from "./SettingsCard";
 export { EditDialog } from "./EditDialog";
 export { BudgetHistory } from "./BudgetHistory";

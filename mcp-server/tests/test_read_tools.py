@@ -51,6 +51,17 @@ async def test_get_budget_description_mentions_the_housekeeping(server):
     assert "not a pure read" in description
 
 
+@pytest.mark.anyio
+async def test_get_budget_description_explains_net_position(server):
+    """A negative net_position must not read as an overdrawn account."""
+    async with Client(server) as client:
+        tool = await tool_named(client, "get_budget")
+    description = tool.description or ""
+    assert "`net_position` is `current_balance - total_expenses`" in description
+    assert "one-time items included" in description
+    assert "does not mean an account is overdrawn" in description
+
+
 @pytest.mark.parametrize(
     ("name", "phrase"),
     [

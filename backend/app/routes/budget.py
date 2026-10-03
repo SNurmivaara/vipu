@@ -133,6 +133,13 @@ def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     a yearly one at a twelfth, a weekly one at ~4.35x) and exclude one-time
     ephemeral items, giving the true monthly rate that the roadmap surplus and
     FIRE projections are based on.
+
+    net_position is current_balance - total_expenses. total_expenses is the
+    face value of every active expense line, whatever its frequency, including
+    one-time items regardless of how far ahead they fall due. So net_position is
+    where the balance would be if every listed expense came due at once; it is
+    not a monthly or cash-flow figure, and a negative value does not mean an
+    account is overdrawn.
     """
     settings = session.query(BudgetSettings).first()
     tax_pct = settings.tax_percentage if settings else Decimal("25.0")
@@ -514,5 +521,12 @@ def get_current_budget() -> Response:
 
     Returns all income, accounts, expenses, settings, and computed totals.
     Includes deadline-aware calculations for amounts due before next payday.
+
+    totals.net_position is current_balance - total_expenses, where
+    total_expenses is the face value of every active expense line, whatever its
+    frequency, including one-time items regardless of due date. It is where the
+    balance would be if every listed expense came due at once, not a monthly or
+    cash-flow figure; a negative value does not mean an account is overdrawn.
+    totals.monthly_expenses is the normalized monthly rate.
     """
     return jsonify(build_budget_payload(get_session(), date.today()))

@@ -34,7 +34,10 @@ For the full philosophy, see the [User Guide](https://snurmivaara.github.io/vipu
 - Configure income sources with tax calculations and payroll deductions
 - One-time items for things like bonuses or vacation bookings
 - Track account balances and credit cards with payment due dates
-- See your net position at a glance: `Current Balance - Monthly Expenses`
+- See your net position at a glance: `Current Balance - Total Expenses`, where
+  total expenses are every active expense line at face value, one-time items
+  included. It shows where you would be if everything listed came due at once,
+  not what is left after this month.
 
 ### Net Worth Tracking
 - Track assets and liabilities over time with monthly snapshots
