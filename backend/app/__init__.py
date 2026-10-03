@@ -69,6 +69,12 @@ def create_app(config_class: type | None = None) -> APIFlask:
     with Session() as session:
         run_migrations(session)
 
+    # Gunicorn's --preload forks workers after this point. Close the pooled
+    # connection startup used so workers never share one Postgres socket.
+    # In-memory SQLite (tests) would lose its database, so it keeps its pool.
+    if not database_uri.startswith("sqlite"):
+        engine.dispose()
+
     from app.routes import (
         accounts,
         budget,
