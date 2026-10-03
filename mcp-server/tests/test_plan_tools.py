@@ -14,6 +14,8 @@ PLAN_TOOLS = [
     "update_budget_settings",
 ]
 
+COAST_FIELDS = {"coast_fire_number", "coast_fire_reached", "coast_fire_age"}
+
 
 @pytest.mark.anyio
 async def test_every_plan_tool_is_registered(server):
@@ -150,6 +152,73 @@ class TestProjectFire:
         assert "projections" not in result["scenario"]
 
     @pytest.mark.anyio
+    async def test_coast_fire_is_not_reported(self, seeded_server):
+        """This model's Coast FIRE can disagree with get_fire_projection's.
+
+        The calculate endpoint has no portfolio, so it grows Coast FIRE at the
+        blended rate and compares it with all of net worth, and can call it
+        reached when the wealth page does not.
+        """
+        async with Client(seeded_server) as client:
+            result = await call(client, "project_fire", {})
+
+        for block in ("scenario", "baseline"):
+            assert COAST_FIELDS.isdisjoint(result[block]), block
+        assert set(result["delta"]) == {"years_to_fire", "fire_age", "fire_number"}
+        assert result["delta"]["fire_number"]["change"] == 0.0
+        assert result["delta"]["fire_age"]["change"] == 0.0
+
+    @pytest.mark.anyio
+    async def test_a_scenario_with_arguments_omits_coast_fire_too(
+        self, seeded, seeded_server
+    ):
+        raised = seeded.get_projection()["derived"]["monthly_savings"] + 1000
+
+        async with Client(seeded_server) as client:
+            result = await call(
+                client, "project_fire", {"monthly_contribution": raised}
+            )
+
+        for block in ("scenario", "baseline", "delta"):
+            assert COAST_FIELDS.isdisjoint(result[block]), block
+        delta = result["delta"]
+        assert set(delta) == {"years_to_fire", "fire_age", "fire_number"}
+        for key in ("years_to_fire", "fire_age", "fire_number"):
+            assert delta[key]["from"] == result["baseline"][key]
+            assert delta[key]["to"] == result["scenario"][key]
+        assert delta["years_to_fire"]["change"] < 0
+
+    @pytest.mark.anyio
+    async def test_pension_mode_drops_only_the_pension_coast_number(
+        self, seeded, raw, seeded_server
+    ):
+        response = raw.put(
+            "/api/forecasting/settings", json={"pension_accrued_monthly": 800}
+        )
+        assert response.status_code == 200, response.text
+        assert seeded.get_projection()["derived"]["pension_active"]
+
+        async with Client(seeded_server) as client:
+            result = await call(client, "project_fire", {"monthly_contribution": 2000})
+
+        # The endpoint itself still reports it; only the tool drops it.
+        direct = seeded.calculate_fire(result["inputs_used"])
+        expected = set(direct["pension"]) - {"pension_coast_fire_number"}
+        assert "pension_coast_fire_number" in direct["pension"]
+        for block in ("scenario", "baseline"):
+            pension = result[block]["pension"]
+            assert "pension_coast_fire_number" not in pension, block
+            assert set(pension) == expected, block
+            assert COAST_FIELDS.isdisjoint(result[block]), block
+
+    @pytest.mark.anyio
+    async def test_the_endpoint_still_reports_coast_fire(self, seeded_server, seeded):
+        """Only the tool suppresses it; the API contract is unchanged."""
+        async with Client(seeded_server) as client:
+            result = await call(client, "project_fire", {})
+        assert COAST_FIELDS <= set(seeded.calculate_fire(result["inputs_used"]))
+
+    @pytest.mark.anyio
     async def test_the_backends_validation_message_comes_through(self, seeded_server):
         async with Client(seeded_server) as client:
             message = await call_error(
@@ -166,6 +235,8 @@ class TestProjectFire:
         assert "Nothing is stored" in description
         assert "pulls FIRE forward" in description
         assert "will not match get_fire_projection" in description
+        assert "Coast FIRE is not reported here" in description
+        assert "Quote get_fire_projection for Coast FIRE" in description
 
 
 class TestForecastNetWorth:
