@@ -49,7 +49,10 @@ CI toolchain; the `@claude` runner has no PostgreSQL service, so start one with
 `docker run` when a check needs it. Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The maintainer triages review notes and asks
 `@claude` to fix the accepted ones, comments `@claude review` after large changes,
-and alone decides merges, releases, and deployments.
+and alone decides merges, releases, and deployments. The one exception is Dependabot
+minor and patch PRs, which merge themselves once **CI Status** passes; majors stay
+manual. The `@claude` app cannot push changes under `.github/workflows/`, so the
+maintainer commits workflow changes.
 
 Keep task progress and handoffs in issue/PR comments when available and authorized;
 otherwise include the handoff in the final response. Keep lasting knowledge in
