@@ -155,6 +155,9 @@ disposable runner and always requires Docker success, including for docs-only PR
 
 Shared Claude settings, skills, and agents belong in `.claude/` and are committed;
 personal Claude permissions go in the untracked `.claude/settings.local.json`.
+`.claude/settings.json` allows the routine checks, denies destructive database
+resets and reading `.env` files and `.private/`, and runs a hook that formats edited
+Python files with Ruff and Black. The `/implement-issue` skill walks the workflow above.
 Local Codex permissions belong in an untracked `.codex/config.toml`. Keep workspace
 filesystem isolation and approval on request; grant package cache writes and network
 access for routine development as needed. Configuration changes require a refreshed
