@@ -1,7 +1,7 @@
-# Environment
+# Environment files at any depth; the .env.example templates stay tracked
 .env
-.env.local
-.env*.local
+.env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -41,8 +41,8 @@ secrets/
 .claude/settings.local.json
 .claude/worktrees/
 
-# Machine-specific Codex permissions
-.codex/config.toml
+# Machine-specific Codex configuration
+.codex/
 
 # Next.js (for later)
 .next/

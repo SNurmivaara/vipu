@@ -23,19 +23,26 @@ component checks. Python checks use `uv run --locked`.
 
 ## Installation
 
-To install the git hooks, run:
+To install the git hooks, run this from the repository root (run it, do not
+`source` it):
 
 ```bash
 ./scripts/install-git-hooks.sh
 ```
 
+The script installs into the hooks directory git actually uses, so it also works
+from a worktree. Running it again is safe: an identical hook is left alone and a
+different existing `pre-commit` hook is first moved to `pre-commit.backup.<timestamp>`.
+If `core.hooksPath` is set, the script warns, and it installs nothing when that
+directory is outside the repository, because other repositories may share it.
+
 Or manually:
 
 ```bash
-# Copy the hook to .git/hooks/
-mkdir -p .git/hooks
-cp scripts/git-hooks/pre-commit .git/hooks/
-chmod +x .git/hooks/pre-commit
+hooks_dir="$(git rev-parse --git-path hooks)"
+mkdir -p "$hooks_dir"
+cp scripts/git-hooks/pre-commit "$hooks_dir/"
+chmod +x "$hooks_dir/pre-commit"
 ```
 
 ## Bypassing Hooks
