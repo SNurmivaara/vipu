@@ -316,6 +316,8 @@ an implicit part of implementing a feature.
 
 - Extend the populated PostgreSQL migration tests to the remaining migrations and
   to full historical DDL snapshots rather than minimal legacy tables.
-- Improve production dependency reproducibility further by pinning the moving
-  base-image and uv tags. The backend image installs from its committed lockfile.
+- Base images and the uv image are pinned to digests that Dependabot refreshes,
+  and both Python images install from their committed lockfiles. The `postgres:16`
+  pin in `scripts/test-migrations-postgres.sh` is outside Dependabot's reach;
+  refresh it by hand.
 - Agree and test a rounding policy before attempting consistency changes.

@@ -26,7 +26,8 @@ trap 'exit 143' TERM
 
 if [[ -z "${TEST_POSTGRES_URL:-}" ]]; then
   container=$(docker run --detach --name "vipu-migration-test-$$-$RANDOM" \
-    --env POSTGRES_PASSWORD=postgres --publish 127.0.0.1::5432 postgres:16)
+    --env POSTGRES_PASSWORD=postgres --publish 127.0.0.1::5432 \
+    postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54)
   echo "Started disposable PostgreSQL container: ${container:0:12}"
 
   # Probe over TCP: the image's init phase runs a socket-only temporary server
