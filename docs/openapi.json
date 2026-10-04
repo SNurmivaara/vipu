@@ -465,7 +465,7 @@
           "Budget"
         ],
         "summary": "Get current budget state with calculated totals.",
-        "description": "Returns all income, accounts, expenses, settings, and computed totals.\nIncludes deadline-aware calculations for amounts due before next payday.\n\ntotals.net_position is current_balance - total_expenses, where\ntotal_expenses is the face value of every active expense line, whatever its\nfrequency, including one-time items regardless of due date. It is where the\nbalance would be if every listed expense came due at once, not a monthly or\ncash-flow figure; a negative value does not mean an account is overdrawn.\ntotals.monthly_expenses is the normalized monthly rate."
+        "description": "Returns all income, accounts, expenses, settings, and computed totals.\nIncludes deadline-aware calculations for amounts due before next payday.\n\ntotals.net_position is current_balance - total_expenses, where\ntotal_expenses is the face value of every active expense line, whatever its\nfrequency, including one-time items regardless of due date. It is where the\nbalance would be if every listed expense came due at once, not a monthly or\ncash-flow figure; a negative value does not mean an account is overdrawn.\ntotals.monthly_expenses is the normalized monthly rate.\n\ntotals.gross_income and totals.net_income are the face value of every\nactive recurring income line, whatever its frequency. One-time income is\nexcluded however soon it falls due; it shows up in the period flows on its\nown date. totals.monthly_net_income is the normalized monthly rate."
       }
     },
     "/api/networth/reset": {

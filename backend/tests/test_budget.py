@@ -323,17 +323,17 @@ class TestBudget:
         # Check totals
         totals = data["totals"]
 
-        # Gross income: 5000+300+200+1000 = 6500 (lunch benefit excluded)
-        assert totals["gross_income"] == 6500.0
+        # Gross income: 5000+300+200 = 5500 (lunch benefit and the one-time
+        # year-end bonus excluded)
+        assert totals["gross_income"] == 5500.0
 
-        # Net income calculation:
+        # Net income calculation (the one-time bonus is excluded):
         # Salary: 5000 * 0.75 = 3750
         # Freelance: 300 * 0.75 = 225
         # Dividends: 200 (untaxed)
-        # Year-end bonus: 1000 * 0.75 = 750
         # Lunch benefit: -200 * 0.75 = -150 (deduction)
-        # Total: 3750 + 225 + 200 + 750 + (-150) = 4775
-        assert totals["net_income"] == 4775.0
+        # Total: 3750 + 225 + 200 + (-150) = 4025
+        assert totals["net_income"] == 4025.0
 
         # Current balance: 3500 + 8000 + (-750) + (-200) = 10550
         assert totals["current_balance"] == 10550.0
@@ -1164,6 +1164,66 @@ class TestNetIncomeCalculation:
         # Gross = 0 (deductions are excluded from gross income)
         assert totals["gross_income"] == 0.0
         assert totals["net_income"] == -150.0
+
+    def test_one_time_income_excluded_from_income_totals(self, client):
+        """A one-time item a year out is not income; expenses keep one-times."""
+        client.put("/api/settings", json={"tax_percentage": 20.0})
+        a_year_out = (date.today() + timedelta(days=365)).isoformat()
+
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000.00, "is_taxed": True},
+        )
+        client.post(
+            "/api/income",
+            json={
+                "name": "Dividend",
+                "gross_amount": 8575.00,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": a_year_out,
+            },
+        )
+        client.post(
+            "/api/expenses",
+            json={
+                "name": "One-time bill",
+                "amount": 500.00,
+                "is_ephemeral": True,
+                "start_date": a_year_out,
+            },
+        )
+
+        totals = client.get("/api/budget/current").json["totals"]
+
+        # Only the salary counts as income: 4000 gross, 4000 * 0.8 = 3200 net
+        assert totals["gross_income"] == 4000.0
+        assert totals["net_income"] == 3200.0
+        assert totals["monthly_net_income"] == 3200.0
+        # Face-value expenses still include the one-time bill
+        assert totals["total_expenses"] == 500.0
+
+    def test_one_time_income_not_used_as_pension_salary(self, client):
+        """The forecast's default pension salary ignores one-time income."""
+        a_year_out = (date.today() + timedelta(days=365)).isoformat()
+        client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000.00, "is_taxed": True},
+        )
+        client.post(
+            "/api/income",
+            json={
+                "name": "Dividend",
+                "gross_amount": 8575.00,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": a_year_out,
+            },
+        )
+
+        derived = client.get("/api/forecasting/projection").json["derived"]
+
+        assert derived["pension_monthly_salary"] == 4000.0
 
 
 class TestEdgeCases:

@@ -62,6 +62,17 @@ async def test_get_budget_description_explains_net_position(server):
     assert "does not mean an account is overdrawn" in description
 
 
+@pytest.mark.anyio
+async def test_get_budget_description_explains_income_totals(server):
+    """The income totals must not read as rates or include one-time income."""
+    async with Client(server) as client:
+        tool = await tool_named(client, "get_budget")
+    description = tool.description or ""
+    assert "`gross_income` and `net_income` are face-value sums" in description
+    assert "one-time income is excluded however soon it falls due" in description
+    assert "a yearly bonus counts in full" in description
+
+
 @pytest.mark.parametrize(
     ("name", "phrase"),
     [

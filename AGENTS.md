@@ -222,7 +222,8 @@ access separately approved or use a dedicated development daemon/VM.
   as positive magnitudes (`liabilities_by_group` / `liabilities_by_category`). Check
   the specific boundary rather than applying `abs()` to all balances.
 - `compute_budget_totals()` in `backend/app/routes/budget.py` sums active lines at
-  face value for `net_income` and `total_expenses`, including active one-time items.
+  face value: `total_expenses` includes active one-time items, while `gross_income`
+  and `net_income` exclude one-time (ephemeral) income however far ahead it falls due.
   `net_position` is `current_balance - total_expenses`. `monthly_net_income` and
   `monthly_expenses` normalize recurring frequencies and exclude ephemeral items;
   their difference is the monthly surplus used by the roadmap and projections.
