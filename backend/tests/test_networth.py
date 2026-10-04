@@ -716,6 +716,48 @@ class TestSnapshotUpdate:
         )
         assert response.status_code == 409
 
+    @pytest.mark.parametrize("year", [1899, 2101])
+    def test_update_snapshot_rejects_out_of_range_year(
+        self, client, seeded_categories, year
+    ):
+        """PUT /api/networth/<id> rejects years outside 1900-2100 like create."""
+        cats = seeded_categories
+        create_response = client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2024,
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 1000}],
+            },
+        )
+        snapshot_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/networth/{snapshot_id}",
+            json={
+                "year": year,
+                "entries": [{"category_id": cats["Checking"]["id"], "amount": 2000}],
+            },
+        )
+        assert response.status_code == 400
+        assert response.json == {"error": "year must be between 1900 and 2100"}
+
+        unchanged = client.get("/api/networth/2024/1")
+        assert unchanged.status_code == 200
+        assert unchanged.json["id"] == snapshot_id
+        assert unchanged.json["net_worth"] == 1000.0
+        assert client.get(f"/api/networth/{year}/1").status_code == 404
+
+    @pytest.mark.parametrize("year", [1900, 2100])
+    def test_update_snapshot_accepts_boundary_year(self, client, year):
+        """PUT /api/networth/<id> accepts the boundary years 1900 and 2100."""
+        create_response = client.post("/api/networth", json={"month": 1, "year": 2024})
+        snapshot_id = create_response.json["id"]
+
+        response = client.put(f"/api/networth/{snapshot_id}", json={"year": year})
+        assert response.status_code == 200
+        assert response.json["year"] == year
+
 
 class TestSnapshotDelete:
     """Tests for deleting snapshots."""
