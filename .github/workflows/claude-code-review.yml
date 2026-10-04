@@ -70,6 +70,7 @@ jobs:
         with:
           ref: ${{ steps.ci.outputs.sha }}
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Run Claude Code Review
         id: claude-review

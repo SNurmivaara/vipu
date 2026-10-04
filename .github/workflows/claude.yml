@@ -53,6 +53,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
+          # checkout v6+ keeps its read-only token in an included config file that
+          # claude-code-action does not remove, and git sends it on push, so a push
+          # fails with 403 for github-actions[bot]. The action authenticates with its
+          # app token instead.
+          persist-credentials: false
 
       # Match the CI toolchain so Claude can run the checks AGENTS.md requires.
       - name: Install uv
