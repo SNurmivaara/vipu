@@ -15,7 +15,7 @@ MAX_NAME_LENGTH = 100
 MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
 
 # Valid group types
-VALID_GROUP_TYPES = {"asset", "liability"}
+VALID_GROUP_TYPES = ["asset", "liability"]
 
 
 # =============================================================================
@@ -61,10 +61,8 @@ def create_group() -> Response | tuple[Response, int]:
     # Validate group_type
     group_type = str(data["group_type"]).lower()
     if group_type not in VALID_GROUP_TYPES:
-        return (
-            jsonify({"error": f"group_type must be one of: {VALID_GROUP_TYPES}"}),
-            400,
-        )
+        types_str = ", ".join(VALID_GROUP_TYPES)
+        return jsonify({"error": f"group_type must be one of: {types_str}"}), 400
 
     # Get optional fields
     color = str(data.get("color", "#6b7280"))
@@ -117,10 +115,8 @@ def update_group(group_id: int) -> Response | tuple[Response, int]:
     if "group_type" in data:
         group_type = str(data["group_type"]).lower()
         if group_type not in VALID_GROUP_TYPES:
-            return (
-                jsonify({"error": f"group_type must be one of: {VALID_GROUP_TYPES}"}),
-                400,
-            )
+            types_str = ", ".join(VALID_GROUP_TYPES)
+            return jsonify({"error": f"group_type must be one of: {types_str}"}), 400
         group.group_type = group_type
 
     if "color" in data:
@@ -1051,7 +1047,7 @@ def seed_networth() -> Response | tuple[Response, int]:
 # =============================================================================
 
 
-VALID_FORECAST_PERIODS = {"month", "quarter", "half_year", "year"}
+VALID_FORECAST_PERIODS = ["month", "quarter", "half_year", "year"]
 
 
 @bp.get("/api/networth/forecast")
@@ -1070,10 +1066,8 @@ def get_forecast() -> Response | tuple[Response, int]:
     # Parse and validate query parameters
     period = request.args.get("period", "quarter")
     if period not in VALID_FORECAST_PERIODS:
-        return (
-            jsonify({"error": f"period must be one of: {VALID_FORECAST_PERIODS}"}),
-            400,
-        )
+        periods_str = ", ".join(VALID_FORECAST_PERIODS)
+        return jsonify({"error": f"period must be one of: {periods_str}"}), 400
 
     try:
         months_ahead = int(request.args.get("months_ahead", 12))
