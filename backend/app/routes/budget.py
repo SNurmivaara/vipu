@@ -127,12 +127,15 @@ def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     net_position as Decimals. Shared by the budget and forecasting endpoints so
     the same numbers are derived in one place.
 
-    total_expenses/net_income sum every active line at face value (what the
-    list sections display). monthly_expenses/monthly_net_income normalize each
-    recurring line to a per-month rate (a quarterly bill counts at a third,
-    a yearly one at a twelfth, a weekly one at ~4.35x) and exclude one-time
-    ephemeral items, giving the true monthly rate that the roadmap surplus and
-    FIRE projections are based on.
+    total_expenses sums every active expense line at face value (what the list
+    section displays). gross_income/net_income sum every active recurring
+    income line at face value and exclude one-time ephemeral items: a dividend
+    a year away is not income, and the forecast reads gross_income as a salary.
+    monthly_expenses/monthly_net_income normalize each recurring line to a
+    per-month rate (a quarterly bill counts at a third, a yearly one at a
+    twelfth, a weekly one at ~4.35x) and also exclude one-time items, giving
+    the true monthly rate that the roadmap surplus and FIRE projections are
+    based on. One-time items are a separate stream; see pending_one_time_items.
 
     net_position is current_balance - total_expenses. total_expenses is the
     face value of every active expense line, whatever its frequency, including
@@ -152,12 +155,13 @@ def compute_budget_totals(session: Session) -> dict[str, Decimal]:
     ]
     accounts = session.query(Account).all()
 
-    # Gross income excludes deductions
+    # Income totals cover recurring lines only; gross also excludes deductions
+    recurring_income = [i for i in active_income if not i.is_ephemeral]
     gross_income = sum(
-        (i.gross_amount for i in active_income if not i.is_deduction),
+        (i.gross_amount for i in recurring_income if not i.is_deduction),
         Decimal("0"),
     )
-    net_income = calculate_net_income(active_income, tax_pct)
+    net_income = calculate_net_income(recurring_income, tax_pct)
     current_balance = sum((a.balance for a in accounts), Decimal("0"))
     total_expenses = sum((e.amount for e in active_expenses), Decimal("0"))
 
@@ -528,5 +532,10 @@ def get_current_budget() -> Response:
     balance would be if every listed expense came due at once, not a monthly or
     cash-flow figure; a negative value does not mean an account is overdrawn.
     totals.monthly_expenses is the normalized monthly rate.
+
+    totals.gross_income and totals.net_income are the face value of every
+    active recurring income line, whatever its frequency. One-time income is
+    excluded however soon it falls due; it shows up in the period flows on its
+    own date. totals.monthly_net_income is the normalized monthly rate.
     """
     return jsonify(build_budget_payload(get_session(), date.today()))

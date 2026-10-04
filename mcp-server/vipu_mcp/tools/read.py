@@ -47,11 +47,15 @@ are excluded from the period totals. The lines will not add up to the total, \
 and that is correct.
 - `cash_low_point.balance` below zero means the account goes under before the \
 pay that covers those bills arrives. The period can still end comfortably.
-- `total_expenses` and `net_income` are face-value sums of every active line. \
-`monthly_expenses`, `monthly_net_income` and `monthly_surplus` are the \
-frequency-normalized rates: a quarterly bill counts as a third, a yearly one as \
-a twelfth, and one-time items are excluded entirely. The monthly rates are what \
-fund the roadmap and FIRE; the face-value totals are not.
+- `total_expenses` is the face-value sum of every active expense line, one-time \
+items included. `gross_income` and `net_income` are face-value sums of every \
+active recurring income line; one-time income is excluded however soon it falls \
+due, and reaches the period flows on its own date instead. None of the three is \
+a monthly rate: a yearly bonus counts in full. `monthly_expenses`, \
+`monthly_net_income` and `monthly_surplus` are the frequency-normalized rates: \
+a quarterly bill counts as a third, a yearly one as a twelfth, and one-time \
+items are excluded entirely. The monthly rates are what fund the roadmap and \
+FIRE; the face-value totals are not.
 - `net_position` is `current_balance - total_expenses`: the balance if every \
 active expense line came due at once, one-time items included however far \
 ahead they fall due. It is not a monthly or cash-flow figure, and a negative \
