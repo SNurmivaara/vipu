@@ -1,6 +1,6 @@
 {
   "info": {
-    "description": "Personal finance tracker API",
+    "description": "Personal finance tracker API.\n\nRequests that change data (POST, PUT, PATCH, DELETE) must send any body as `application/json` (415 otherwise). A browser may send them only from the same origin or an origin listed in `CORS_ORIGINS` (403 otherwise).",
     "title": "Vipu API",
     "version": "0.1.0"
   },
