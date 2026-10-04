@@ -114,3 +114,23 @@ async def test_mcp_with_the_token_gets_through(app):
         response = await initialize(http, {"Authorization": f"Bearer {TOKEN}"})
     assert response.status_code == 200
     assert response.json()["result"]["serverInfo"]["name"] == "vipu"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("encoding", ["utf-8", "latin-1"])
+async def test_a_non_ascii_token_is_401_not_500(app, encoding):
+    """compare_digest raises TypeError on non-ASCII str, so compare bytes."""
+    header = "Bearer töken".encode(encoding)
+    async with running(app) as http:
+        response = await initialize(http, {"Authorization": header})
+    assert response.status_code == 401
+
+
+@pytest.mark.anyio
+async def test_a_non_ascii_configured_token_still_matches(client):
+    token = "töken-with-an-umlaut"
+    app = build_app(build_server(client), token)
+    header = f"Bearer {token}".encode()
+    async with running(app) as http:
+        response = await initialize(http, {"Authorization": header})
+    assert response.status_code == 200

@@ -5,9 +5,12 @@ secret is a startup failure in production and a warned-about default in
 development, never a server that quietly listens without auth.
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
 
 # Where the REST API lives. In compose this is the backend service.
 VIPU_API_URL = os.environ.get("VIPU_API_URL", "http://localhost:5000").rstrip("/")
@@ -30,6 +33,17 @@ ENV = os.environ.get("FLASK_ENV", "development")
 # How long to wait on the backend. Generous: /api/forecasting/projection walks
 # a month-by-month portfolio simulation to life expectancy.
 REQUEST_TIMEOUT_SECONDS = 30.0
+
+# Example values the repository has published. Anyone can read them, so they
+# never authenticate anything. Compared case-insensitively.
+PLACEHOLDER_TOKENS = frozenset({"your-mcp-token-here", "<token>", "<mcp_auth_token>"})
+
+# Development tokens from the dev Compose file and README. Fine on a laptop,
+# refused in production for the same reason.
+DEVELOPMENT_TOKENS = frozenset({"dev-mcp-token-not-for-production", "dev-token"})
+
+# openssl rand -hex 32 gives 64; a shorter token still starts, with a warning.
+MIN_TOKEN_LENGTH = 32
 
 # Partial OAuth configuration is an error, even with a legacy token present.
 OAUTH_ENV = (
@@ -85,6 +99,8 @@ def oauth_config() -> OAuthConfig | None:
             item.strip() for item in values[key].split(",") if item.strip()
         )
 
+    if MCP_AUTH_TOKEN:
+        check_token(MCP_AUTH_TOKEN)
     return OAuthConfig(
         issuer=values["MCP_OAUTH_ISSUER"],
         resource_url=values["MCP_OAUTH_RESOURCE_URL"],
@@ -92,6 +108,27 @@ def oauth_config() -> OAuthConfig | None:
         allowed_clients=allowlist("MCP_OAUTH_ALLOWED_CLIENTS"),
         allowed_users=allowlist("MCP_OAUTH_ALLOWED_USERS"),
     )
+
+
+def check_token(token: str) -> None:
+    """Refuse a published example token; warn about a short one."""
+    normalized = token.strip().lower()
+    if normalized in PLACEHOLDER_TOKENS:
+        raise ValueError(
+            "MCP_AUTH_TOKEN is still the example placeholder. "
+            "Generate a token with: openssl rand -hex 32"
+        )
+    if ENV == "production" and normalized in DEVELOPMENT_TOKENS:
+        raise ValueError(
+            "MCP_AUTH_TOKEN is a published development token. "
+            "Generate a token with: openssl rand -hex 32"
+        )
+    if len(token) < MIN_TOKEN_LENGTH:
+        logger.warning(
+            "MCP_AUTH_TOKEN is shorter than %d characters. "
+            "Generate a stronger one with: openssl rand -hex 32",
+            MIN_TOKEN_LENGTH,
+        )
 
 
 def require_auth_token() -> str:
@@ -109,4 +146,5 @@ def require_auth_token() -> str:
             "MCP_AUTH_TOKEN is not set. The MCP endpoint would accept any "
             "caller. Set it, or run the tools directly through the test harness."
         )
+    check_token(MCP_AUTH_TOKEN)
     return MCP_AUTH_TOKEN

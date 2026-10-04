@@ -100,15 +100,19 @@ cd vipu
 
 # Create environment file
 cp .env.example .env
-# Edit .env with your own SECRET_KEY, POSTGRES_PASSWORD and MCP_AUTH_TOKEN
+# Fill in SECRET_KEY, POSTGRES_PASSWORD and MCP_AUTH_TOKEN (openssl rand -hex 32)
 
 # Start all services
 docker compose up
 
+# Ports bind to 127.0.0.1, so these work from this host only:
 # Frontend: http://localhost:3000
 # Backend API: http://localhost:5000
 # MCP server: http://localhost:5100
 ```
+
+For a server, use [`deploy/docker-compose.yml`](deploy/docker-compose.yml) and
+[`deploy/.env.example`](deploy/.env.example), which run the published images.
 
 ### Verify it works
 
@@ -124,6 +128,18 @@ curl -X POST http://localhost:5000/api/seed
 # Get current budget
 curl http://localhost:5000/api/budget/current
 ```
+
+### Security model
+
+- The web app and REST API have no login of their own. Put the web app behind
+  an authenticating reverse proxy (forward-auth such as Authelia, Cloudflare
+  Access, or similar) before it leaves the host.
+- Never expose the backend directly. Every Compose file publishes it on
+  127.0.0.1 only, for a reverse proxy on the same host that routes `/api`.
+- The MCP endpoint is meant to face the internet. It protects itself with its
+  bearer token or OAuth, and refuses to start without one.
+- Compose binds the frontend and MCP ports to 127.0.0.1 by default. Set
+  `BIND_ADDRESS` (for example `0.0.0.0`) only to expose them deliberately.
 
 ## Documentation
 
@@ -230,7 +246,7 @@ uv sync --locked --extra dev
 
 # Run against a local backend
 MCP_AUTH_TOKEN=dev-token uv run --locked uvicorn vipu_mcp.server:create_app \
-  --factory --host 0.0.0.0 --port 5100 --reload
+  --factory --host 127.0.0.1 --port 5100 --reload
 
 # Run tests
 uv run --locked pytest
@@ -251,7 +267,7 @@ npx @modelcontextprotocol/inspector
 
 ### Database
 
-The project uses PostgreSQL. With Docker Compose, it runs on port 5433 (to avoid conflicts with local PostgreSQL).
+The project uses PostgreSQL. The development stack (`./dev.sh`) publishes it on 127.0.0.1:5433 (to avoid conflicts with local PostgreSQL); the other Compose files do not publish it.
 
 ```bash
 # Connect to the database (when using Docker)
@@ -278,7 +294,9 @@ connector settings and migration from the existing bearer token.
 ### Set a token for a legacy client
 
 Without OAuth, `MCP_AUTH_TOKEN` is required and has no default. A deployment
-with neither authentication method fails at startup:
+with neither authentication method fails at startup, and so does one still
+using the example placeholder. A token shorter than 32 characters starts with
+a warning:
 
 ```bash
 echo "MCP_AUTH_TOKEN=$(openssl rand -hex 32)" >> .env
@@ -290,7 +308,9 @@ curl -si -X POST localhost:5100/mcp | head -1  # HTTP/1.1 401 Unauthorized
 ### Expose it through the tunnel
 
 The Cloudflare tunnel configuration lives outside this repository. Add an
-ingress rule mapping the MCP hostname to the container, above the catch-all:
+ingress rule mapping the MCP hostname to the container, above the catch-all.
+Protect the web app hostname with Cloudflare Access or another login; the MCP
+hostname relies on its own token or OAuth instead:
 
 ```yaml
 ingress:

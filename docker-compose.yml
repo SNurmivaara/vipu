@@ -1,3 +1,8 @@
+# Build and run the stack from source. Ports bind to 127.0.0.1 by default; set
+# BIND_ADDRESS to expose the frontend and MCP server deliberately. The web app
+# and REST API have no login of their own, so keep them behind an
+# authenticating reverse proxy.
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -7,8 +12,6 @@ services:
       POSTGRES_USER: vipu
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: vipu
-    ports:
-      - "5433:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +25,8 @@ services:
     container_name: vipu-backend
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      # Host loopback only: a reverse proxy on the host routes /api here.
+      - "127.0.0.1:5000:5000"
     environment:
       - DATABASE_URL=postgresql://vipu:${POSTGRES_PASSWORD}@postgres:5432/vipu
       - FLASK_ENV=production
@@ -43,7 +47,7 @@ services:
     container_name: vipu-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${BIND_ADDRESS:-127.0.0.1}:3000:3000"
     depends_on:
       - backend
 
@@ -52,7 +56,7 @@ services:
     container_name: vipu-mcp
     restart: unless-stopped
     ports:
-      - "5100:5100"
+      - "${BIND_ADDRESS:-127.0.0.1}:5100:5100"
     environment:
       - VIPU_API_URL=http://backend:5000
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}

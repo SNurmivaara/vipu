@@ -9,8 +9,8 @@ This is independent of Authelia's Traefik forward-auth middleware. Do not put
 that middleware in front of `/mcp` or OAuth discovery/token endpoints. A request
 without an access token must receive a JSON `401` and `WWW-Authenticate`
 discovery challenge. Browser login redirects belong to the authorization flow.
-Keep the ordinary Vipu website and the rest of the homelab behind their
-existing authentication.
+Vipu's web app and REST API have no login of their own: keep them behind an
+authenticating reverse proxy.
 
 ## Configure Authelia
 

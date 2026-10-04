@@ -48,6 +48,70 @@ def test_token_is_returned_when_set(monkeypatch):
     assert module.require_auth_token() == "abc123"
 
 
+STRONG = "0123456789abcdef" * 4
+
+
+@pytest.mark.parametrize("env", ["production", "development"])
+@pytest.mark.parametrize(
+    "token", ["your-mcp-token-here", " Your-MCP-Token-Here ", "<token>"]
+)
+def test_example_placeholder_token_is_refused(monkeypatch, env, token):
+    module = reloaded(monkeypatch, FLASK_ENV=env, MCP_AUTH_TOKEN=token)
+    with pytest.raises(ValueError, match="placeholder"):
+        module.require_auth_token()
+
+
+@pytest.mark.parametrize("token", ["dev-mcp-token-not-for-production", "dev-token"])
+def test_development_token_is_refused_in_production(monkeypatch, token):
+    module = reloaded(monkeypatch, FLASK_ENV="production", MCP_AUTH_TOKEN=token)
+    with pytest.raises(ValueError, match="development token"):
+        module.require_auth_token()
+
+
+def test_dev_compose_token_still_works_in_development(monkeypatch, caplog):
+    token = "dev-mcp-token-not-for-production"
+    module = reloaded(monkeypatch, FLASK_ENV="development", MCP_AUTH_TOKEN=token)
+    with caplog.at_level("WARNING", logger="vipu_mcp.config"):
+        assert module.require_auth_token() == token
+    assert caplog.text == ""
+
+
+def test_short_token_starts_with_a_warning(monkeypatch, caplog):
+    """Existing deployments must keep starting."""
+    module = reloaded(monkeypatch, FLASK_ENV="production", MCP_AUTH_TOKEN="abc123")
+    with caplog.at_level("WARNING", logger="vipu_mcp.config"):
+        assert module.require_auth_token() == "abc123"
+    assert "shorter than 32 characters" in caplog.text
+
+
+def test_strong_token_starts_without_a_warning(monkeypatch, caplog):
+    module = reloaded(monkeypatch, FLASK_ENV="production", MCP_AUTH_TOKEN=STRONG)
+    with caplog.at_level("WARNING", logger="vipu_mcp.config"):
+        assert module.require_auth_token() == STRONG
+    assert caplog.text == ""
+
+
+OAUTH = {
+    "MCP_OAUTH_ISSUER": "https://auth.example.com",
+    "MCP_OAUTH_RESOURCE_URL": "https://mcp.example.com/mcp",
+    "MCP_OAUTH_JWKS_URL": "https://auth.example.com/jwks.json",
+    "MCP_OAUTH_ALLOWED_CLIENTS": "claude",
+    "MCP_OAUTH_ALLOWED_USERS": "owner",
+}
+
+
+def test_placeholder_legacy_token_is_refused_alongside_oauth(monkeypatch):
+    """The legacy token still authenticates under OAuth, so the same rule holds."""
+    module = reloaded(monkeypatch, MCP_AUTH_TOKEN="your-mcp-token-here", **OAUTH)
+    with pytest.raises(ValueError, match="placeholder"):
+        module.oauth_config()
+
+
+def test_oauth_with_a_strong_legacy_token_is_accepted(monkeypatch):
+    module = reloaded(monkeypatch, MCP_AUTH_TOKEN=STRONG, **OAUTH)
+    assert module.oauth_config() is not None
+
+
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes"])
 def test_read_only_flag_is_forgiving(monkeypatch, value):
     assert reloaded(monkeypatch, VIPU_MCP_READ_ONLY=value).VIPU_MCP_READ_ONLY is True
