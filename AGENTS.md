@@ -94,7 +94,9 @@ Remaining work and blockers:
 
 ## Setup and development
 
-Use Python 3.11+ and Node.js 22 (the CI versions), uv, npm, and Docker Compose.
+Use Python 3.11+ and Node.js 24 (the CI versions), uv, npm, and Docker Compose.
+`frontend/.nvmrc` sets the Node major for CI; a Node upgrade changes it, the `FROM`
+lines of both frontend Dockerfiles and `@types/node` together.
 Run these commands from the repository root to install the committed dependencies:
 
 ```sh

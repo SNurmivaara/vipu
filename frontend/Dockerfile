@@ -1,4 +1,5 @@
-FROM node:22-alpine AS base
+# Keep the Node major in step with frontend/.nvmrc and @types/node.
+FROM node:24-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps
