@@ -131,8 +131,9 @@ Work through this TODO list in order. Every item produces a section of the plan
 
 For one child issue. Steps 1 and 2 of `/implement-issue` (read the issue, branch
 from `origin/main`) apply. Locally, name the branch `refactor/<n>-<slug>`. In GitHub
-Actions stay on the `claude/` branch the action created: `claude-ci-fix.yml` and the
-review's wait for a CI fix only act on that prefix.
+Actions stay on a `claude/` branch, the one the action created or a stopped run's as
+`/implement-issue` step 2 says: `claude-ci-fix.yml` and the review's wait for a CI
+fix only act on that prefix.
 
 - [ ] Read the child and its epic. Confirm prerequisites are closed and that the
   plan still matches the code (`git log origin/main -- <target>` since the plan's

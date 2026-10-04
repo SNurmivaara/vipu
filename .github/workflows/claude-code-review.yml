@@ -22,6 +22,8 @@ jobs:
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # The Claude step gets what remains of this after the CI wait, minus a margin,
+    # so a timeout fails that step and the job can still report it.
     timeout-minutes: 75
     permissions:
       contents: read
@@ -43,7 +45,8 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          deadline=$(( $(date +%s) + 50 * 60 ))
+          start=$(date +%s)
+          deadline=$(( start + 50 * 60 ))
           while :; do
             sha=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid)
             result=$(gh api "repos/$REPO/commits/$sha/check-runs?check_name=CI%20Status" \
@@ -56,8 +59,11 @@ jobs:
             fi
             sleep 30
           done
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "result=${result:-not finished}" >> "$GITHUB_OUTPUT"
+          {
+            echo "sha=$sha"
+            echo "result=${result:-not finished}"
+            echo "claude_minutes=$(( 68 - ($(date +%s) - start) / 60 ))"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -67,6 +73,7 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude-review
+        timeout-minutes: ${{ fromJSON(steps.ci.outputs.claude_minutes) }}
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -123,3 +130,20 @@ jobs:
           esac
           { printf '## %s\n\n' "$heading"; jq -r '.body' <<< "$OUTPUT"; } > "$RUNNER_TEMP/review.md"
           gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review.md"
+
+      # Without a summary the PR shows only a red, non-required check, which reads
+      # as "no review yet". A run cancelled by a newer one is not a failure and
+      # posts nothing. The script comes from the default branch, so the PR cannot
+      # change what runs with the write token.
+      - name: Report a stopped review
+        if: failure() && steps.claude-review.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXECUTION_FILE: ${{ steps.claude-review.outputs.execution_file }}
+        run: |
+          gh api "repos/$REPO/contents/scripts/claude-run-stopped.sh" \
+            -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/claude-run-stopped.sh"
+          bash "$RUNNER_TEMP/claude-run-stopped.sh" review "$PR"

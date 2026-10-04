@@ -66,7 +66,14 @@ checks each acceptance criterion of the linked issue for evidence. Its summary c
 starts with `REVIEW: APPROVE` or `REVIEW: REQUEST CHANGES`, and so does any review
 requested with `@claude review`; neither is a GitHub approval. When CI fails on a
 `claude/` branch, `claude-ci-fix.yml` lets Claude fix it, at most twice per PR, and
-comments when it gives up. Claude workflows run on Opus 5.5. The maintainer triages
+comments when it gives up. When a Claude run stops before finishing (usage limit,
+timeout or error), the workflow comments on the issue or PR with the run link, names
+the usage limit when the log shows it, and gives the retry: comment the `@claude`
+request again, comment `@claude review`, or re-run the CI fix or push to the branch.
+The implement-issue skill pushes at each milestone in Actions, so a retried
+`@claude implement this` continues the stopped run's `claude/` branch. A CI fix
+attempt that stopped without pushing does not count toward the two, and a run
+cancelled by a newer one posts nothing. Claude workflows run on Opus 5.5. The maintainer triages
 review notes and asks
 `@claude` to fix the accepted ones, comments `@claude review` after large changes,
 and alone decides merges, releases, and deployments. The one exception is Dependabot
