@@ -50,6 +50,9 @@ npm run lint
 echo ">> TypeScript"
 npm run typecheck
 
+echo ">> Vitest (unit tests)"
+npm run test
+
 echo ">> Build"
 npm run build
 

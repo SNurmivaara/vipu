@@ -137,7 +137,8 @@ bearer token or complete OAuth configuration. Use disposable data for developmen
 
 After installing dependencies, run `./test.sh` from the repository root. It runs
 Black, Ruff, mypy, and pytest in both Python packages, then frontend lint, types,
-and build. Individual commands, in **each** of `backend/` and `mcp-server/`:
+unit tests, and build. Individual commands, in **each** of `backend/` and
+`mcp-server/`:
 
 ```sh
 uv run --locked black --check .
@@ -151,8 +152,13 @@ In `frontend/`:
 ```sh
 npm run lint
 npm run typecheck
+npm run test
 npm run build
 ```
+
+Frontend unit and component tests use Vitest with Testing Library and live next to
+the code as `*.test.ts(x)`. They run in jsdom with `TZ=UTC`; `npx vitest run
+--coverage` reports coverage.
 
 The Playwright smoke tests (`frontend/e2e/`) are not part of `./test.sh`: they need a
 running stack. Against `./dev.sh`, run `npm run test:e2e` in `frontend/` (first time:

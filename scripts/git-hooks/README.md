@@ -19,6 +19,7 @@ component checks. Python checks use `uv run --locked`.
 **Frontend (TypeScript)** - when `frontend/` files are staged:
 - `npm run lint` (ESLint)
 - `npm run typecheck`
+- `npm run test` (Vitest)
 
 ## Installation
 
