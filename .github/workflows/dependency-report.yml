@@ -1,0 +1,41 @@
+name: Dependency report
+
+# Keeps one tracking issue, labelled "dependencies", listing every package,
+# action, runtime and image that is behind a major version or release line.
+# scripts/dependency-report.py builds the report and creates or edits the issue;
+# run it locally with --dry-run to print the report instead.
+
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+# Two overlapping runs could both miss the issue and create it twice.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Update the tracking issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+
+      # The runner's preinstalled Python 3 is enough: the script uses only the
+      # standard library.
+      - name: Build the report and update the issue
+        run: python3 scripts/dependency-report.py
+        env:
+          GH_TOKEN: ${{ github.token }}

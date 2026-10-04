@@ -71,7 +71,11 @@ review notes and asks
 `@claude` to fix the accepted ones, comments `@claude review` after large changes,
 and alone decides merges, releases, and deployments. The one exception is Dependabot
 minor and patch PRs, which merge themselves once **CI Status** passes; majors stay
-manual. The `@claude` app cannot push changes under `.github/workflows/`, so the
+manual. So that closed major PRs and base images are not forgotten, the monthly
+`dependency-report.yml` workflow keeps one issue, **Dependency and runtime report**
+(label `dependencies`), listing every package, action, runtime and image that is
+behind, with end-of-life dates; `python3 scripts/dependency-report.py --dry-run`
+prints the same report locally. The `@claude` app cannot push changes under `.github/workflows/`, so the
 maintainer commits workflow changes. `@claude` runs only for users with write access
 and refuses PRs from forks, because it runs their code next to its tokens. Text that
 other people wrote in issues, PRs or comments reaches Claude when you tag it there,

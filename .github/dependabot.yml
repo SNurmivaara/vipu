@@ -1,6 +1,7 @@
 # Weekly grouped version updates. Security updates are configured separately in
 # the repository settings. Base images are not tracked here: Dependabot would
-# propose Python and Node major upgrades through the image tags.
+# propose Python and Node major upgrades through the image tags. The monthly
+# dependency report (.github/workflows/dependency-report.yml) tracks them instead.
 version: 2
 updates:
   - package-ecosystem: uv
@@ -26,6 +27,11 @@ updates:
     groups:
       frontend-minor-patch:
         update-types: [minor, patch]
+    # @types/node follows the Node runtime major, which moves by hand together
+    # with the Node pins; the dependency report flags a mismatch.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
