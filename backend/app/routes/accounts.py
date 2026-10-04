@@ -1,15 +1,17 @@
-from decimal import Decimal
-
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import Account
+from app.validation import (
+    MAX_NAME_LENGTH,
+    parse_amount,
+    parse_int,
+    register_validation,
+)
 
 bp = APIBlueprint("accounts", __name__, tag="Accounts")
-
-MAX_NAME_LENGTH = 100
-MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+register_validation(bp)
 
 
 @bp.get("/api/accounts")
@@ -39,16 +41,18 @@ def create_account() -> Response | tuple[Response, int]:
     if not name or len(name) > MAX_NAME_LENGTH:
         return jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}), 400
 
-    balance = Decimal(str(data.get("balance", 0)))
-    if abs(balance) > MAX_AMOUNT_VALUE:
-        return jsonify({"error": "balance exceeds maximum allowed value"}), 400
+    balance = parse_amount(data.get("balance", 0), "balance")
 
     # Validate payment_due_day for credit cards
     payment_due_day = data.get("payment_due_day")
     if payment_due_day is not None:
-        payment_due_day = int(payment_due_day)
-        if payment_due_day < 1 or payment_due_day > 31:
-            return jsonify({"error": "payment_due_day must be between 1 and 31"}), 400
+        payment_due_day = parse_int(
+            payment_due_day,
+            "payment_due_day",
+            1,
+            31,
+            "payment_due_day must be between 1 and 31",
+        )
 
     account = Account(
         name=name,
@@ -84,19 +88,20 @@ def update_account(account_id: int) -> Response | tuple[Response, int]:
             )
         account.name = name
     if "balance" in data:
-        balance = Decimal(str(data["balance"]))
-        if abs(balance) > MAX_AMOUNT_VALUE:
-            return jsonify({"error": "balance exceeds maximum allowed value"}), 400
-        account.balance = balance
+        account.balance = parse_amount(data["balance"], "balance")
     if "is_credit" in data:
         account.is_credit = bool(data["is_credit"])
 
     if "payment_due_day" in data:
         payment_due_day = data["payment_due_day"]
         if payment_due_day is not None:
-            payment_due_day = int(payment_due_day)
-            if payment_due_day < 1 or payment_due_day > 31:
-                return jsonify({"error": "payment_due_day must be 1-31"}), 400
+            payment_due_day = parse_int(
+                payment_due_day,
+                "payment_due_day",
+                1,
+                31,
+                "payment_due_day must be 1-31",
+            )
         account.payment_due_day = payment_due_day
 
     session.commit()

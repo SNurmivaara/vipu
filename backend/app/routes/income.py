@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
@@ -14,11 +13,17 @@ from app.deadline_calc import (
 )
 from app.models import IncomeItem
 from app.routes.budget import configured_payday_day
+from app.validation import (
+    MAX_NAME_LENGTH,
+    parse_amount,
+    parse_frequency_value,
+    parse_int,
+    parse_percentage,
+    register_validation,
+)
 
 bp = APIBlueprint("income", __name__, tag="Income")
-
-MAX_NAME_LENGTH = 100
-MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+register_validation(bp)
 VALID_FREQUENCY_UNITS = ("days", "weeks", "months", "years")
 
 
@@ -66,24 +71,15 @@ def create_income() -> Response | tuple[Response, int]:
     if not name or len(name) > MAX_NAME_LENGTH:
         return jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}), 400
 
-    gross_amount = Decimal(str(data["gross_amount"]))
-    if abs(gross_amount) > MAX_AMOUNT_VALUE:
-        return jsonify({"error": "gross_amount exceeds maximum allowed value"}), 400
+    gross_amount = parse_amount(data["gross_amount"], "gross_amount")
 
     tax_pct = data.get("tax_percentage")
     if tax_pct is not None:
-        tax_pct = Decimal(str(tax_pct))
-        if tax_pct < 0 or tax_pct > 100:
-            return jsonify({"error": "tax_percentage must be between 0 and 100"}), 400
+        tax_pct = parse_percentage(tax_pct, "tax_percentage")
 
     # Validate deadline fields
-    due_day = int(data.get("due_day", 1))
-    if due_day < 1 or due_day > 31:
-        return jsonify({"error": "due_day must be between 1 and 31"}), 400
-
-    frequency_value = int(data.get("frequency_value", 1))
-    if frequency_value < 1:
-        return jsonify({"error": "frequency_value must be at least 1"}), 400
+    due_day = parse_int(data.get("due_day", 1), "due_day", 1, 31)
+    frequency_value = parse_frequency_value(data.get("frequency_value", 1))
 
     frequency_unit = data.get("frequency_unit", "months")
     if frequency_unit not in VALID_FREQUENCY_UNITS:
@@ -143,37 +139,23 @@ def update_income(income_id: int) -> Response | tuple[Response, int]:
             )
         item.name = name
     if "gross_amount" in data:
-        gross_amount = Decimal(str(data["gross_amount"]))
-        if abs(gross_amount) > MAX_AMOUNT_VALUE:
-            return jsonify({"error": "gross_amount exceeds maximum allowed value"}), 400
-        item.gross_amount = gross_amount
+        item.gross_amount = parse_amount(data["gross_amount"], "gross_amount")
     if "is_taxed" in data:
         item.is_taxed = bool(data["is_taxed"])
     if "tax_percentage" in data:
         tax_pct = data["tax_percentage"]
         if tax_pct is not None:
-            tax_pct = Decimal(str(tax_pct))
-            if tax_pct < 0 or tax_pct > 100:
-                return (
-                    jsonify({"error": "tax_percentage must be between 0 and 100"}),
-                    400,
-                )
+            tax_pct = parse_percentage(tax_pct, "tax_percentage")
         item.tax_percentage = tax_pct
     if "is_deduction" in data:
         item.is_deduction = bool(data["is_deduction"])
 
     # Deadline fields
     if "due_day" in data:
-        due_day = int(data["due_day"])
-        if due_day < 1 or due_day > 31:
-            return jsonify({"error": "due_day must be between 1 and 31"}), 400
-        item.due_day = due_day
+        item.due_day = parse_int(data["due_day"], "due_day", 1, 31)
 
     if "frequency_value" in data:
-        frequency_value = int(data["frequency_value"])
-        if frequency_value < 1:
-            return jsonify({"error": "frequency_value must be at least 1"}), 400
-        item.frequency_value = frequency_value
+        item.frequency_value = parse_frequency_value(data["frequency_value"])
 
     if "frequency_unit" in data:
         frequency_unit = data["frequency_unit"]

@@ -1,3 +1,4 @@
+import sys
 from datetime import date
 from decimal import Decimal
 
@@ -13,8 +14,12 @@ from app.models import (
     BudgetSettings,
     BudgetSnapshot,
 )
+from app.validation import INT32_MAX, parse_amount, parse_int, register_validation
 
 bp = APIBlueprint("budget_snapshots", __name__, tag="Budget Snapshots")
+register_validation(bp)
+
+MAX_PAGE_SIZE = 200
 
 
 def _get_pay_period_start(d: date, payday_day: int) -> date:
@@ -184,8 +189,18 @@ def list_budget_snapshots() -> Response:
     payday_day = settings.payday_day if settings else 25
 
     # Pagination
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    # A limit above the page size is clamped to it, as before.
+    limit = min(
+        parse_int(
+            request.args.get("limit", 50),
+            "limit",
+            0,
+            sys.maxsize,
+            "limit must be a non-negative integer",
+        ),
+        MAX_PAGE_SIZE,
+    )
+    offset = parse_int(request.args.get("offset", 0), "offset", 0, INT32_MAX)
 
     total = session.query(BudgetSnapshot).count()
 
@@ -287,25 +302,44 @@ def update_budget_snapshot(snapshot_id: int) -> tuple[Response, int] | Response:
         if not isinstance(entries, list):
             return jsonify({"error": "entries must be a list"}), 400
 
-        # Replace all entries
-        session.query(BudgetBalanceEntry).filter(
-            BudgetBalanceEntry.snapshot_id == snapshot.id
-        ).delete()
-
-        for entry_data in entries:
+        # Validate every entry before replacing any
+        new_entries: list[BudgetBalanceEntry] = []
+        account_ids: set[int] = set()
+        for i, entry_data in enumerate(entries):
+            if not isinstance(entry_data, dict):
+                return jsonify({"error": f"entries[{i}] must be an object"}), 400
             account_name = entry_data.get("account_name", "")
             if not account_name:
                 return jsonify({"error": "Each entry needs account_name"}), 400
 
-            session.add(
+            account_id = entry_data.get("account_id")
+            if account_id is not None:
+                account_id = parse_int(account_id, f"entries[{i}].account_id")
+                if account_id in account_ids:
+                    msg = f"entries[{i}].account_id {account_id} appears more than once"
+                    return jsonify({"error": msg}), 400
+                if session.get(Account, account_id) is None:
+                    msg = f"entries[{i}].account_id {account_id} not found"
+                    return jsonify({"error": msg}), 400
+                account_ids.add(account_id)
+
+            new_entries.append(
                 BudgetBalanceEntry(
                     snapshot_id=snapshot.id,
-                    account_id=entry_data.get("account_id"),
+                    account_id=account_id,
                     account_name=str(account_name)[:100],
-                    balance=Decimal(str(entry_data.get("balance", 0))),
+                    balance=parse_amount(
+                        entry_data.get("balance", 0), f"entries[{i}].balance"
+                    ),
                     is_credit=bool(entry_data.get("is_credit", False)),
                 )
             )
+
+        # Replace all entries
+        session.query(BudgetBalanceEntry).filter(
+            BudgetBalanceEntry.snapshot_id == snapshot.id
+        ).delete()
+        session.add_all(new_entries)
 
         # Recalculate current_balance from new entries
         session.flush()

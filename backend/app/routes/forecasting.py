@@ -18,6 +18,7 @@ from app.fire import (
 )
 from app.models import ForecastingSettings, NetWorthSnapshot
 from app.routes.budget import compute_budget_totals
+from app.validation import MAX_AMOUNT_VALUE, is_finite_number
 
 bp = APIBlueprint("forecasting", __name__, tag="Forecasting")
 
@@ -26,13 +27,18 @@ bp = APIBlueprint("forecasting", __name__, tag="Forecasting")
 # Input validation schema
 # ---------------------------------------------------------------------------
 
+# Money inputs share the API's maximum magnitude; unbounded floats overflow
+# the projection arithmetic.
+SIGNED_AMOUNT = validate.Range(min=-MAX_AMOUNT_VALUE, max=MAX_AMOUNT_VALUE)
+AMOUNT = validate.Range(min=0, max=MAX_AMOUNT_VALUE)
+
 
 class FireCalculateInputSchema(Schema):
     """Schema for FIRE calculation input validation."""
 
-    current_net_worth = fields.Float(required=True)
-    monthly_contribution = fields.Float(required=True)
-    annual_expenses = fields.Float(required=True, validate=validate.Range(min=0))
+    current_net_worth = fields.Float(required=True, validate=SIGNED_AMOUNT)
+    monthly_contribution = fields.Float(required=True, validate=SIGNED_AMOUNT)
+    annual_expenses = fields.Float(required=True, validate=AMOUNT)
     annual_return_pct = fields.Float(
         required=True, validate=validate.Range(min=-50, max=100)
     )
@@ -49,10 +55,10 @@ class FireCalculateInputSchema(Schema):
 
     # Optional pension fields
     pension_accrued_monthly = fields.Float(
-        allow_none=True, load_default=None, validate=validate.Range(min=0)
+        allow_none=True, load_default=None, validate=AMOUNT
     )
     pension_monthly_salary = fields.Float(
-        allow_none=True, load_default=None, validate=validate.Range(min=0)
+        allow_none=True, load_default=None, validate=AMOUNT
     )
     pension_accrual_rate = fields.Float(
         load_default=1.5, validate=validate.Range(min=0, max=10)
@@ -187,7 +193,7 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
     for field, (lo, hi) in numeric_fields.items():
         if field in data:
             val = data[field]
-            if not isinstance(val, (int, float)) or val < lo or val > hi:
+            if not is_finite_number(val) or val < lo or val > hi:
                 return jsonify({"error": f"{field} must be between {lo} and {hi}"}), 400
             setattr(settings, field, Decimal(str(val)))
 
@@ -201,7 +207,7 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
     for field, (lo, hi) in int_fields.items():
         if field in data:
             val = data[field]
-            if not isinstance(val, (int, float)) or val < lo or val > hi:
+            if not is_finite_number(val) or val < lo or val > hi:
                 return jsonify({"error": f"{field} must be between {lo} and {hi}"}), 400
             setattr(settings, field, int(val))
 
@@ -217,10 +223,13 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
             val = data[field]
             if val is None:
                 setattr(settings, field, None)
-            elif isinstance(val, (int, float)):
-                setattr(settings, field, Decimal(str(val)))
-            else:
+            elif not is_finite_number(val):
                 return jsonify({"error": f"{field} must be a number or null"}), 400
+            elif abs(val) > MAX_AMOUNT_VALUE:
+                msg = f"{field} exceeds maximum allowed value"
+                return jsonify({"error": msg}), 400
+            else:
+                setattr(settings, field, Decimal(str(val)))
 
     # Boolean fields
     if "pension_guarantee_enabled" in data:
@@ -239,7 +248,7 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
             return jsonify({"error": "group_return_rates must be an object"}), 400
         # Validate all values are numbers between -10 and 30
         for k, v in val.items():
-            if not isinstance(v, (int, float)) or v < -10 or v > 30:
+            if not is_finite_number(v) or v < -10 or v > 30:
                 msg = f"Return rate for {k} must be between -10 and 30"
                 return jsonify({"error": msg}), 400
         settings.group_return_rates = val
@@ -265,11 +274,14 @@ def update_forecasting_settings() -> Response | tuple[Response, int]:
                 return jsonify({"error": f"Terms for {loan} must be an object"}), 400
             rate = terms.get("rate_pct", 0)
             payment = terms.get("monthly_payment", 0)
-            if not isinstance(rate, (int, float)) or rate < 0 or rate > 30:
+            if not is_finite_number(rate) or rate < 0 or rate > 30:
                 msg = f"Rate for {loan} must be between 0 and 30"
                 return jsonify({"error": msg}), 400
-            if not isinstance(payment, (int, float)) or payment < 0:
+            if not is_finite_number(payment) or payment < 0:
                 msg = f"Payment for {loan} must not be negative"
+                return jsonify({"error": msg}), 400
+            if payment > MAX_AMOUNT_VALUE:
+                msg = f"Payment for {loan} exceeds maximum allowed value"
                 return jsonify({"error": msg}), 400
             # Absent means "fixed", so terms written before schedules existed
             # keep amortising off their payment.

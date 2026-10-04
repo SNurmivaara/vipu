@@ -5,6 +5,7 @@ from flask import Response, jsonify, request
 
 from app import get_session
 from app.models import BudgetSettings
+from app.validation import is_finite_number
 
 bp = APIBlueprint("settings", __name__, tag="Settings")
 
@@ -43,7 +44,7 @@ def update_settings() -> Response | tuple[Response, int]:
 
     if "tax_percentage" in data:
         tax_pct = data["tax_percentage"]
-        if not isinstance(tax_pct, (int, float)) or tax_pct < 0 or tax_pct > 100:
+        if not is_finite_number(tax_pct) or tax_pct < 0 or tax_pct > 100:
             return jsonify({"error": "tax_percentage must be between 0 and 100"}), 400
         settings.tax_percentage = Decimal(str(tax_pct))
 

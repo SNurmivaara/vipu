@@ -1,5 +1,5 @@
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
@@ -8,11 +8,16 @@ from sqlalchemy.orm import Session
 from app import get_session
 from app.forecasting import generate_net_worth_forecast
 from app.models import NetWorthCategory, NetWorthEntry, NetWorthGroup, NetWorthSnapshot
+from app.validation import (
+    MAX_NAME_LENGTH,
+    InvalidInput,
+    parse_amount,
+    parse_int,
+    register_validation,
+)
 
 bp = APIBlueprint("networth", __name__, tag="Net Worth")
-
-MAX_NAME_LENGTH = 100
-MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+register_validation(bp)
 
 # Valid group types
 VALID_GROUP_TYPES = ["asset", "liability"]
@@ -72,10 +77,7 @@ def create_group() -> Response | tuple[Response, int]:
             400,
         )
 
-    try:
-        display_order = int(data.get("display_order", 0))
-    except (ValueError, TypeError):
-        return jsonify({"error": "display_order must be an integer"}), 400
+    display_order = parse_int(data.get("display_order", 0), "display_order")
 
     group = NetWorthGroup(
         name=name,
@@ -129,10 +131,7 @@ def update_group(group_id: int) -> Response | tuple[Response, int]:
         group.color = color
 
     if "display_order" in data:
-        try:
-            group.display_order = int(data["display_order"])
-        except (ValueError, TypeError):
-            return jsonify({"error": "display_order must be an integer"}), 400
+        group.display_order = parse_int(data["display_order"], "display_order")
 
     session.commit()
     return jsonify(group.to_dict())
@@ -205,10 +204,7 @@ def create_category() -> Response | tuple[Response, int]:
         )
 
     # Validate group exists
-    try:
-        group_id = int(data["group_id"])
-    except (ValueError, TypeError):
-        return jsonify({"error": "group_id must be an integer"}), 400
+    group_id = parse_int(data["group_id"], "group_id")
 
     group = session.query(NetWorthGroup).filter_by(id=group_id).first()
     if not group:
@@ -216,10 +212,7 @@ def create_category() -> Response | tuple[Response, int]:
 
     # Get optional fields
     is_personal = bool(data.get("is_personal", True))
-    try:
-        display_order = int(data.get("display_order", 0))
-    except (ValueError, TypeError):
-        return jsonify({"error": "display_order must be an integer"}), 400
+    display_order = parse_int(data.get("display_order", 0), "display_order")
 
     category = NetWorthCategory(
         name=name,
@@ -257,10 +250,7 @@ def update_category(category_id: int) -> Response | tuple[Response, int]:
         category.name = name
 
     if "group_id" in data:
-        try:
-            group_id = int(data["group_id"])
-        except (ValueError, TypeError):
-            return jsonify({"error": "group_id must be an integer"}), 400
+        group_id = parse_int(data["group_id"], "group_id")
 
         group = session.query(NetWorthGroup).filter_by(id=group_id).first()
         if not group:
@@ -271,10 +261,7 @@ def update_category(category_id: int) -> Response | tuple[Response, int]:
         category.is_personal = bool(data["is_personal"])
 
     if "display_order" in data:
-        try:
-            category.display_order = int(data["display_order"])
-        except (ValueError, TypeError):
-            return jsonify({"error": "display_order must be an integer"}), 400
+        category.display_order = parse_int(data["display_order"], "display_order")
 
     session.commit()
     return jsonify(category.to_dict())
@@ -451,14 +438,14 @@ def _validate_snapshot_data(data: dict) -> tuple[bool, str | None]:
         month = int(data["month"])
         if month < 1 or month > 12:
             return False, "month must be between 1 and 12"
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return False, "month must be an integer"
 
     try:
         year = int(data["year"])
         if year < 1900 or year > 2100:
             return False, "year must be between 1900 and 2100"
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return False, "year must be an integer"
 
     # Validate entries if provided
@@ -466,20 +453,31 @@ def _validate_snapshot_data(data: dict) -> tuple[bool, str | None]:
     if not isinstance(entries, list):
         return False, "entries must be a list"
 
-    for i, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            return False, f"entries[{i}] must be an object"
-        if "category_id" not in entry:
-            return False, f"entries[{i}].category_id is required"
-        if "amount" in entry:
-            try:
-                value = Decimal(str(entry["amount"]))
-                if abs(value) > MAX_AMOUNT_VALUE:
-                    return False, f"entries[{i}].amount exceeds maximum allowed value"
-            except (ValueError, TypeError, InvalidOperation):
-                return False, f"entries[{i}].amount must be a number"
+    error = _validate_entries(entries)
+    if error:
+        return False, error
 
     return True, None
+
+
+def _validate_entries(entries: list) -> str | None:
+    """Check snapshot entries; returns an error message or None."""
+    seen: set[int] = set()
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            return f"entries[{i}] must be an object"
+        if "category_id" not in entry:
+            return f"entries[{i}].category_id is required"
+        try:
+            category_id = parse_int(entry["category_id"], f"entries[{i}].category_id")
+            if "amount" in entry:
+                parse_amount(entry["amount"], f"entries[{i}].amount")
+        except InvalidInput as err:
+            return err.message
+        if category_id in seen:
+            return f"entries[{i}].category_id {category_id} appears more than once"
+        seen.add(category_id)
+    return None
 
 
 def list_snapshot_dicts(session: Session) -> list[dict]:
@@ -608,7 +606,7 @@ def create_snapshot() -> Response | tuple[Response, int]:
             session.rollback()
             return jsonify({"error": f"Category {category_id} not found"}), 400
 
-        amount = Decimal(str(entry_data.get("amount", 0)))
+        amount = parse_amount(entry_data.get("amount", 0), "amount")
         entry = NetWorthEntry(
             snapshot_id=snapshot.id,
             category_id=category_id,
@@ -659,7 +657,7 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
                 return jsonify({"error": "month must be between 1 and 12"}), 400
             if new_year < 1900 or new_year > 2100:
                 return jsonify({"error": "year must be between 1900 and 2100"}), 400
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, OverflowError):
             return jsonify({"error": "month and year must be integers"}), 400
 
         # Check for duplicate
@@ -686,22 +684,9 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
             return jsonify({"error": "entries must be a list"}), 400
 
         # Validate entries
-        for i, entry_data in enumerate(entries_data):
-            if not isinstance(entry_data, dict):
-                return jsonify({"error": f"entries[{i}] must be an object"}), 400
-            if "category_id" not in entry_data:
-                return jsonify({"error": f"entries[{i}].category_id is required"}), 400
-            if "amount" in entry_data:
-                try:
-                    value = Decimal(str(entry_data["amount"]))
-                    if abs(value) > MAX_AMOUNT_VALUE:
-                        msg = f"entries[{i}].amount exceeds maximum allowed value"
-                        return jsonify({"error": msg}), 400
-                except (ValueError, TypeError, InvalidOperation):
-                    return (
-                        jsonify({"error": f"entries[{i}].amount must be a number"}),
-                        400,
-                    )
+        error = _validate_entries(entries_data)
+        if error:
+            return jsonify({"error": error}), 400
 
         # Delete existing entries
         session.query(NetWorthEntry).filter_by(snapshot_id=snapshot_id).delete()
@@ -716,7 +701,7 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
                 session.rollback()
                 return jsonify({"error": f"Category {category_id} not found"}), 400
 
-            amount = Decimal(str(entry_data.get("amount", 0)))
+            amount = parse_amount(entry_data.get("amount", 0), "amount")
             entry = NetWorthEntry(
                 snapshot_id=snapshot.id,
                 category_id=category_id,

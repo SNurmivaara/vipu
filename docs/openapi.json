@@ -219,7 +219,7 @@
           "Data Management"
         ],
         "summary": "Import data from JSON.",
-        "description": "Replaces all existing data with the imported data.\nSupports version 1 (budget only) and version 2 (full data with net worth)."
+        "description": "Replaces all existing data with the imported data.\nSupports version 1 (budget only) and version 2 (full data with net worth).\nThe whole file is checked first against the limits of the create routes;\nan invalid value rejects the import with a 400 and changes nothing."
       }
     },
     "/api/summary": {
