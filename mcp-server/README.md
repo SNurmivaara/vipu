@@ -14,7 +14,7 @@ keeps it non-importable, so it can never shadow the `mcp` PyPI package.
 uv sync --extra dev
 MCP_AUTH_TOKEN=$(openssl rand -hex 32) \
   VIPU_API_URL=http://localhost:5000 \
-  uv run uvicorn vipu_mcp.server:create_app --factory --host 0.0.0.0 --port 5100
+  uv run uvicorn vipu_mcp.server:create_app --factory --host 127.0.0.1 --port 5100
 ```
 
 | Variable | Default | Meaning |
@@ -50,9 +50,14 @@ Incomplete OAuth settings fail at startup even if a legacy token exists.
 
 For deployments without OAuth:
 
-`/mcp` requires `Authorization: Bearer <MCP_AUTH_TOKEN>`, compared with
-`hmac.compare_digest`. `/health` stays open so the compose healthcheck can
+`/mcp` requires `Authorization: Bearer <MCP_AUTH_TOKEN>`, compared as bytes
+with `hmac.compare_digest`. `/health` stays open so the compose healthcheck can
 reach it.
+
+Generate the token with `openssl rand -hex 32`. The server refuses to start
+with an example placeholder from this repository, or in production with a
+published development token, and logs a warning for a token shorter than 32
+characters.
 
 DNS rebinding protection is off, also deliberately. The tunnel forwards the
 public hostname as `Host` and the container has no way to enumerate it, so the

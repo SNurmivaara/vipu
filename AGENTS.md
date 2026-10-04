@@ -123,7 +123,9 @@ The MCP development extra includes the backend through a local path dependency.
 
 For the complete development stack, run `./dev.sh` at the repository root. It uses
 `docker-compose.dev.yml` with reloads and development credentials: frontend on 3000,
-backend on 5000, MCP on 5100, PostgreSQL on 5433. `./dev.sh down` stops it,
+backend on 5000, MCP on 5100, PostgreSQL on 5433, all bound to 127.0.0.1. The other
+Compose files bind to loopback by default too; see the README's security model
+before exposing anything. `./dev.sh down` stops it,
 `./dev.sh logs` follows logs, and `./dev.sh build` rebuilds images.
 **`./dev.sh reset` is destructive: it removes the development database volume.**
 Never use reset or `docker compose down -v` against existing user data as a test step.

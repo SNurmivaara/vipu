@@ -21,7 +21,9 @@ class BearerTokenMiddleware:
 
     def __init__(self, app: Any, token: str) -> None:
         self.app = app
-        self.token = token
+        # Compared as bytes: compare_digest raises TypeError on str with
+        # non-ASCII characters, which would turn a bad header into a 500.
+        self.token = token.encode("utf-8", "surrogateescape")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http" or scope.get("path") in OPEN_PATHS:
@@ -38,8 +40,8 @@ class BearerTokenMiddleware:
         for name, value in scope.get("headers", []):
             if name.lower() != b"authorization":
                 continue
-            scheme, _, presented = value.decode("latin-1").partition(" ")
-            if scheme.lower() != "bearer":
+            scheme, _, presented = bytes(value).partition(b" ")
+            if scheme.lower() != b"bearer":
                 return False
             return hmac.compare_digest(presented.strip(), self.token)
         return False

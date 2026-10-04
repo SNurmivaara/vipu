@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: devpassword
       POSTGRES_DB: vipu
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres-dev-data:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: vipu-backend-dev
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     environment:
       - DATABASE_URL=postgresql://vipu:devpassword@postgres:5432/vipu
       - FLASK_ENV=development
@@ -43,7 +43,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: vipu-frontend-dev
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       - WATCHPACK_POLLING=true
       - BACKEND_URL=http://backend:5000
@@ -62,7 +62,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: vipu-mcp-dev
     ports:
-      - "5100:5100"
+      - "127.0.0.1:5100:5100"
     environment:
       - VIPU_API_URL=http://backend:5000
       - MCP_AUTH_TOKEN=dev-mcp-token-not-for-production

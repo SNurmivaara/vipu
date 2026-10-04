@@ -30,6 +30,8 @@ COPY app/ ./app/
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_APP=app:create_app
+# Never fall back to the development config (DEBUG, fixed SECRET_KEY).
+ENV FLASK_ENV=production
 
 # Change to non-root user
 USER vipu
