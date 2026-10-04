@@ -2,7 +2,8 @@ name: Claude CI Fix
 
 # When CI fails on a pull request from a claude/ branch, Claude fixes it on that
 # branch, at most twice per PR. Its push reruns CI, and the review in
-# claude-code-review.yml waits for that result.
+# claude-code-review.yml waits for that result. An attempt that stops before
+# finishing without pushing does not count toward the limit.
 #
 # Like claude.yml, this runs branch code with secrets. Only people with write
 # access can push claude/ branches; they are the trust boundary.
@@ -20,6 +21,8 @@ env:
   MAX_ATTEMPTS: 2
   MARKER: "<!-- claude-ci-fix -->"
   EXHAUSTED_MARKER: "<!-- claude-ci-fix-exhausted -->"
+  # Posted by scripts/claude-run-stopped.sh when an attempt pushed nothing.
+  STOPPED_MARKER: "<!-- claude-ci-fix-stopped -->"
 
 jobs:
   fix:
@@ -29,7 +32,9 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       startsWith(github.event.workflow_run.head_branch, 'claude/')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The Claude step times out first, so a timeout fails that step and the job can
+    # still report it. A job-level timeout would cancel the job instead.
+    timeout-minutes: 65
     permissions:
       contents: read
       pull-requests: write # The attempt comments below use the workflow token.
@@ -57,7 +62,9 @@ jobs:
             gh api "repos/$REPO/issues/$pr/comments" --paginate \
               --jq ".[] | select(.body | contains(\"$1\")) | .id" | wc -l
           }
-          attempts=$(count "$MARKER")
+          # Each attempt posts MARKER; one that stopped without pushing also
+          # posts STOPPED_MARKER and is not counted.
+          attempts=$(( $(count "$MARKER") - $(count "$STOPPED_MARKER") ))
           if (( attempts >= MAX_ATTEMPTS )); then
             if (( $(count "$EXHAUSTED_MARKER") == 0 )); then
               gh pr comment "$pr" --repo "$REPO" --body "CI still fails after $MAX_ATTEMPTS automatic fix attempts ([run]($RUN_URL)). Over to the maintainer. $EXHAUSTED_MARKER"
@@ -106,7 +113,9 @@ jobs:
           (cd frontend && npm ci)
 
       - name: Fix CI with Claude
+        id: claude
         if: steps.pr.outputs.number
+        timeout-minutes: 55
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -140,3 +149,28 @@ jobs:
           claude_args: >-
             --model claude-opus-5-5
             --allowedTools "Bash(./test.sh),Bash(./scripts/*),Bash(bash *),Bash(uv *),Bash(npm *),Bash(npx *),Bash(git *),Bash(docker *),Bash(gh pr *),Bash(gh issue view *),Bash(gh run *),Bash(sed *),Read(//tmp/**),Write(//tmp/**),Edit(//tmp/**)"
+
+      # Otherwise the PR's last word would be "attempting fix N of 2", and an
+      # attempt that pushed nothing would start no CI run to try again. Branch head
+      # unchanged means Claude pushed nothing. The script comes from the default
+      # branch, so the branch cannot change what runs with the write token.
+      - name: Report a stopped fix attempt
+        if: failure() && steps.claude.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.number }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          head=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)
+          if [[ "$head" == "$SHA" ]]; then
+            export PUSHED=false COMMENT_MARKER="$STOPPED_MARKER"
+          else
+            export PUSHED=true
+          fi
+          gh api "repos/$REPO/contents/scripts/claude-run-stopped.sh" \
+            -H "Accept: application/vnd.github.raw" > "$RUNNER_TEMP/claude-run-stopped.sh"
+          bash "$RUNNER_TEMP/claude-run-stopped.sh" ci-fix "$PR"

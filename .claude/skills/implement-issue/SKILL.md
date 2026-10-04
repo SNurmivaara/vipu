@@ -36,7 +36,25 @@ git switch -c <type>/<n>-<short-slug> origin/main
 ```
 
 Use the conventional commit type as the prefix (`feat`, `fix`, `docs`, `ci`, ...).
-In GitHub Actions the action has already created a `claude/` branch; stay on it.
+In GitHub Actions the action has already created a `claude/` branch; stay on it,
+unless an earlier run on this issue stopped before finishing. Its branch is named
+`claude/issue-<n>-<timestamp>`. List those branches and their PRs, and continue the
+newest one whose PR is open or that has no PR; ignore one whose PR is closed or
+merged:
+
+```sh
+git ls-remote --heads origin 'refs/heads/claude/issue-<n>-*'
+gh pr list --head <branch> --state all --json number,state
+git fetch --unshallow origin main
+git fetch origin <branch>
+git switch -c <branch> FETCH_HEAD
+git log --oneline origin/main..HEAD
+```
+
+Read those commits and the earlier run's comments on the issue, then resume at the
+first milestone (step 4) the branch lacks. Build on the commits as they are: do not
+redo them, rebase or force-push. When the branch has an open PR, update it at
+step 6 instead of opening another.
 
 ## 3. Investigate
 
@@ -60,6 +78,17 @@ regenerate `docs/openapi.json` and update `docs/api.html` and `docs/guide.html` 
 `AGENTS.md` describes. A data-transforming migration also needs a test in
 `backend/tests/test_migrations_postgres.py`.
 
+In GitHub Actions, commit and push with `git push -u origin HEAD` at each
+milestone, so a run that stops early (usage limit, timeout, error) keeps its work
+and a retry continues from it (step 2):
+
+1. The regression tests are written.
+2. The implementation passes the narrow checks of step 5.
+3. The full checks of step 5 pass.
+
+Skip a milestone with nothing new to commit. A push to a branch without a PR starts
+no CI. Locally, push only at step 6.
+
 ## 5. Verify
 
 Run the narrow checks for the touched package first, then `./test.sh`. When the
@@ -80,7 +109,7 @@ the evidence that is missing, not checks the change never needed.
 Commit with a conventional subject (`feat: ...`, `fix: ...`). Locally, show the
 user the diff summary and the PR draft before pushing, unless they already asked
 you to open the PR. In GitHub Actions, open it yourself instead of posting a
-"Create PR" link.
+"Create PR" link, or update it with `gh pr edit` when the branch already has one.
 
 ```sh
 git push -u origin HEAD
