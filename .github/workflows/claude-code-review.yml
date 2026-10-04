@@ -12,9 +12,13 @@ concurrency:
 
 jobs:
   claude-review:
-    # Dependabot and fork PRs do not receive the OAuth secret.
+    # Dependabot and fork PRs do not receive the OAuth secret. CI runs only on PRs
+    # into main, so a PR stacked on another branch would wait the full deadline
+    # for a CI Status that never comes: skip it. After retargeting to main, close
+    # and reopen the PR (or push to it and comment "@claude review").
     if: |
       !github.event.pull_request.draft &&
+      github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
