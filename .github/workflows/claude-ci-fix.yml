@@ -71,7 +71,7 @@ jobs:
 
       - name: Checkout branch
         if: steps.pr.outputs.number
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 1
@@ -79,20 +79,20 @@ jobs:
       # Match the CI toolchain so Claude can rerun the failing checks.
       - name: Install uv
         if: steps.pr.outputs.number
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v7
         with:
           version: "latest"
           enable-cache: true
 
       - name: Set up Python
         if: steps.pr.outputs.number
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
       - name: Set up Node.js
         if: steps.pr.outputs.number
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"

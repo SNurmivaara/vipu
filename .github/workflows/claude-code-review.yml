@@ -60,7 +60,7 @@ jobs:
           echo "result=${result:-not finished}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.ci.outputs.sha }}
           fetch-depth: 1
