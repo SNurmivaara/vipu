@@ -2,6 +2,7 @@
 
 Runs Ruff --fix and then Black with each package's own locked environment and
 configuration. Failures never block the edit; ./test.sh reports what remains.
+The "--" keeps a file whose name starts with "-" from being read as an option.
 """
 
 import json
@@ -38,8 +39,8 @@ def main() -> None:
     package = root / relative.parts[0]
     target = str(relative.relative_to(relative.parts[0]))
     for command in (
-        ["ruff", "check", "--fix", "--unfixable", UNFIXABLE, "--quiet", target],
-        ["black", "--quiet", target],
+        ["ruff", "check", "--fix", "--unfixable", UNFIXABLE, "--quiet", "--", target],
+        ["black", "--quiet", "--", target],
     ):
         try:
             subprocess.run(

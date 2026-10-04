@@ -21,8 +21,8 @@ Name the real files, functions and endpoints in the draft. For bugs, reproduce o
 trace the cause far enough to describe it accurately; say so if you could not.
 Check `gh issue list --state all --search "<keywords>"` for duplicates and related work.
 
-Use synthetic figures only. Never copy balances, incomes or other real data from the
-Vipu MCP tools, the database or screenshots into an issue: the repository is public.
+Use example figures, and never state or imply that any figure comes from someone's
+actual finances: the repository is public.
 
 ## 3. Choose the shape
 
@@ -37,7 +37,7 @@ Vipu MCP tools, the database or screenshots into an issue: the repository is pub
 Use the sections of `.github/ISSUE_TEMPLATE/change-request.md`, in order:
 
 - **Problem and desired outcome**: observable behavior now and after. For bugs,
-  reproduction steps with synthetic data.
+  reproduction steps with example figures.
 - **Scope and non-goals**: files to touch, and what is deliberately excluded.
 - **Acceptance criteria**: checkboxes, each an observable and testable outcome,
   including edge cases. Name exact expected values where it matters (dates, totals,

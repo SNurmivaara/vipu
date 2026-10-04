@@ -6,7 +6,8 @@ What observable behavior changes, and why? -->
 ## Acceptance evidence and verification
 
 <!-- Map the issue's criteria to evidence. List commands actually run and results,
-manual checks, and any checks skipped or awaiting GitHub. Use synthetic data only. -->
+manual checks, and any checks skipped or awaiting GitHub. Use example figures and
+never present one as someone's actual finances. -->
 
 ## Migration, deployment, and recovery
 

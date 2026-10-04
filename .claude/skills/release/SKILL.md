@@ -82,7 +82,8 @@ If one did not, plan the forced build in step 6.
 ## 5. Draft the notes and ask for approval
 
 Match the tone of the latest release (`gh release view`): short, plain and written
-for users and deployers, without AI attribution or real financial data.
+for users and deployers, without AI attribution. Never present a figure as someone's
+actual finances.
 
 - Title: `vX.Y.Z: <headline>`, naming the most important change.
 - One or two opening paragraphs on what changes for users and deployers.

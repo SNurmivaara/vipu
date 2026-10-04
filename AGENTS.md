@@ -93,7 +93,8 @@ otherwise include the handoff in the final response. Keep lasting knowledge in
 relevant existing documentation and code comments, and update this file when shared
 conventions change. Preserve `docs/plans/98-forecast-returns.md` as historical context;
 new task-plan files are not required. Do not include credentials or personal financial
-data in issues, PRs, logs, fixtures, or handoffs.
+data in issues, PRs, logs, fixtures, or handoffs. Call any figures there example
+figures; never state or imply that one comes from someone's actual finances.
 
 ```text
 Issue:
@@ -202,9 +203,12 @@ disposable runner and always requires Docker success, including for docs-only PR
 
 Shared Claude settings, skills, and agents belong in `.claude/` and are committed;
 personal Claude permissions go in the untracked `.claude/settings.local.json`.
-`.claude/settings.json` allows the routine checks, denies destructive database
-resets and reading `.env` files and `.private/`, and runs a hook that formats edited
-Python files with Ruff and Black. The `/implement-issue` skill walks the workflow above.
+`.claude/settings.json` allows the routine checks as exact commands (not any
+`uv run` or `npm run` command), denies destructive database resets, git options that
+run programs or write files (`-c`, `--upload-pack`, `--output`), and reading `.env`
+files (except `.env.example`) and `.private/` at any depth, and runs a hook that
+formats edited Python files with Ruff and Black. The `/implement-issue` skill walks
+the workflow above.
 Local Codex permissions belong in an untracked `.codex/config.toml`. Keep workspace
 filesystem isolation and approval on request; grant package cache writes and network
 access for routine development as needed. Configuration changes require a refreshed
