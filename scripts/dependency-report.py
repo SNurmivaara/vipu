@@ -233,9 +233,14 @@ def uv_behind(package: str) -> list[Behind]:
 def actions_behind() -> list[Behind]:
     used: dict[str, set[str]] = {}
     for workflow in sorted((ROOT / ".github" / "workflows").glob("*.y*ml")):
-        for action, ref in re.findall(
-            r"uses:\s*['\"]?([^@\s'\"]+)@([^\s'\"]+)", workflow.read_text()
+        # Actions are pinned to a commit SHA with the version in a trailing
+        # comment ("@<sha> # v7.0.1"); read the version from the comment.
+        for action, ref, comment in re.findall(
+            r"uses:\s*['\"]?([^@\s'\"]+)@([^\s'\"]+)['\"]?(?:[ \t]+#[ \t]*(\S+))?",
+            workflow.read_text(),
         ):
+            if re.fullmatch(r"[0-9a-f]{40}", ref):
+                ref = comment
             if action.startswith(("./", "docker://")) or major(ref) is None:
                 continue
             repo = "/".join(action.split("/")[:2])

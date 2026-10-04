@@ -15,34 +15,54 @@ on:
         required: true
         type: string
 
+# Only the jobs that push images get packages: write.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       mcp: ${{ steps.filter.outputs.mcp }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      # Every build job needs this one, so a failure here publishes nothing.
+      - name: Check the release commit and tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::'$TAG' is not a vX.Y.Z release tag."
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_SHA is not on main; release only commits from main."
+            exit 1
+          fi
 
       - name: Get previous release tag
         id: prev_tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${{ github.ref_name }}$" | head -n1)
+          PREV_TAG=$(git tag --sort=-creatordate | grep -vxF "$REF_NAME" | head -n1)
           if [ -z "$PREV_TAG" ]; then
-            echo "base=HEAD~100" >> $GITHUB_OUTPUT
+            echo "base=HEAD~100" >> "$GITHUB_OUTPUT"
           else
-            echo "base=$PREV_TAG" >> $GITHUB_OUTPUT
+            echo "base=$PREV_TAG" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: dorny/paths-filter@v4
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           base: ${{ steps.prev_tag.outputs.base }}
@@ -60,21 +80,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || inputs.force_build == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backend
           push: true
@@ -88,21 +113,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true' || inputs.force_build == true
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./backend
           push: true
@@ -115,26 +145,30 @@ jobs:
     name: Backend Manifest
     needs: [build-backend-amd64, build-backend-arm64]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push manifest
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-backend:${TAG} \
-            ghcr.io/snurmivaara/vipu-backend:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-backend:${TAG}-arm64
+          docker buildx imagetools create -t "ghcr.io/snurmivaara/vipu-backend:${TAG}" \
+            "ghcr.io/snurmivaara/vipu-backend:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-backend:${TAG}-arm64"
           docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-backend:latest \
-            ghcr.io/snurmivaara/vipu-backend:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-backend:${TAG}-arm64
+            "ghcr.io/snurmivaara/vipu-backend:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-backend:${TAG}-arm64"
 
   # MCP server builds - parallel native builds per architecture
   build-mcp-amd64:
@@ -142,21 +176,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.mcp == 'true' || inputs.force_build == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./mcp-server
           push: true
@@ -170,21 +209,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.mcp == 'true' || inputs.force_build == true
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./mcp-server
           push: true
@@ -197,26 +241,30 @@ jobs:
     name: MCP Manifest
     needs: [build-mcp-amd64, build-mcp-arm64]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push manifest
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-mcp:${TAG} \
-            ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64
+          docker buildx imagetools create -t "ghcr.io/snurmivaara/vipu-mcp:${TAG}" \
+            "ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64"
           docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-mcp:latest \
-            ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64
+            "ghcr.io/snurmivaara/vipu-mcp:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-mcp:${TAG}-arm64"
 
   # Frontend builds - parallel native builds per architecture
   build-frontend-amd64:
@@ -224,21 +272,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || inputs.force_build == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./frontend
           push: true
@@ -252,21 +305,26 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true' || inputs.force_build == true
     runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./frontend
           push: true
@@ -279,23 +337,27 @@ jobs:
     name: Frontend Manifest
     needs: [build-frontend-amd64, build-frontend-arm64]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Login to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push manifest
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-frontend:${TAG} \
-            ghcr.io/snurmivaara/vipu-frontend:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-frontend:${TAG}-arm64
+          docker buildx imagetools create -t "ghcr.io/snurmivaara/vipu-frontend:${TAG}" \
+            "ghcr.io/snurmivaara/vipu-frontend:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-frontend:${TAG}-arm64"
           docker buildx imagetools create -t ghcr.io/snurmivaara/vipu-frontend:latest \
-            ghcr.io/snurmivaara/vipu-frontend:${TAG}-amd64 \
-            ghcr.io/snurmivaara/vipu-frontend:${TAG}-arm64
+            "ghcr.io/snurmivaara/vipu-frontend:${TAG}-amd64" \
+            "ghcr.io/snurmivaara/vipu-frontend:${TAG}-arm64"
