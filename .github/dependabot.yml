@@ -1,13 +1,21 @@
 # Weekly grouped version updates. Security updates are configured separately in
-# the repository settings. Base images are not tracked here: Dependabot would
-# propose Python and Node major upgrades through the image tags. The monthly
-# dependency report (.github/workflows/dependency-report.yml) tracks them instead.
+# the repository settings. Minor and patch PRs merge themselves once CI passes,
+# so every ecosystem waits out a cooldown before proposing a fresh release
+# (security updates skip it).
+#
+# Image tags stay on the runtime line they name; Dependabot only refreshes their
+# digests and the uv version. Python, Node and PostgreSQL upgrades move by hand,
+# and the monthly dependency report (.github/workflows/dependency-report.yml)
+# flags them. scripts/test-migrations-postgres.sh pins postgres:16 itself and is
+# not tracked here.
 version: 2
 updates:
   - package-ecosystem: uv
     directory: /backend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       backend-minor-patch:
         update-types: [minor, patch]
@@ -16,6 +24,8 @@ updates:
     directory: /mcp-server
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       mcp-minor-patch:
         update-types: [minor, patch]
@@ -24,6 +34,8 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       frontend-minor-patch:
         update-types: [minor, patch]
@@ -37,6 +49,37 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories: [/backend, /mcp-server, /frontend]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-images:
+        patterns: ["*"]
+    ignore:
+      # 3.11 to 3.12 counts as a minor update, so both are ignored for Python.
+      - dependency-name: python
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker-compose
+    directories: [/, /deploy]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      compose-images:
+        patterns: ["*"]
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
