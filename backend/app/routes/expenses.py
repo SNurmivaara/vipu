@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from decimal import Decimal
 
 from apiflask import APIBlueprint
 from flask import Response, jsonify, request
@@ -14,11 +13,16 @@ from app.deadline_calc import (
 )
 from app.models import ExpenseItem
 from app.routes.budget import configured_payday_day
+from app.validation import (
+    MAX_NAME_LENGTH,
+    parse_amount,
+    parse_frequency_value,
+    parse_int,
+    register_validation,
+)
 
 bp = APIBlueprint("expenses", __name__, tag="Expenses")
-
-MAX_NAME_LENGTH = 100
-MAX_AMOUNT_VALUE = 1_000_000_000  # 1 billion
+register_validation(bp)
 VALID_FREQUENCY_UNITS = ("days", "weeks", "months", "years")
 
 
@@ -66,18 +70,11 @@ def create_expense() -> Response | tuple[Response, int]:
     if not name or len(name) > MAX_NAME_LENGTH:
         return jsonify({"error": f"name must be 1-{MAX_NAME_LENGTH} characters"}), 400
 
-    amount = Decimal(str(data["amount"]))
-    if abs(amount) > MAX_AMOUNT_VALUE:
-        return jsonify({"error": "amount exceeds maximum allowed value"}), 400
+    amount = parse_amount(data["amount"], "amount")
 
     # Validate deadline fields
-    due_day = int(data.get("due_day", 1))
-    if due_day < 1 or due_day > 31:
-        return jsonify({"error": "due_day must be between 1 and 31"}), 400
-
-    frequency_value = int(data.get("frequency_value", 1))
-    if frequency_value < 1:
-        return jsonify({"error": "frequency_value must be at least 1"}), 400
+    due_day = parse_int(data.get("due_day", 1), "due_day", 1, 31)
+    frequency_value = parse_frequency_value(data.get("frequency_value", 1))
 
     frequency_unit = data.get("frequency_unit", "months")
     if frequency_unit not in VALID_FREQUENCY_UNITS:
@@ -135,25 +132,16 @@ def update_expense(expense_id: int) -> Response | tuple[Response, int]:
             )
         item.name = name
     if "amount" in data:
-        amount = Decimal(str(data["amount"]))
-        if abs(amount) > MAX_AMOUNT_VALUE:
-            return jsonify({"error": "amount exceeds maximum allowed value"}), 400
-        item.amount = amount
+        item.amount = parse_amount(data["amount"], "amount")
     if "is_savings_goal" in data:
         item.is_savings_goal = bool(data["is_savings_goal"])
 
     # Deadline fields
     if "due_day" in data:
-        due_day = int(data["due_day"])
-        if due_day < 1 or due_day > 31:
-            return jsonify({"error": "due_day must be between 1 and 31"}), 400
-        item.due_day = due_day
+        item.due_day = parse_int(data["due_day"], "due_day", 1, 31)
 
     if "frequency_value" in data:
-        frequency_value = int(data["frequency_value"])
-        if frequency_value < 1:
-            return jsonify({"error": "frequency_value must be at least 1"}), 400
-        item.frequency_value = frequency_value
+        item.frequency_value = parse_frequency_value(data["frequency_value"])
 
     if "frequency_unit" in data:
         frequency_unit = data["frequency_unit"]

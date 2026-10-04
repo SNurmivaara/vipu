@@ -30,8 +30,10 @@ from app.routes.budget import (
     compute_budget_totals,
     pending_one_time_items,
 )
+from app.validation import InvalidInput, parse_decimal, parse_int, register_validation
 
 bp = APIBlueprint("goals", __name__, tag="Goals")
+register_validation(bp)
 
 MAX_NAME_LENGTH = 100
 MAX_TARGET_VALUE = 1_000_000_000  # 1 billion
@@ -73,8 +75,8 @@ def _next_priority(session: Session) -> int:
 def _parse_amount(value: object, field: str) -> tuple[Decimal | None, str | None]:
     """Parse a non-negative money field; returns (value, error)."""
     try:
-        amount = Decimal(str(value))
-    except (ValueError, TypeError, ArithmeticError):
+        amount = parse_decimal(value, field)
+    except InvalidInput:
         return None, f"{field} must be a valid number"
     if amount < 0:
         return None, f"{field} must be positive"
@@ -126,7 +128,7 @@ def create_goal() -> Response | tuple[Response, int]:
     if data.get("category_id") is not None:
         if goal_type != "savings_goal":
             return jsonify({"error": CATEGORY_TYPE_ERROR}), 400
-        category_id = int(data["category_id"])
+        category_id = parse_int(data["category_id"], "category_id")
         category = session.query(NetWorthCategory).filter_by(id=category_id).first()
         if not category:
             return jsonify({"error": "Category not found"}), 404
@@ -232,7 +234,7 @@ def update_goal(goal_id: int) -> Response | tuple[Response, int]:
         else:
             if data.get("goal_type", goal.goal_type) != "savings_goal":
                 return jsonify({"error": CATEGORY_TYPE_ERROR}), 400
-            category_id = int(data["category_id"])
+            category_id = parse_int(data["category_id"], "category_id")
             category = session.query(NetWorthCategory).filter_by(id=category_id).first()
             if not category:
                 return jsonify({"error": "Category not found"}), 404

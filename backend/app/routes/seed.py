@@ -18,8 +18,19 @@ from app.models import (
     NetWorthGroup,
     NetWorthSnapshot,
 )
+from app.routes.goals import DATE_FORMAT_ERROR, VALID_GOAL_TYPES
+from app.routes.networth import VALID_GROUP_TYPES
+from app.validation import (
+    InvalidInput,
+    parse_amount,
+    parse_int,
+    parse_name,
+    parse_percentage,
+    register_validation,
+)
 
 bp = APIBlueprint("seed", __name__, tag="Data Management")
+register_validation(bp)
 
 
 @bp.post("/api/seed")
@@ -520,23 +531,244 @@ def export_data() -> Response:
     return jsonify(export)
 
 
+def _import_list(data: dict, key: str) -> list[dict]:
+    """The list of objects stored under key, or an empty list when absent."""
+    items = data.get(key, [])
+    if not isinstance(items, list):
+        raise InvalidInput(f"{key} must be a list")
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise InvalidInput(f"{key}[{i}] must be an object")
+    return items
+
+
+def _require(item: dict, key: str, path: str) -> object:
+    """The value under key, which must be present."""
+    if key not in item:
+        raise InvalidInput(f"{path}.{key} is required")
+    return item[key]
+
+
+def _non_negative_amount(value: object, field: str) -> Decimal:
+    """A goal amount: between 0 and the maximum, as the goal routes accept."""
+    amount = parse_amount(value, field)
+    if amount < 0:
+        raise InvalidInput(f"{field} must not be negative")
+    return amount
+
+
+def _validate_budget_import(data: dict) -> dict:
+    """Check the budget part of an import and return model arguments.
+
+    Applies the limits of the create routes, so an import cannot store a value
+    they would refuse.
+    """
+    settings_data = data.get("settings", {})
+    if not isinstance(settings_data, dict):
+        raise InvalidInput("settings must be an object")
+
+    accounts = []
+    for i, a in enumerate(_import_list(data, "accounts")):
+        path = f"accounts[{i}]"
+        accounts.append(
+            {
+                "name": parse_name(_require(a, "name", path), f"{path}.name"),
+                "balance": parse_amount(a.get("balance", 0), f"{path}.balance"),
+                "is_credit": bool(a.get("is_credit", False)),
+            }
+        )
+
+    income = []
+    for i, item in enumerate(_import_list(data, "income")):
+        path = f"income[{i}]"
+        tax_pct = item.get("tax_percentage")
+        income.append(
+            {
+                "name": parse_name(_require(item, "name", path), f"{path}.name"),
+                "gross_amount": parse_amount(
+                    _require(item, "gross_amount", path), f"{path}.gross_amount"
+                ),
+                "is_taxed": bool(item.get("is_taxed", True)),
+                "tax_percentage": (
+                    parse_percentage(tax_pct, f"{path}.tax_percentage")
+                    if tax_pct is not None
+                    else None
+                ),
+                "is_deduction": bool(item.get("is_deduction", False)),
+            }
+        )
+
+    expenses = []
+    for i, e in enumerate(_import_list(data, "expenses")):
+        path = f"expenses[{i}]"
+        expenses.append(
+            {
+                "name": parse_name(_require(e, "name", path), f"{path}.name"),
+                "amount": parse_amount(_require(e, "amount", path), f"{path}.amount"),
+                "is_savings_goal": bool(e.get("is_savings_goal", False)),
+            }
+        )
+
+    return {
+        "tax_percentage": parse_percentage(
+            settings_data.get("tax_percentage", 25.0), "settings.tax_percentage"
+        ),
+        "accounts": accounts,
+        "income": income,
+        "expenses": expenses,
+    }
+
+
+def _validate_snapshots_import(data: dict) -> list[dict]:
+    """Check the net worth snapshots of an import."""
+    snapshots = []
+    seen_months: set[tuple[int, int]] = set()
+    for i, snap in enumerate(_import_list(data, "networth_snapshots")):
+        path = f"networth_snapshots[{i}]"
+        month = parse_int(_require(snap, "month", path), f"{path}.month", 1, 12)
+        year = parse_int(_require(snap, "year", path), f"{path}.year", 1900, 2100)
+        if (year, month) in seen_months:
+            raise InvalidInput(f"{path} repeats the snapshot for {year}-{month:02d}")
+        seen_months.add((year, month))
+
+        entries = []
+        seen_categories: set[str] = set()
+        for j, entry in enumerate(_import_list(snap, "entries")):
+            entry_path = f"{path}.entries[{j}]"
+            category_name = str(entry.get("category_name", ""))
+            if category_name in seen_categories:
+                raise InvalidInput(f"{entry_path} repeats category {category_name!r}")
+            seen_categories.add(category_name)
+            entries.append(
+                {
+                    "category_name": category_name,
+                    "amount": parse_amount(
+                        entry.get("amount", 0), f"{entry_path}.amount"
+                    ),
+                }
+            )
+        snapshots.append({"month": month, "year": year, "entries": entries})
+    return snapshots
+
+
+def _validate_goals_import(data: dict) -> list[dict]:
+    """Check the goals of an import and return model arguments."""
+    goals = []
+    for i, g in enumerate(_import_list(data, "goals")):
+        path = f"goals[{i}]"
+        goal_type = str(_require(g, "goal_type", path)).strip()
+        if goal_type not in VALID_GOAL_TYPES:
+            types_str = ", ".join(VALID_GOAL_TYPES)
+            raise InvalidInput(f"{path}.goal_type must be one of: {types_str}")
+
+        target_date = None
+        if g.get("target_date"):
+            try:
+                target_date = datetime.fromisoformat(
+                    str(g["target_date"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                raise InvalidInput(f"{path}.{DATE_FORMAT_ERROR}") from None
+
+        priority = g.get("priority")
+        current_amount = g.get("current_amount")
+        category_name = g.get("category_name")
+        goals.append(
+            {
+                "name": parse_name(_require(g, "name", path), f"{path}.name"),
+                "goal_type": goal_type,
+                "target_value": _non_negative_amount(
+                    _require(g, "target_value", path), f"{path}.target_value"
+                ),
+                "category_name": str(category_name) if category_name else None,
+                "target_date": target_date,
+                "is_active": bool(g.get("is_active", True)),
+                "priority": (
+                    parse_int(priority, f"{path}.priority")
+                    if priority is not None
+                    else None
+                ),
+                "current_amount": (
+                    _non_negative_amount(current_amount, f"{path}.current_amount")
+                    if current_amount is not None
+                    else None
+                ),
+            }
+        )
+    return goals
+
+
+def _validate_networth_import(data: dict) -> dict:
+    """Check the net worth and goal part of a version 2 import."""
+    groups = []
+    for i, g in enumerate(_import_list(data, "networth_groups")):
+        path = f"networth_groups[{i}]"
+        group_type = str(_require(g, "group_type", path)).lower()
+        if group_type not in VALID_GROUP_TYPES:
+            types_str = ", ".join(VALID_GROUP_TYPES)
+            raise InvalidInput(f"{path}.group_type must be one of: {types_str}")
+        color = str(g.get("color", "#6b7280"))
+        if not color.startswith("#") or len(color) != 7:
+            raise InvalidInput(
+                f"{path}.color must be a valid hex color (e.g., #6b7280)"
+            )
+        groups.append(
+            {
+                "name": parse_name(_require(g, "name", path), f"{path}.name"),
+                "group_type": group_type,
+                "color": color,
+                "display_order": parse_int(
+                    g.get("display_order", 0), f"{path}.display_order"
+                ),
+            }
+        )
+
+    categories = []
+    for i, c in enumerate(_import_list(data, "networth_categories")):
+        path = f"networth_categories[{i}]"
+        categories.append(
+            {
+                "name": parse_name(_require(c, "name", path), f"{path}.name"),
+                "group_name": str(c.get("group_name", "")),
+                "is_personal": bool(c.get("is_personal", True)),
+                "display_order": parse_int(
+                    c.get("display_order", 0), f"{path}.display_order"
+                ),
+            }
+        )
+
+    return {
+        "groups": groups,
+        "categories": categories,
+        "snapshots": _validate_snapshots_import(data),
+        "goals": _validate_goals_import(data),
+    }
+
+
 @bp.post("/api/import")
 def import_data() -> Response | tuple[Response, int]:
     """Import data from JSON.
 
     Replaces all existing data with the imported data.
     Supports version 1 (budget only) and version 2 (full data with net worth).
+    The whole file is checked first against the limits of the create routes;
+    an invalid value rejects the import with a 400 and changes nothing.
     """
     session = get_session()
     data = request.get_json()
 
     if not data:
         return jsonify({"error": "No data provided"}), 400
+    if not isinstance(data, dict):
+        return jsonify({"error": "Import data must be an object"}), 400
 
     # Validate version
     version = data.get("version", 1)
-    if version not in (1, 2):
+    if isinstance(version, bool) or version not in (1, 2):
         return jsonify({"error": f"Unsupported export version: {version}"}), 400
+
+    budget = _validate_budget_import(data)
+    networth = _validate_networth_import(data) if version == 2 else None
 
     # Clear existing budget data
     session.query(Account).delete()
@@ -552,86 +784,41 @@ def import_data() -> Response | tuple[Response, int]:
         session.query(NetWorthCategory).delete()
         session.query(NetWorthGroup).delete()
 
-    # Import settings
-    settings_data = data.get("settings", {})
-    settings = BudgetSettings(
-        tax_percentage=Decimal(str(settings_data.get("tax_percentage", 25.0)))
-    )
-    session.add(settings)
-
-    # Import accounts
-    accounts_data = data.get("accounts", [])
-    for a in accounts_data:
-        account = Account(
-            name=a["name"],
-            balance=Decimal(str(a["balance"])),
-            is_credit=a.get("is_credit", False),
-        )
-        session.add(account)
-
-    # Import income
-    income_data = data.get("income", [])
-    for i in income_data:
-        income = IncomeItem(
-            name=i["name"],
-            gross_amount=Decimal(str(i["gross_amount"])),
-            is_taxed=i.get("is_taxed", True),
-            tax_percentage=(
-                Decimal(str(i["tax_percentage"]))
-                if i.get("tax_percentage") is not None
-                else None
-            ),
-            is_deduction=i.get("is_deduction", False),
-        )
-        session.add(income)
-
-    # Import expenses
-    expenses_data = data.get("expenses", [])
-    for e in expenses_data:
-        expense = ExpenseItem(
-            name=e["name"],
-            amount=Decimal(str(e["amount"])),
-            is_savings_goal=e.get("is_savings_goal", False),
-        )
-        session.add(expense)
+    session.add(BudgetSettings(tax_percentage=budget["tax_percentage"]))
+    session.add_all(Account(**a) for a in budget["accounts"])
+    session.add_all(IncomeItem(**i) for i in budget["income"])
+    session.add_all(ExpenseItem(**e) for e in budget["expenses"])
 
     counts: dict = {
-        "accounts": len(accounts_data),
-        "income": len(income_data),
-        "expenses": len(expenses_data),
+        "accounts": len(budget["accounts"]),
+        "income": len(budget["income"]),
+        "expenses": len(budget["expenses"]),
     }
 
     # Import net worth data if version 2
-    if version == 2:
+    if networth is not None:
         # Import groups first
-        groups_data = data.get("networth_groups", [])
         group_name_to_id: dict[str, int] = {}
 
-        for g in groups_data:
-            group = NetWorthGroup(
-                name=g["name"],
-                group_type=g["group_type"],
-                color=g.get("color", "#6b7280"),
-                display_order=g.get("display_order", 0),
-            )
+        for g in networth["groups"]:
+            group = NetWorthGroup(**g)
             session.add(group)
             session.flush()  # Get the ID
             group_name_to_id[g["name"]] = group.id
 
         # Import categories
-        categories_data = data.get("networth_categories", [])
         category_name_to_id: dict[str, int] = {}
 
-        for c in categories_data:
-            group_id = group_name_to_id.get(c.get("group_name", ""))
+        for c in networth["categories"]:
+            group_id = group_name_to_id.get(c["group_name"])
             if not group_id:
                 continue  # Skip if group not found
 
             category = NetWorthCategory(
                 name=c["name"],
                 group_id=group_id,
-                is_personal=c.get("is_personal", True),
-                display_order=c.get("display_order", 0),
+                is_personal=c["is_personal"],
+                display_order=c["display_order"],
             )
             session.add(category)
             session.flush()  # Get the ID
@@ -639,30 +826,26 @@ def import_data() -> Response | tuple[Response, int]:
 
         # Import snapshots with entries
         # Sort by date to ensure correct change_from_previous calculation
-        snapshots_data = data.get("networth_snapshots", [])
-        snapshots_data_sorted = sorted(
-            snapshots_data, key=lambda s: (s["year"], s["month"])
+        snapshots_sorted = sorted(
+            networth["snapshots"], key=lambda s: (s["year"], s["month"])
         )
 
         previous_net_worth: Decimal | None = None
-        for s in snapshots_data_sorted:
-            snapshot = NetWorthSnapshot(
-                month=s["month"],
-                year=s["year"],
-            )
+        for s in snapshots_sorted:
+            snapshot = NetWorthSnapshot(month=s["month"], year=s["year"])
             session.add(snapshot)
             session.flush()  # Get the ID
 
             # Add entries
-            for entry_data in s.get("entries", []):
-                category_id = category_name_to_id.get(entry_data.get("category_name"))
+            for entry_data in s["entries"]:
+                category_id = category_name_to_id.get(entry_data["category_name"])
                 if not category_id:
                     continue  # Skip if category not found
 
                 entry = NetWorthEntry(
                     snapshot_id=snapshot.id,
                     category_id=category_id,
-                    amount=Decimal(str(entry_data.get("amount", 0))),
+                    amount=entry_data["amount"],
                 )
                 session.add(entry)
 
@@ -671,38 +854,17 @@ def import_data() -> Response | tuple[Response, int]:
             previous_net_worth = snapshot.net_worth
 
         # Import goals
-        goals_data = data.get("goals", [])
-        for g in goals_data:
-            category_id = None
-            if g.get("category_name"):
-                category_id = category_name_to_id.get(g["category_name"])
-
-            target_date = None
-            if g.get("target_date"):
-                target_date = datetime.fromisoformat(
-                    g["target_date"].replace("Z", "+00:00")
-                )
-
-            goal = Goal(
-                name=g["name"],
-                goal_type=g["goal_type"],
-                target_value=Decimal(str(g["target_value"])),
-                category_id=category_id,
-                target_date=target_date,
-                is_active=g.get("is_active", True),
-                priority=g.get("priority"),
-                current_amount=(
-                    Decimal(str(g["current_amount"]))
-                    if g.get("current_amount") is not None
-                    else None
-                ),
+        for g in networth["goals"]:
+            category_name = g.pop("category_name")
+            category_id = (
+                category_name_to_id.get(category_name) if category_name else None
             )
-            session.add(goal)
+            session.add(Goal(**g, category_id=category_id))
 
-        counts["networth_groups"] = len(groups_data)
-        counts["networth_categories"] = len(categories_data)
-        counts["networth_snapshots"] = len(snapshots_data)
-        counts["goals"] = len(goals_data)
+        counts["networth_groups"] = len(networth["groups"])
+        counts["networth_categories"] = len(networth["categories"])
+        counts["networth_snapshots"] = len(networth["snapshots"])
+        counts["goals"] = len(networth["goals"])
 
     session.commit()
 

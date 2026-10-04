@@ -11,6 +11,10 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "http://localhost:3000")
+    # Largest request body accepted; bigger ones get a 413. An export holds
+    # roughly 1 kB per net worth snapshot, so a century of monthly snapshots
+    # stays near 1.5 MB and fits well within this.
+    MAX_CONTENT_LENGTH = 5 * 1024 * 1024
 
     @staticmethod
     def get_database_url() -> str:
