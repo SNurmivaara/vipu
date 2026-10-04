@@ -659,6 +659,8 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
             new_year = int(new_year)
             if new_month < 1 or new_month > 12:
                 return jsonify({"error": "month must be between 1 and 12"}), 400
+            if new_year < 1900 or new_year > 2100:
+                return jsonify({"error": "year must be between 1900 and 2100"}), 400
         except (ValueError, TypeError):
             return jsonify({"error": "month and year must be integers"}), 400
 
