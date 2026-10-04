@@ -106,7 +106,7 @@ class TestGroupCreate:
             json={"name": "Test", "group_type": "invalid"},
         )
         assert response.status_code == 400
-        assert "group_type" in response.json["error"].lower()
+        assert response.json["error"] == "group_type must be one of: asset, liability"
 
     def test_create_group_invalid_color(self, client):
         """POST /api/networth/groups validates color format."""
@@ -144,6 +144,21 @@ class TestGroupUpdate:
         """PUT /api/networth/groups/<id> returns 404 for non-existent."""
         response = client.put("/api/networth/groups/999", json={"name": "Test"})
         assert response.status_code == 404
+
+    def test_update_group_invalid_type(self, client):
+        """PUT /api/networth/groups/<id> lists valid group types in order."""
+        create_response = client.post(
+            "/api/networth/groups",
+            json={"name": "Test", "group_type": "asset"},
+        )
+        group_id = create_response.json["id"]
+
+        response = client.put(
+            f"/api/networth/groups/{group_id}",
+            json={"group_type": "invalid"},
+        )
+        assert response.status_code == 400
+        assert response.json["error"] == "group_type must be one of: asset, liability"
 
 
 class TestGroupDelete:
@@ -1530,7 +1545,10 @@ class TestForecast:
         """GET /api/networth/forecast rejects invalid period."""
         response = client.get("/api/networth/forecast?period=weekly")
         assert response.status_code == 400
-        assert "period" in response.json["error"]
+        assert (
+            response.json["error"]
+            == "period must be one of: month, quarter, half_year, year"
+        )
 
     def test_forecast_invalid_months_ahead(self, client):
         """GET /api/networth/forecast rejects invalid months_ahead."""
