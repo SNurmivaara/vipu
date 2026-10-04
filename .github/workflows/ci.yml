@@ -218,7 +218,7 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-  # Frontend: Lint + Typecheck
+  # Frontend: Lint + Typecheck + Unit tests
   frontend-lint:
     name: Frontend Lint
     needs: changes
@@ -245,6 +245,9 @@ jobs:
 
       - name: Run TypeScript check
         run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm run test
 
   # Frontend: Build
   frontend-build:
@@ -447,7 +450,7 @@ jobs:
           # Frontend jobs must pass if frontend changed
           if [[ "${{ needs.changes.outputs.frontend }}" == "true" ]]; then
             if [[ "${{ needs.frontend-lint.result }}" != "success" ]]; then
-              echo "Frontend lint failed"
+              echo "Frontend lint, typecheck or unit tests failed"
               exit 1
             fi
             if [[ "${{ needs.frontend-build.result }}" != "success" ]]; then
