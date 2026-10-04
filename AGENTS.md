@@ -44,6 +44,11 @@ overrides; do not assume every GET or MCP read tool is free of writes.
    issue and showing how the acceptance criteria were met. Tiny fixes may start
    directly with a PR. Use conventional commit subjects (`feat:`, `fix:`, `docs:`, etc.).
 
+A refactoring never changes observable behavior, the API, the MCP surface or the
+schema, and never shares a PR with a behavior change. The `/refactor` skill plans one
+as an epic of PR-sized steps and executes them with a Definition of Done per step; its
+guide lives in `.claude/skills/refactor/`.
+
 In GitHub, `@claude implement this` on an issue runs the `/implement-issue` skill from
 step 3 in Actions, on Opus 5.5 with the CI toolchain and Docker. It runs
 `./scripts/test-docker.sh` and `./scripts/test-migrations-postgres.sh` when the change
@@ -166,6 +171,11 @@ running stack. Against `./dev.sh`, run `npm run test:e2e` in `frontend/` (first 
 clean it up afterwards, and read `E2E_BASE_URL` (default `http://localhost:3000`) and
 `E2E_API_URL` (default `http://localhost:5000`). `./scripts/test-docker.sh` and the CI
 `docker` job run them against the disposable Compose stack.
+
+`./scripts/snapshot-interfaces.sh <dir>` writes the public interfaces (the OpenAPI
+spec and the MCP instructions, tools, prompts and resources) to `<dir>`. Snapshot
+before and after a change and compare them with `git diff --no-index` to prove an
+interface is unchanged.
 
 Run `./scripts/test-docker.sh` from the repository root for disposable Docker
 integration checks. It uses the existing production Dockerfiles with an isolated

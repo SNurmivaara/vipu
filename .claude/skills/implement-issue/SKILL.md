@@ -46,6 +46,11 @@ investigation contradicts the issue, say so and agree the change with the user
 before writing code. For calculations and migrations, check the financial
 conventions and migration rules in `AGENTS.md` first.
 
+When the issue is labeled `refactor` or is a child of a refactoring epic, read
+`.claude/skills/refactor/SKILL.md` and follow its execute mode for steps 3 to 6:
+one catalog refactoring per commit, the interface snapshot diff, and its step and
+PR Definition of Done. Name the branch `refactor/<n>-<short-slug>`.
+
 ## 4. Implement
 
 Keep the change to the issue's scope. Add regression tests that fail without the
