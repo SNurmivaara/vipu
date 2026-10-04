@@ -1,6 +1,7 @@
 # Weekly grouped version updates. Security updates are configured separately in
 # the repository settings. Base images are not tracked here: Dependabot would
-# propose Python and Node major upgrades through the image tags.
+# propose Python and Node major upgrades through the image tags. The monthly
+# dependency report (.github/workflows/dependency-report.yml) tracks them instead.
 version: 2
 updates:
   - package-ecosystem: uv
