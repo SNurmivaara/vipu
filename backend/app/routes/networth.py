@@ -649,6 +649,8 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
+    old_year, old_month = snapshot.year, snapshot.month
+
     # Check if month/year is being changed
     new_month = data.get("month", snapshot.month)
     new_year = data.get("year", snapshot.year)
@@ -734,6 +736,10 @@ def update_snapshot(snapshot_id: int) -> Response | tuple[Response, int]:
 
     # Recalculate next month's change_from_previous if it exists
     _recalculate_next_month(session, snapshot.year, snapshot.month)
+
+    # If the snapshot moved, the month after its old position lost its previous
+    if (old_year, old_month) != (snapshot.year, snapshot.month):
+        _recalculate_next_month(session, old_year, old_month)
 
     session.commit()
     return jsonify(snapshot.to_dict())
