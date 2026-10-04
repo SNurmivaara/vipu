@@ -7,8 +7,8 @@ what keeps every intermediate state working.
 
 ## Proof levels
 
-Every entry has a proof level. The plan's step names it, and the step's check must
-meet it.
+Every entry except Add Characterization Tests has a proof level. The plan's step
+names it, and the step's check must meet it.
 
 - **P1, mechanical.** Safety follows from the form of the edit: renaming every
   reference, moving lines unchanged, re-exporting. Proof: the type checker, the
@@ -32,6 +32,26 @@ General safety notes for every entry:
   (query keys, form field names) are not checked and must be searched.
 - Keep `float(...)` and `Decimal` conversions, rounding calls and `db.session`
   operations exactly where they were unless the entry says otherwise.
+
+---
+
+## Preparing
+
+### Add Characterization Tests (test-only, no proof level)
+- **Use when:** a later step moves or changes lines the baseline shows as
+  uncovered, or a P3 step needs every branch pinned.
+- **Mechanics:**
+  1. Call the code through its public surface (the HTTP route, the MCP tool, the
+     rendered component), not through the private helper about to move.
+  2. Assert what the code does today, including odd results and exact error
+     messages. A characterization test pins behavior; it does not judge it.
+  3. Where output is nondeterministic (set order, the clock), assert the stable
+     part or pin the clock, and list the nondeterminism as a suspected bug.
+  4. Run the tests against unchanged production code: they must pass.
+  5. Commit as `test: pin <behavior>`, with no production code in the commit.
+- **Safety:** if pinning a behavior needs a production change (an injection point,
+  a seam), that change is its own catalog step after the test commit, or it
+  waits.
 
 ---
 

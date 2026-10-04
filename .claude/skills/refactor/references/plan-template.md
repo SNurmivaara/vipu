@@ -43,7 +43,7 @@ new unit pays for itself, citing findings.>
 ## Steps
 | # | Refactoring | Target | Precondition | Proof | Check | Est. lines | Risk |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| S1 | Characterization tests | `x()` branches A to C | none | n/a | `pytest tests/test_x.py` | +80 | low |
+| S1 | Add Characterization Tests | `x()` branches A to C | none | n/a | `pytest tests/test_x.py` | +80 | low |
 | S2 | Split Module into Package | `app/x.py` -> `app/x/` | S1 | P1 | `pytest`, `mypy .`, snapshot | +10 | low |
 | S3 | Move Function | `foo`, `bar` -> `app/x/periods.py` | S2 | P1 | `pytest tests/test_x.py`, `mypy .` | 0 | low |
 

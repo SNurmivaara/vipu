@@ -49,7 +49,8 @@ conventions and migration rules in `AGENTS.md` first.
 When the issue is labeled `refactor` or is a child of a refactoring epic, read
 `.claude/skills/refactor/SKILL.md` and follow its execute mode for steps 3 to 6:
 one catalog refactoring per commit, the interface snapshot diff, and its step and
-PR Definition of Done. Name the branch `refactor/<n>-<short-slug>`.
+PR Definition of Done. Locally, name the branch `refactor/<n>-<short-slug>`; in
+GitHub Actions stay on the `claude/` branch, as step 2 says.
 
 ## 4. Implement
 

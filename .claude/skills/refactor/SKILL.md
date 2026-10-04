@@ -45,7 +45,9 @@ test assertion, it is not a refactoring: stop and report it.
 ## Choose the mode
 
 - `/refactor plan <target>`: analyze a file, module, component or directory and
-  produce a step-by-step plan. Nothing is edited. With no target, rank candidates
+  produce a step-by-step plan. No code is edited (the interface snapshot
+  regenerates `docs/openapi.json`, which stays identical while it is current). With
+  no target, rank candidates
   (see "Picking a target") and ask the user which to plan.
 - `/refactor <issue number>`: execute one child issue of a refactoring epic.
   `/implement-issue` defers to this mode for issues labeled `refactor` or listed
@@ -128,7 +130,9 @@ Work through this TODO list in order. Every item produces a section of the plan
 ## Execute mode
 
 For one child issue. Steps 1 and 2 of `/implement-issue` (read the issue, branch
-from `origin/main`) apply; name the branch `refactor/<n>-<slug>`.
+from `origin/main`) apply. Locally, name the branch `refactor/<n>-<slug>`. In GitHub
+Actions stay on the `claude/` branch the action created: `claude-ci-fix.yml` and the
+review's wait for a CI fix only act on that prefix.
 
 - [ ] Read the child and its epic. Confirm prerequisites are closed and that the
   plan still matches the code (`git log origin/main -- <target>` since the plan's
@@ -143,7 +147,7 @@ from `origin/main`) apply; name the branch `refactor/<n>-<slug>`.
      `mypy .` or `npm run typecheck`).
   3. Green: commit with `refactor: <refactoring name> <what>`, for example
      `refactor: extract function for pay period bounds in deadline_calc`.
-     Characterization-test commits use `test: pin <behavior>`.
+     Add Characterization Tests steps commit as `test: pin <behavior>`.
   4. Red, and the cause is not obvious within a few minutes: set the step aside
      with `git stash push -u -m "failed: <step>"` (it stays available to inspect)
      and retry in smaller steps. Never debug forward on top of a broken
@@ -155,16 +159,18 @@ from `origin/main`) apply; name the branch `refactor/<n>-<slug>`.
   nothing.
 - [ ] Check that tests changed only in imports, patch targets and new
   characterization tests:
-  `git diff origin/main -- backend/tests mcp-server/tests 'frontend/*.test.*'`.
+  `git diff origin/main...HEAD -- backend/tests mcp-server/tests frontend/e2e 'frontend/*.test.*'`
+  (three dots: only this branch's changes, even if `main` has moved).
 - [ ] Re-measure size, complexity and coverage. Help reviewers see moves:
-  `git diff -M --color-moved=zebra origin/main --stat` and without `--stat`.
+  `git diff -M --color-moved=zebra origin/main...HEAD --stat` and without `--stat`.
 - [ ] Open the PR as in `/implement-issue` step 6. The body lists the refactorings
   applied in order, the before and after metrics, the empty snapshot diff, and
   states "No behavior change". Suspected bugs go in "Limitations and follow-ups".
 
 ### Step Definition of Done
 
-- [ ] Exactly one catalog refactoring, applied by its mechanics.
+- [ ] Exactly one catalog refactoring, applied by its mechanics. Add
+  Characterization Tests counts: it is the catalog's one test-only entry.
 - [ ] The step's narrow check and the type checker are green.
 - [ ] No test assertion changed; only imports or patch targets, if anything.
 - [ ] Committed on its own with a `refactor:` (or `test:`) subject.
