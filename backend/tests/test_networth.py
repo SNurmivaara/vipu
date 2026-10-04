@@ -1337,6 +1337,73 @@ class TestEdgeCases:
         jan_check = client.get("/api/networth/2024/1")
         assert jan_check.json["change_from_previous"] == 3000.0
 
+    def _create_snapshot(self, client, cash_id, year, month, amount):
+        response = client.post(
+            "/api/networth",
+            json={
+                "month": month,
+                "year": year,
+                "entries": [{"category_id": cash_id, "amount": amount}],
+            },
+        )
+        assert response.status_code == 201
+        return response.json
+
+    def test_move_recalculates_old_next_month(self, client, seeded_categories):
+        """Moving a snapshot away recalculates the month after its old position."""
+        cash_id = seeded_categories["Checking"]["id"]
+        self._create_snapshot(client, cash_id, 2025, 1, 1000)
+        feb = self._create_snapshot(client, cash_id, 2025, 2, 1500)
+        mar = self._create_snapshot(client, cash_id, 2025, 3, 1700)
+        assert mar["change_from_previous"] == 200.0
+
+        response = client.put(f"/api/networth/{feb['id']}", json={"month": 6})
+        assert response.status_code == 200
+
+        # March no longer has a previous month, like a fresh gap snapshot
+        mar_check = client.get("/api/networth/2025/3")
+        assert mar_check.json["change_from_previous"] == 0
+
+    def test_move_recalculates_old_and_new_next_month(self, client, seeded_categories):
+        """Moving a snapshot recalculates the old and the new next month."""
+        cash_id = seeded_categories["Checking"]["id"]
+        self._create_snapshot(client, cash_id, 2025, 1, 1000)
+        feb = self._create_snapshot(client, cash_id, 2025, 2, 1500)
+        self._create_snapshot(client, cash_id, 2025, 3, 1700)
+        self._create_snapshot(client, cash_id, 2025, 7, 2000)
+        self._create_snapshot(client, cash_id, 2025, 8, 2600)
+
+        client.put(f"/api/networth/{feb['id']}", json={"month": 6})
+
+        assert client.get("/api/networth/2025/3").json["change_from_previous"] == 0
+        # July now follows the moved snapshot: 2000 - 1500
+        assert client.get("/api/networth/2025/7").json["change_from_previous"] == 500.0
+        assert client.get("/api/networth/2025/8").json["change_from_previous"] == 600.0
+
+    def test_move_december_recalculates_january(self, client, seeded_categories):
+        """Moving December away recalculates the following January."""
+        cash_id = seeded_categories["Checking"]["id"]
+        dec = self._create_snapshot(client, cash_id, 2024, 12, 50000)
+        jan = self._create_snapshot(client, cash_id, 2025, 1, 55000)
+        assert jan["change_from_previous"] == 5000.0
+
+        client.put(f"/api/networth/{dec['id']}", json={"month": 6, "year": 2024})
+
+        assert client.get("/api/networth/2025/1").json["change_from_previous"] == 0
+
+    def test_move_into_old_next_month_slot(self, client, seeded_categories):
+        """Moving a snapshot one month forward recalculates it and its neighbors."""
+        cash_id = seeded_categories["Checking"]["id"]
+        self._create_snapshot(client, cash_id, 2025, 1, 1000)
+        feb = self._create_snapshot(client, cash_id, 2025, 2, 1500)
+        self._create_snapshot(client, cash_id, 2025, 4, 1700)
+
+        response = client.put(f"/api/networth/{feb['id']}", json={"month": 3})
+
+        # March has no February before it; April follows March: 1700 - 1500
+        assert response.json["change_from_previous"] == 0
+        assert client.get("/api/networth/2025/4").json["change_from_previous"] == 200.0
+
 
 class TestDisplayOrderValidation:
     """Tests for display_order validation."""
