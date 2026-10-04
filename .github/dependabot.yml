@@ -27,6 +27,11 @@ updates:
     groups:
       frontend-minor-patch:
         update-types: [minor, patch]
+    # @types/node follows the Node runtime major, which moves by hand together
+    # with the Node pins; the dependency report flags a mismatch.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
