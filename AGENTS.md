@@ -53,7 +53,9 @@ tool allow-list does not match commands that start with an environment variable
 also refuses `cd dir && ...` and `(cd dir && ...)` there; use `git -C`,
 `uv --directory`, `npm --prefix` or paths instead, and write scratch files such as a
 PR body under `/tmp`.
-Every PR gets one advisory Claude review; only
+Open every PR against `main`: CI and the automatic review run only there, so a PR
+stacked on another branch gets neither. Open a dependent PR after its base merges,
+branched from the updated `main`. Every PR gets one advisory Claude review; only
 **CI Status** is required to merge. The review waits for CI on the PR head, then
 checks each acceptance criterion of the linked issue for evidence. Its summary comment
 starts with `REVIEW: APPROVE` or `REVIEW: REQUEST CHANGES`, and so does any review
