@@ -1675,6 +1675,175 @@ class TestRoadmap:
         assert payday["projected_completion_date"] == "2026-10-15"
 
 
+class TestSharedCategory:
+    """Savings goals linked to the same category split its balance."""
+
+    @staticmethod
+    def _setup(client, balance, targets=(1000, 1000)):
+        """A category holding `balance` and one linked goal per target."""
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2026,
+                "entries": [{"category_id": 1, "amount": balance}],
+            },
+        )
+        return [
+            client.post(
+                "/api/goals",
+                json={
+                    "name": f"Goal {index}",
+                    "goal_type": "savings_goal",
+                    "target_value": target,
+                    "category_id": 1,
+                },
+            ).json["id"]
+            for index, target in enumerate(targets)
+        ]
+
+    @staticmethod
+    def _roadmap_values(client):
+        return [
+            (step["current_value"], step["remaining"], step["status"])
+            for step in client.get("/api/goals/roadmap").json["goals"]
+        ]
+
+    @staticmethod
+    def _progress_values(client):
+        return {
+            gp["goal"]["id"]: (gp["current_value"], gp["is_achieved"])
+            for gp in client.get("/api/goals/progress").json
+        }
+
+    def test_balance_is_not_counted_twice(self, client):
+        """500 shared by two 1 000 goals leaves 1 500 to fund, not 1 000."""
+        self._setup(client, 500)
+
+        assert self._roadmap_values(client) == [
+            (500.0, 500.0, "active"),
+            (0.0, 1000.0, "upcoming"),
+        ]
+
+    def test_surplus_balance_flows_to_the_next_goal(self, client):
+        """The first goal takes up to its target; the next gets the rest."""
+        self._setup(client, 1500)
+
+        assert self._roadmap_values(client) == [
+            (1000.0, 0.0, "completed"),
+            (500.0, 500.0, "active"),
+        ]
+
+    def test_progress_endpoint_agrees_with_the_roadmap(self, client):
+        """GET /api/goals/progress reports the same split."""
+        first, second = self._setup(client, 1500)
+
+        assert self._progress_values(client) == {
+            first: (1000.0, True),
+            second: (500.0, False),
+        }
+
+    def test_reordering_changes_who_is_filled_first(self, client):
+        """Priority decides which goal the balance goes to."""
+        first, second = self._setup(client, 500)
+        client.put("/api/goals/reorder", json={"goal_ids": [second, first]})
+
+        steps = client.get("/api/goals/roadmap").json["goals"]
+        assert [(s["goal"]["id"], s["current_value"]) for s in steps] == [
+            (second, 500.0),
+            (first, 0.0),
+        ]
+        assert self._progress_values(client) == {
+            first: (0.0, False),
+            second: (500.0, False),
+        }
+
+    def test_inactive_goal_takes_no_share(self, client):
+        """A paused goal doesn't hold back balance from the active ones."""
+        first, second = self._setup(client, 500)
+        client.put(f"/api/goals/{first}", json={"is_active": False})
+
+        assert self._roadmap_values(client) == [(500.0, 500.0, "active")]
+        assert self._progress_values(client) == {second: (500.0, False)}
+
+    def test_other_categories_and_manual_goals_are_unaffected(self, client):
+        """Only goals sharing a category split it."""
+        client.post("/api/networth/categories/seed")
+        client.post(
+            "/api/networth",
+            json={
+                "month": 1,
+                "year": 2026,
+                "entries": [
+                    {"category_id": 1, "amount": 500},
+                    {"category_id": 2, "amount": 700},
+                ],
+            },
+        )
+        for name, category_id in (("One", 1), ("Two", 2)):
+            client.post(
+                "/api/goals",
+                json={
+                    "name": name,
+                    "goal_type": "savings_goal",
+                    "target_value": 1000,
+                    "category_id": category_id,
+                },
+            )
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Manual",
+                "goal_type": "savings_goal",
+                "target_value": 1000,
+                "current_amount": 300,
+            },
+        )
+        client.post(
+            "/api/goals",
+            json={
+                "name": "Debt",
+                "goal_type": "debt_payoff",
+                "target_value": 1000,
+                "current_amount": 200,
+            },
+        )
+
+        assert [v[0] for v in self._roadmap_values(client)] == [
+            500.0,
+            700.0,
+            300.0,
+            200.0,
+        ]
+
+    def test_projection_funds_the_combined_target(self, client, monkeypatch):
+        """The second goal waits for the full 1 500 the account still needs."""
+        TestRoadmap._freeze(monkeypatch, 2026, 6, 25)
+        client.put("/api/settings", json={"payday_day": 25})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 1500,
+                "is_taxed": False,
+                "due_day": 25,
+            },
+        )
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 1000, "due_day": 1}
+        )
+        self._setup(client, 500)
+
+        steps = client.get("/api/goals/roadmap").json["goals"]
+        # 500 a period: 500 for the first goal, then 1 000 for the second.
+        # Counting the balance twice finished the second on 2026-08-25.
+        assert [s["projected_completion_date"] for s in steps] == [
+            "2026-07-25",
+            "2026-09-25",
+        ]
+
+
 class TestReorder:
     """Tests for PUT /api/goals/reorder."""
 

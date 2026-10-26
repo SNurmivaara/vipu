@@ -131,7 +131,8 @@ Create a goal.
 - `savings_goal`: save up to a target. Appended to the end of the roadmap and \
 funded from the monthly surplus in priority order. Link it to a net worth \
 category with `category_name` and its progress tracks that category's balance \
-instead of a manual figure.
+instead of a manual figure. Goals linked to the same category share its balance \
+in roadmap order: the first takes up to its target, the next gets the rest.
 - `debt_payoff`: pay off a debt of target_value. Also a roadmap step; progress \
 comes from `current_amount`.
 - `net_worth`: a target for total net worth, shown on the wealth page rather \

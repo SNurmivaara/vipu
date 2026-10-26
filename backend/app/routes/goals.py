@@ -272,14 +272,51 @@ def delete_goal(goal_id: int) -> tuple[Response, int]:
     return jsonify({"message": "Goal deleted"}), 200
 
 
-def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decimal:
+def _roadmap_goals(session: Session) -> list[Goal]:
+    """Active roadmap steps in plan order."""
+    return (
+        session.query(Goal)
+        .filter(Goal.goal_type.in_(ROADMAP_TYPES), Goal.is_active.is_(True))
+        .order_by(Goal.priority.asc().nulls_last(), Goal.created_at.asc())
+        .all()
+    )
+
+
+def _category_shares(
+    goals: list[Goal], latest: NetWorthSnapshot | None
+) -> dict[int, Decimal]:
+    """Each linked savings goal's share of its category's balance, by goal id.
+
+    Goals linked to the same category draw on one balance, so it is handed out
+    in plan order: each goal takes up to its target and the next gets the rest.
+    Two 1 000 goals on a 500 balance read 500 and 0, not 500 each, so the plan
+    still has 1 500 to fund. `goals` must already be in plan order.
+    """
+    if latest is None:
+        return {}
+    left: dict[int, Decimal] = {}
+    shares: dict[int, Decimal] = {}
+    for goal in goals:
+        if goal.goal_type != "savings_goal" or not goal.category_id:
+            continue
+        if goal.category_id not in left:
+            left[goal.category_id] = abs(
+                _get_category_amount_in_snapshot(latest, goal.category_id)
+            )
+        share = min(left[goal.category_id], goal.target_value)
+        left[goal.category_id] -= share
+        shares[goal.id] = share
+    return shares
+
+
+def _roadmap_current_value(goal: Goal, shares: dict[int, Decimal]) -> Decimal:
     """Current progress of a roadmap step.
 
-    A linked net worth category wins (auto-tracked from the latest snapshot);
-    otherwise the manually maintained current_amount.
+    A linked net worth category wins (its share of the latest snapshot
+    balance); otherwise the manually maintained current_amount.
     """
-    if goal.goal_type == "savings_goal" and goal.category_id and latest:
-        return abs(_get_category_amount_in_snapshot(latest, goal.category_id))
+    if goal.id in shares:
+        return shares[goal.id]
     return goal.current_amount if goal.current_amount is not None else Decimal("0")
 
 
@@ -412,18 +449,14 @@ def build_roadmap(session: Session, today: date) -> dict:
     unfinished step until it completes, then cascades to the next. Returns
     per-step progress and projected completion dates at the current surplus.
     """
-    goals = (
-        session.query(Goal)
-        .filter(Goal.goal_type.in_(ROADMAP_TYPES), Goal.is_active.is_(True))
-        .order_by(Goal.priority.asc().nulls_last(), Goal.created_at.asc())
-        .all()
-    )
+    goals = _roadmap_goals(session)
 
     totals = compute_budget_totals(session)
     surplus = totals["monthly_surplus"]
 
     snapshots = _get_snapshots(session, 1)
     latest = snapshots[0] if snapshots else None
+    shares = _category_shares(goals, latest)
 
     settings = session.query(BudgetSettings).first()
     payday_day = settings.payday_day if settings else 25
@@ -462,9 +495,9 @@ def build_roadmap(session: Session, today: date) -> dict:
         shortfall_months = -starting_position / surplus
 
     unfinished = [
-        max(Decimal("0"), goal.target_value - _roadmap_current_value(goal, latest))
+        max(Decimal("0"), goal.target_value - _roadmap_current_value(goal, shares))
         for goal in goals
-        if goal.target_value - _roadmap_current_value(goal, latest) > 0
+        if goal.target_value - _roadmap_current_value(goal, shares) > 0
     ]
     projected = _project_completions(
         unfinished,
@@ -479,7 +512,7 @@ def build_roadmap(session: Session, today: date) -> dict:
     active_seen = False
     steps = []
     for goal in goals:
-        current = _roadmap_current_value(goal, latest)
+        current = _roadmap_current_value(goal, shares)
         target = goal.target_value
         remaining = max(Decimal("0"), target - current)
 
@@ -725,6 +758,7 @@ def _analyze_pace(
 def calculate_goal_progress(
     goal: Goal,
     snapshots: list[NetWorthSnapshot],
+    shares: dict[int, Decimal] | None = None,
 ) -> dict:
     """Calculate progress for a single goal.
 
@@ -756,8 +790,12 @@ def calculate_goal_progress(
             current_value = Decimal(str(latest.net_worth))
 
     elif goal.goal_type in ("savings_goal", "category_target"):
-        # Linked category balance wins; manual current_amount otherwise
-        if latest and goal.category_id:
+        # Linked category balance wins (this goal's share of it when other
+        # roadmap goals draw on the same category); manual current_amount
+        # otherwise
+        if shares and goal.id in shares:
+            current_value = shares[goal.id]
+        elif latest and goal.category_id:
             current_value = abs(
                 _get_category_amount_in_snapshot(latest, goal.category_id)
             )
@@ -810,7 +848,7 @@ def build_goal_progress(session: Session) -> list[dict]:
 
     Calculates current progress based on:
     - net_worth: Latest net worth snapshot value
-    - savings_goal: Linked category balance, or manual current_amount
+    - savings_goal: Share of the linked category balance, or manual current_amount
     - debt_payoff: Manual current_amount (paid off so far)
 
     Returns a list of goal progress objects.
@@ -828,8 +866,11 @@ def build_goal_progress(session: Session) -> list[dict]:
 
     # Get snapshots (enough for calculating monthly changes)
     snapshots = _get_snapshots(session, 12)
+    shares = _category_shares(
+        _roadmap_goals(session), snapshots[0] if snapshots else None
+    )
 
-    return [calculate_goal_progress(goal, snapshots) for goal in goals]
+    return [calculate_goal_progress(goal, snapshots, shares) for goal in goals]
 
 
 @bp.get("/api/goals/progress")
