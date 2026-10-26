@@ -637,15 +637,15 @@ class TestOccurrenceOverrides:
 
         income_id = client.post(
             "/api/income",
-            json={"name": "Salary", "gross_amount": 4000, "due_day": 25},
+            json={"name": "Salary", "gross_amount": 4000, "due_day": 20},
         ).json["id"]
 
         data = client.get("/api/budget/current").json
         assert data["totals"]["income_before_payday"] == 3000.0
-        assert data["income"][0]["next_occurrence_date"] == "2026-06-25"
+        assert data["income"][0]["next_occurrence_date"] == "2026-06-20"
         assert data["income"][0]["is_settled"] is False
 
-        response = self.settle(client, "income", income_id, "2026-06-25", True)
+        response = self.settle(client, "income", income_id, "2026-06-20", True)
         assert response.status_code == 200
 
         data = client.get("/api/budget/current").json
@@ -654,6 +654,31 @@ class TestOccurrenceOverrides:
         # Next month's paycheck and the monthly rate are unaffected.
         assert data["totals"]["income_next_period"] == 3000.0
         assert data["totals"]["monthly_net_income"] == 3000.0
+
+    def test_payday_pay_received_early_leaves_the_next_period(
+        self, client, monkeypatch
+    ):
+        """Pay dated on the coming payday belongs to the period it opens, so
+        ticking it off early takes it out of that period, not the current one."""
+        self.freeze(monkeypatch, 2026, 6, 10)
+
+        income_id = client.post(
+            "/api/income",
+            json={"name": "Salary", "gross_amount": 4000, "due_day": 25},
+        ).json["id"]
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 0.0
+        assert data["totals"]["income_next_period"] == 3000.0
+        assert data["income"][0]["next_occurrence_date"] == "2026-06-25"
+
+        response = self.settle(client, "income", income_id, "2026-06-25", True)
+        assert response.status_code == 200
+
+        data = client.get("/api/budget/current").json
+        assert data["totals"]["income_before_payday"] == 0.0
+        assert data["totals"]["income_next_period"] == 0.0
+        assert data["income"][0]["is_settled"] is True
 
     def test_income_not_received_yet(self, client, monkeypatch):
         """Pay that hasn't landed on its day still counts as incoming."""
@@ -940,6 +965,97 @@ class TestPeriodCashFlow:
         assert totals["unallocated_next_period"] == 2600.0
 
 
+class TestPayOnPayday:
+    """Pay landing on a payday belongs to the period that payday opens.
+
+    Like the bills, income windows are [payday, next payday). They used to end
+    on the closing payday instead, so a one-off bonus landing with the salary
+    on payday counted in the period before rather than the one it opens (#201).
+    Example figures: payday on the 13th, 3 000 net salary, a 500 one-off bonus.
+    """
+
+    def freeze(self, monkeypatch, year, month, day):
+        import datetime
+
+        from app.routes import budget as budget_route
+
+        class _FixedDate(datetime.date):
+            @classmethod
+            def today(cls):
+                return cls(year, month, day)
+
+        monkeypatch.setattr(budget_route, "date", _FixedDate)
+
+    def _budget(self, client, bonus_date):
+        client.put("/api/settings", json={"payday_day": 13})
+        client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 3000,
+                "is_taxed": False,
+                "due_day": 13,
+            },
+        )
+        client.post(
+            "/api/income",
+            json={
+                "name": "Bonus",
+                "gross_amount": 500,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": bonus_date,
+            },
+        )
+
+    def test_one_off_on_payday_counts_in_the_period_it_opens(self, client, monkeypatch):
+        """The bonus lands with the salary and is counted with it."""
+        self.freeze(monkeypatch, 2026, 10, 26)
+        self._budget(client, "2026-11-13")
+
+        totals = client.get("/api/budget/current").json["totals"]
+        current, following = totals["period_current"], totals["period_next"]
+
+        assert (current["start"], current["end"]) == ("2026-10-26", "2026-11-13")
+        assert current["income"] == 0.0
+        assert (following["start"], following["end"]) == ("2026-11-13", "2026-12-13")
+        assert following["income"] == 3500.0
+        assert totals["income_next_period"] == 3500.0
+
+    @pytest.mark.parametrize(
+        ("bonus_date", "current_income", "next_income"),
+        [
+            ("2026-11-12", 500.0, 3000.0),
+            ("2026-11-13", 0.0, 3500.0),
+            ("2026-11-14", 0.0, 3500.0),
+            ("2026-12-12", 0.0, 3500.0),
+            ("2026-12-13", 0.0, 3000.0),
+        ],
+    )
+    def test_one_off_falls_in_the_window_its_date_is_in(
+        self, client, monkeypatch, bonus_date, current_income, next_income
+    ):
+        """Each period runs from its opening payday up to, not including, the
+        payday that closes it."""
+        self.freeze(monkeypatch, 2026, 10, 26)
+        self._budget(client, bonus_date)
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["period_current"]["income"] == current_income
+        assert totals["period_next"]["income"] == next_income
+
+    def test_on_payday_today_s_pay_is_already_in_the_balance(self, client, monkeypatch):
+        """Standing on payday, the salary and the bonus have both landed, so
+        neither is still to come, and the next period holds the next salary."""
+        self.freeze(monkeypatch, 2026, 11, 13)
+        self._budget(client, "2026-11-13")
+
+        totals = client.get("/api/budget/current").json["totals"]
+        assert totals["period_current"]["income"] == 0.0
+        assert totals["period_next"]["start"] == "2026-12-13"
+        assert totals["period_next"]["income"] == 3000.0
+
+
 class TestCashLowPoint:
     """Tests for the lowest the balance gets while the projection plays out.
 
@@ -962,7 +1078,7 @@ class TestCashLowPoint:
         monkeypatch.setattr(budget_route, "date", _FixedDate)
 
     def test_running_out_before_payday_is_reported(self, client, monkeypatch):
-        """Cash covers the period as a whole, but not the day the big bill lands."""
+        """The pay covers the big bill, but lands after it does."""
         self.freeze(monkeypatch)
         client.put("/api/settings", json={"payday_day": 25})
 
@@ -982,9 +1098,10 @@ class TestCashLowPoint:
 
         totals = client.get("/api/budget/current").json["totals"]
 
-        # The period ends well in the black once the salary lands...
-        assert totals["period_current"]["net"] == 2000.0
-        # ...but the 20th takes 2 000 out of 1 700
+        # The salary on payday, which opens the next period, covers the rent...
+        assert totals["period_current"]["net"] == -2000.0
+        assert totals["period_next"]["income"] == 4000.0
+        # ...but the 20th takes 2 000 out of 1 700 before it lands
         assert totals["cash_low_point"] == {"date": "2026-06-20", "balance": -300.0}
 
     def test_low_point_is_the_opening_balance_when_nothing_dips(

@@ -1316,6 +1316,30 @@ class TestRoadmap:
         # Without the bonus the same goal waits until 2026-10-25
         assert data["goals"][0]["projected_completion_date"] == "2026-08-25"
 
+    def test_a_one_off_on_payday_funds_the_period_it_opens(self, client, monkeypatch):
+        """A bonus landing with the salary on payday counts with that salary.
+
+        It belongs to the period 2026-08-25 opens, whose money is banked once
+        that period's bills are paid, on 2026-09-25 (#201).
+        """
+        self._freeze(monkeypatch, 2026, 6, 10)
+        self._annual_bill_budget(client)
+        client.post(
+            "/api/income",
+            json={
+                "name": "Bonus",
+                "gross_amount": 4000,
+                "is_taxed": False,
+                "is_ephemeral": True,
+                "start_date": "2026-08-25",
+            },
+        )
+        self._goal(client, target=3900)
+
+        data = client.get("/api/goals/roadmap").json
+        # Without the bonus the same goal waits until 2026-10-25
+        assert data["goals"][0]["projected_completion_date"] == "2026-09-25"
+
     def test_a_yearly_bill_delays_the_step_it_lands_on(self, client, monkeypatch):
         """The other side of the same coin: a step that isn't reached before the
         bill lands waits for the period to recover, rather than being charged a

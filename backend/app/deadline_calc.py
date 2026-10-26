@@ -429,71 +429,24 @@ def apply_occurrence_override(
     return False
 
 
-def calculate_income_before_payday(
-    income_items: list["IncomeItem"],
-    today: date,
-    next_payday: date,
-    default_tax_pct: Decimal,
-    payday_day: int | None = None,
-    include_pending: bool = False,
-) -> Decimal:
-    """Calculate total net income arriving through next payday.
-
-    The window includes income arriving ON payday (inclusive end).
-    On payday itself, today's income is assumed already in the account balance,
-    so the window starts from tomorrow to avoid double-counting.
-
-    Args:
-        income_items: List of income items
-        today: Current date
-        next_payday: Next payday date
-        default_tax_pct: Default tax percentage for taxed income
-        payday_day: Day of month for payday (used to detect if today is payday)
-        include_pending: Add back occurrences whose day has passed but which the
-                         user marked as not received yet. Only for the current
-                         period — a later window would count them twice.
-
-    Returns:
-        Total net income due through next payday
-    """
-    return sum(
-        (
-            movement.amount
-            for movement in income_movements(
-                income_items,
-                today,
-                next_payday,
-                default_tax_pct,
-                payday_day=payday_day,
-                include_pending=include_pending,
-            )
-        ),
-        Decimal("0"),
-    )
-
-
 def income_movements(
     income_items: list["IncomeItem"],
-    today: date,
-    next_payday: date,
+    window_start: date,
+    window_end: date,
     default_tax_pct: Decimal,
-    payday_day: int | None = None,
     include_pending: bool = False,
 ) -> list["CashMovement"]:
-    """Each pay occurrence landing through next payday, on the day it lands."""
+    """Each pay occurrence landing in the window, on the day it lands.
+
+    End-exclusive like the bills: pay landing on a payday belongs to the period
+    that payday opens, together with the bills it is there to cover.
+    """
     movements: list[CashMovement] = []
-
-    # Include income arriving ON payday (window_end is exclusive, so +1 day)
-    inclusive_end = next_payday + timedelta(days=1)
-
-    # If today is payday, that income is already reflected in the account
-    # balance — start from tomorrow to avoid double-counting
-    window_start = income_window_start(today, payday_day)
 
     for item in income_items:
         occurrences = [
             occurrence
-            for occurrence in get_item_occurrences(item, window_start, inclusive_end)
+            for occurrence in get_item_occurrences(item, window_start, window_end)
             if occurrence != item.settled_occurrence
         ]
 
@@ -704,27 +657,37 @@ def calculate_period_flow(
     today: date,
     start: date,
     end: date,
+    whole: bool = False,
 ) -> PeriodFlow:
     """Money in and out over [start, end), by category.
+
+    Every movement is end-exclusive: the pay and the bills dated on the payday
+    that closes the period both belong to the period it opens.
 
     The part-period we are standing in is treated differently in one respect:
     only it has occurrences behind us, which the user may have flagged as paid
     early or not paid yet. Later periods are entirely ahead, so no override can
     apply to them.
+
+    whole counts everything dated in the period even when it opens today,
+    including the pay and bills that have already moved this morning. Only for
+    a caller that does not start from the account balance, which would
+    otherwise lose them altogether.
     """
-    is_current = start == today
+    is_current = start == today and not whole
 
     # Bills clear on their due day, so the current period only still owes what
-    # falls after today; a later period owes everything in it.
+    # falls after today; a later period owes everything in it. Pay counts as
+    # landed on payday itself (see income_window_start).
     expense_start = expense_window_start(today) if is_current else start
+    income_start = income_window_start(today, payday_day) if is_current else start
 
     movements = [
         *income_movements(
             income_items,
-            start,
+            income_start,
             end,
             default_tax_pct,
-            payday_day=payday_day,
             include_pending=is_current,
         ),
         *expense_movements(

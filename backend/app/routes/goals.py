@@ -285,7 +285,7 @@ def _roadmap_current_value(goal: Goal, latest: NetWorthSnapshot | None) -> Decim
 
 def _make_period_flow(
     session: Session, today: date, payday_day: int
-) -> Callable[[date, date], PeriodFlow]:
+) -> Callable[..., PeriodFlow]:
     """Build "what happens in [start, end)" for the projection.
 
     The same calculator the summary card and the section headers read, so a
@@ -301,7 +301,7 @@ def _make_period_flow(
     ]
     accounts = session.query(Account).all()
 
-    def period_flow(start: date, end: date) -> PeriodFlow:
+    def period_flow(start: date, end: date, whole: bool = False) -> PeriodFlow:
         return calculate_period_flow(
             income_items,
             expense_items,
@@ -311,32 +311,17 @@ def _make_period_flow(
             today,
             start,
             end,
+            whole=whole,
         )
 
     return period_flow
-
-
-def _part_period_net(flow: PeriodFlow) -> Decimal:
-    """What the tail of the period we are standing in leaves the plan.
-
-    Everything still to move in it, except the pay landing on the payday that
-    closes it. That pay is the whole period's income, arriving at the end of a
-    period whose bills have largely been paid already — out of the cash the plan
-    deliberately disclaims. Banking it credited a full paycheck against however
-    few days of bills happen to be left, so a plan funded by a 200 € period
-    could settle two goals on the first payday.
-
-    Bills and card payments are already end-exclusive, so dropping the closing
-    day drops exactly that pay and nothing else.
-    """
-    return sum((m.amount for m in flow.movements if m.date < flow.end), Decimal("0"))
 
 
 def _project_completions(
     remaining_steps: list[Decimal],
     surplus: Decimal,
     opening_balance: Decimal,
-    period_flow: Callable[[date, date], PeriodFlow],
+    period_flow: Callable[..., PeriodFlow],
     today: date,
     payday_day: int,
 ) -> list[date | None]:
@@ -354,9 +339,11 @@ def _project_completions(
     with no monthly surplus never converges and shouldn't be walked to the
     horizon.
 
-    Whole periods are banked; the part-period we are standing in is not one, and
-    contributes only what is genuinely left in it (see _part_period_net). So the
-    plan starts banking at the payday that closes the first whole period ahead.
+    A period's pay lands on the payday that opens it, so the part-period we are
+    standing in holds none: its pay arrived with the cash the plan deliberately
+    disclaims. It contributes only what is genuinely left in it, usually a few
+    days of bills, and the plan starts banking at the payday that closes the
+    first whole period ahead.
 
     Steps are funded strictly in order out of a single running balance.
     """
@@ -379,9 +366,10 @@ def _project_completions(
 
     previous = today
     boundary = get_next_payday(today, payday_day)
-    # On payday itself the first window is a whole period already, so nothing
-    # about it is behind us and all of it is the plan's to bank.
-    part_period = get_previous_payday(today, payday_day) < today
+    # On payday itself the first window is a whole period already, so all of it
+    # is the plan's to bank, even the pay and bills that moved this morning:
+    # the opening balance they are already in is not credited to the plan.
+    whole = get_previous_payday(today, payday_day) == today
 
     # TODO: a period's money is banked in a lump on the payday that closes it,
     # so a one-off dated inside the period lands late — an 8 575 € dividend on
@@ -389,13 +377,13 @@ def _project_completions(
     # falls in. Settling at the period's opening payday instead would only
     # trade that for sweeping it two weeks before it exists; placing it on its
     # own day means walking movements by date rather than banking period nets.
-    # A constant salary hides all of this, since it lands on the payday itself.
+    # A constant salary hides all of this: it lands on the opening payday and is
+    # banked once the period's bills are paid, a period after it arrives.
     for _ in range(MAX_PROJECTION_PERIODS):
         if index >= len(remaining_steps):
             break
-        flow = period_flow(previous, boundary)
-        balance += _part_period_net(flow) if part_period else flow.net
-        part_period = False
+        balance += period_flow(previous, boundary, whole).net
+        whole = False
         settle(boundary)
         previous = boundary
         boundary = get_payday_after(boundary, payday_day)
