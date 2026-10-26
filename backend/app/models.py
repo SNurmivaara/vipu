@@ -736,7 +736,8 @@ class Goal(Base):
     Roadmap steps (savings_goal / debt_payoff) are ordered by priority and
     funded sequentially from the monthly budget surplus. Their progress comes
     from current_amount, or from the linked net worth category's latest
-    snapshot balance when category_id is set.
+    snapshot balance when category_id is set. Steps sharing a category split
+    its balance in priority order.
     """
 
     __tablename__ = "goals"
