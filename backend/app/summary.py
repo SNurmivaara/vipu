@@ -188,7 +188,8 @@ def _budget_section(lines: list[str], budget: dict) -> None:
     lines.append(
         f"Default tax rate: {num(settings['tax_percentage'])}%. The budget month "
         f"rolls over on payday, day {num(settings['payday_day'])} of the month, so "
-        "periods below run payday to payday rather than calendar months. "
+        "periods below run payday to payday rather than calendar months. Pay "
+        "and bills dated on a payday belong to the period that payday opens. "
         "Individual income and expense items land on their own days, which need "
         "not be the payday."
     )
@@ -233,7 +234,9 @@ def _budget_section(lines: list[str], budget: dict) -> None:
             else ""
         )
     )
-    lines.append(f"- Projected cash at payday: {eur(at_payday)}")
+    lines.append(
+        f"- Projected cash at payday, before that day's pay lands: {eur(at_payday)}"
+    )
     lines.append(
         f"- Next period ({following['start']} to {following['end']}): "
         f"+{eur(following['money_in'])} pay, "
