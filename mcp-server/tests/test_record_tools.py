@@ -1,5 +1,7 @@
 """Record tools, against the real Flask app."""
 
+from datetime import date
+
 import pytest
 from mcp.client import Client
 
@@ -376,15 +378,25 @@ class TestRecordNetWorth:
 
 
 class TestSettle:
+    @staticmethod
+    def _open_a_period_today(raw):
+        """Make today payday: late in a period the demo data has no bills left."""
+        response = raw.put("/api/settings", json={"payday_day": date.today().day})
+        assert response.status_code == 200
+
     @pytest.mark.anyio
     async def test_settling_a_bill_drops_it_from_the_period_total(
-        self, seeded, seeded_server
+        self, seeded, seeded_server, raw
     ):
+        self._open_a_period_today(raw)
         totals = seeded.get_budget()["totals"]
+        today = totals["period_current"]["start"]
         row = next(
             r
             for r in totals["expenses_before_payday_list"]
-            if r["can_settle"] and not r["is_settled"]
+            if r["can_settle"]
+            and not r["is_settled"]
+            and r["next_occurrence_date"] > today
         )
         before = totals["period_current"]["bills"]
 
@@ -410,8 +422,9 @@ class TestSettle:
 
     @pytest.mark.anyio
     async def test_settling_defaults_to_the_next_occurrence(
-        self, seeded, seeded_server
+        self, seeded, seeded_server, raw
     ):
+        self._open_a_period_today(raw)
         totals = seeded.get_budget()["totals"]
         today = totals["period_current"]["start"]
         row = next(
