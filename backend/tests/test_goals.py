@@ -1,6 +1,5 @@
 """Tests for goals API endpoints."""
 
-from calendar import monthrange
 from datetime import UTC, date, datetime, timedelta
 
 
@@ -932,23 +931,28 @@ class TestSavingsGoalPace:
         assert progress["recent_monthly"] == 100.0
         assert progress["recent_monthly"] < progress["required_monthly"]
 
-    def test_a_deadline_later_this_month_has_not_passed(self, client):
+    def test_a_deadline_later_this_month_has_not_passed(self, client, monkeypatch):
         """Counting whole calendar months read three weeks out as zero months.
 
         A goal due on the 28th, seen on the 2nd, is 26 days away. The old
         arithmetic gave (year diff) * 12 + (month diff) = 0 and reported the
         target date as passed.
         """
+        from app.routes import goals as goals_route
+
+        # Frozen: unfrozen, a deadline this month is under two days away at the
+        # end of the month and months_remaining rounds to 0.0.
+        class _FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 6, 2, tzinfo=tz)
+
+        monkeypatch.setattr(goals_route, "datetime", _FixedDatetime)
+
         client.post("/api/networth/categories/seed")
         _add_snapshot(client, 1, 2026, 1, 1000)
         _add_snapshot(client, 2, 2026, 1, 1100)
         _add_snapshot(client, 3, 2026, 1, 1200)
-
-        # The last moment of the current calendar month: always still ahead,
-        # and always zero months away under the old arithmetic.
-        today = datetime.now(UTC)
-        last_day = monthrange(today.year, today.month)[1]
-        end_of_month = datetime(today.year, today.month, last_day, 23, 59, tzinfo=UTC)
 
         client.post(
             "/api/goals",
@@ -957,7 +961,7 @@ class TestSavingsGoalPace:
                 "goal_type": "savings_goal",
                 "target_value": 5000,
                 "category_id": 1,
-                "target_date": end_of_month.isoformat(),
+                "target_date": datetime(2026, 6, 28, tzinfo=UTC).isoformat(),
             },
         )
 
@@ -1057,8 +1061,11 @@ class TestRoadmap:
         assert response.status_code == 200
         assert response.json["goals"] == []
 
-    def test_waterfall_projection(self, client):
+    def test_waterfall_projection(self, client, monkeypatch):
         """Surplus fills goals sequentially; completion dates accumulate."""
+        # Frozen: unfrozen, the pay on the 1st falls in the first window late in
+        # the month and the first step completes under a month away.
+        self._freeze(monkeypatch, 2026, 6, 10)
         # Surplus: 4000 - 1000 = 3000/month
         self._make_surplus(client)
 
@@ -1094,8 +1101,9 @@ class TestRoadmap:
         assert first["projected_completion_date"] is not None
         assert second["projected_completion_date"] > first["projected_completion_date"]
 
-    def test_completed_step_consumes_no_surplus(self, client):
+    def test_completed_step_consumes_no_surplus(self, client, monkeypatch):
         """A finished step is skipped: the surplus flows to the next one."""
+        self._freeze(monkeypatch, 2026, 6, 10)
         self._make_surplus(client)
 
         client.post(
@@ -1467,8 +1475,9 @@ class TestRoadmap:
         assert data["pending_one_time_net"] == 0.0
         assert data["starting_position"] == 0.0
 
-    def test_spare_cash_is_not_a_head_start(self, client):
+    def test_spare_cash_is_not_a_head_start(self, client, monkeypatch):
         """Cash outside the tracked account never pulls a goal forward."""
+        self._freeze(monkeypatch, 2026, 6, 10)
         self._make_surplus(client)  # 3000/mo
         client.post("/api/accounts", json={"name": "Checking", "balance": 50000})
         self._goal(client)
@@ -1591,11 +1600,12 @@ class TestRoadmap:
             != twenty_fifth["projected_completion_date"]
         )
 
-    def test_part_period_is_not_credited_a_full_month(self, client):
+    def test_part_period_is_not_credited_a_full_month(self, client, monkeypatch):
         """The stub before the next payday accrues pro rata, not in full."""
         # Roll over tomorrow: today's stub is worth ~1 day of surplus, so a
         # one-month goal cannot complete at that first payday.
-        tomorrow = date.today() + timedelta(days=1)
+        self._freeze(monkeypatch, 2026, 6, 10)
+        tomorrow = date(2026, 6, 11)
         client.put("/api/settings", json={"payday_day": tomorrow.day})
         self._make_surplus(client)  # 3000/mo
         self._goal(client, target=3000)
