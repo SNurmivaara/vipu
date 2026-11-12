@@ -1,6 +1,7 @@
 "use client";
 
-import { BudgetData } from "@/types";
+import { ReactNode } from "react";
+import { BudgetData, PeriodFlow } from "@/types";
 import { cn, formatCurrency, formatDateShort, getBalanceColor } from "@/lib/utils";
 import { CollapsibleSection } from "./CollapsibleSection";
 
@@ -13,6 +14,10 @@ interface BudgetSummaryProps {
  * monthly rate: real cash, the real bills falling due, and each card's balance
  * leaving on its own due day. A rate would answer "what does a typical month
  * look like", which is an analytics question; this answers "what happens next".
+ *
+ * Each period is laid out as a sum: its pay, bills and card payments, then the
+ * line they add up to. A figure that surprises the reader can be traced to the
+ * movement behind it without leaving the card.
  */
 export function BudgetSummary({ data }: BudgetSummaryProps) {
   const {
@@ -38,6 +43,13 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
   // the account in the black.
   const sweepable = endOfNextPeriod >= 0;
 
+  // The balance can go under between two comfortable endpoints, because bills
+  // land on their own days and pay lands on one. The low point only earns a
+  // row when it is below every balance already shown.
+  const dipsBetween = low.balance < Math.min(cash_balance, atPayday, endOfNextPeriod);
+
+  const currentHasMovements = flowLines(current).length > 0;
+
   return (
     <CollapsibleSection
       title="You have now"
@@ -50,24 +62,11 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
       )}
       defaultOpen
     >
-      <div className="px-4 py-2.5 space-y-2">
-        <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="text-gray-600 dark:text-gray-400">Cash</span>
-          <span className="text-gray-900 dark:text-gray-100">
-            {formatCurrency(cash_balance)}
-          </span>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="text-gray-600 dark:text-gray-400">
-            Owed on cards
-            <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-              leaves on each card&apos;s due day
-            </span>
-          </span>
-          <span className="text-gray-900 dark:text-gray-100">
-            {formatCurrency(card_debt)}
-          </span>
-        </div>
+      <div className="px-4 py-2.5 space-y-3">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          {formatCurrency(cash_balance)} cash
+          {card_debt !== 0 && <> · {formatCurrency(card_debt)} on cards</>}
+        </p>
 
         {inTheHole && (
           <p className="text-xs text-red-600 dark:text-red-400">
@@ -77,9 +76,6 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
           </p>
         )}
 
-        {/* The endpoints below can both look comfortable while the balance
-            goes under in between: bills land on their own days and the pay that
-            covers them lands on one. Say so before showing them. */}
         {low.balance < 0 && (
           <p className="text-xs text-red-600 dark:text-red-400">
             Cash runs out on {formatDateShort(low.date)}, short{" "}
@@ -88,128 +84,170 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
           </p>
         )}
 
-        <div className="pt-1 space-y-2 border-t border-gray-100 dark:border-gray-800">
-          <PositionRow
-            label="Lowest point"
-            date={low.date}
+        {dipsBetween && (
+          <Line
+            label={
+              <>
+                Lowest point
+                <DateNote date={low.date} />
+              </>
+            }
             value={low.balance}
-            valueClassName={
-              low.balance < 0 ? getBalanceColor(low.balance) : undefined
-            }
-            detail={
-              low.balance < 0
-                ? "the account goes under before payday"
-                : "the tightest it gets between here and then"
-            }
+            valueClassName={low.balance < 0 ? getBalanceColor(low.balance) : undefined}
           />
-          <PositionRow
-            label="At payday"
-            date={current.end}
-            value={atPayday}
-            detail={flowDetail([
-              [current.money_in, "pay"],
-              [-(current.bills + current.savings), "bills"],
-              [-current.card_payments, "cards"],
-            ])}
-          />
-          <PositionRow
-            label="End of next period"
-            date={next.end}
-            value={endOfNextPeriod}
-            valueClassName={
-              endOfNextPeriod < 0 ? getBalanceColor(endOfNextPeriod) : undefined
-            }
-            detail={flowDetail([
-              [next.money_in, "pay"],
-              [-(next.bills + next.savings), "bills"],
-              [-next.card_payments, "cards"],
-            ])}
-          />
-        </div>
+        )}
 
-        {/* The point of the whole card: what next period doesn't need, and can
-            therefore be swept somewhere it earns. Money is only free to move
-            once the period it belongs to ends in the black — otherwise it is
-            already spoken for by the shortfall. */}
-        <div className="pt-2 flex items-baseline justify-between gap-3 border-t border-gray-100 dark:border-gray-800">
-          <div className="min-w-0">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Unallocated next period
-            </div>
-            <div className="text-xs text-gray-400 dark:text-gray-500">
-              {next.net <= 0
-                ? "next period doesn't cover itself"
-                : sweepable
-                  ? "free to move to savings on payday"
-                  : "needed to cover the shortfall first"}
-            </div>
-          </div>
-          <span
-            className={cn(
-              "text-sm font-semibold whitespace-nowrap",
+        <PeriodBlock
+          title="Until payday"
+          dates={formatDateShort(current.end)}
+          period={current}
+          aside={currentHasMovements ? undefined : "nothing due"}
+        >
+          {currentHasMovements && (
+            <Line
+              label="At payday"
+              value={atPayday}
+              strong
+              valueClassName={atPayday < 0 ? getBalanceColor(atPayday) : undefined}
+            />
+          )}
+        </PeriodBlock>
+
+        <PeriodBlock
+          title="Next period"
+          dates={`${formatDateShort(next.start)} – ${formatDateShort(next.end)}`}
+          period={next}
+        >
+          {/* Colour carries the sweep verdict: green when the period ends in
+              the black and the amount can move to savings on payday, gray when
+              a shortfall at the end of the period already needs it, and the
+              balance colour when the period does not cover itself. */}
+          <Line
+            label="Unallocated"
+            value={next.net}
+            strong
+            valueClassName={
               next.net <= 0
                 ? getBalanceColor(next.net)
                 : sweepable
                   ? "text-emerald-700 dark:text-emerald-400"
                   : "text-gray-600 dark:text-gray-400"
-            )}
-          >
-            {formatCurrency(next.net)}
-          </span>
-        </div>
+            }
+          />
+          <Line
+            label="Cash at the end"
+            value={endOfNextPeriod}
+            valueClassName={
+              endOfNextPeriod < 0 ? getBalanceColor(endOfNextPeriod) : undefined
+            }
+          />
+        </PeriodBlock>
       </div>
     </CollapsibleSection>
   );
 }
 
-/** "+4 575,00 € pay · −1 900,00 € bills · −200,00 € cards", zeroes omitted */
-function flowDetail(parts: [number, string][]): string {
-  const shown = parts
-    .filter(([amount]) => amount !== 0)
-    .map(
-      ([amount, label]) =>
-        `${amount > 0 ? "+" : "−"}${formatCurrency(Math.abs(amount))} ${label}`
-    );
-  return shown.length > 0 ? shown.join(" · ") : "nothing due";
+/** A period's movements as signed lines, zero amounts omitted. */
+function flowLines(period: PeriodFlow): [string, number][] {
+  const lines: [string, number][] = [
+    ["Pay", period.money_in],
+    ["Bills", -(period.bills + period.savings)],
+    ["Cards", -period.card_payments],
+  ];
+  return lines.filter(([, amount]) => amount !== 0);
 }
 
-interface PositionRowProps {
-  label: string;
-  /** ISO date string for the moment this balance is projected to */
-  date: string;
+interface PeriodBlockProps {
+  title: string;
+  dates: string;
+  period: PeriodFlow;
+  /** Shown beside the title when the period has nothing to list */
+  aside?: string;
+  /** The lines the movements add up to */
+  children?: ReactNode;
+}
+
+function PeriodBlock({ title, dates, period, aside, children }: PeriodBlockProps) {
+  const lines = flowLines(period);
+
+  return (
+    <section
+      aria-label={title}
+      className="pt-2 space-y-1 border-t border-gray-100 dark:border-gray-800"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm text-gray-900 dark:text-gray-100">
+          {title}
+          <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+            {dates}
+          </span>
+        </h3>
+        {aside && (
+          <span className="text-xs text-gray-400 dark:text-gray-500">{aside}</span>
+        )}
+      </div>
+
+      {lines.map(([label, amount]) => (
+        <Line key={label} label={label} value={amount} signed muted />
+      ))}
+
+      {children && (
+        <div
+          className={cn(
+            "space-y-1",
+            lines.length > 0 && "pt-1 border-t border-dashed border-gray-200 dark:border-gray-700"
+          )}
+        >
+          {children}
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface LineProps {
+  label: ReactNode;
   value: number;
-  /** Sub-line explaining the change from the line above */
-  detail: string;
-  /** Optional override for the value's text colour (defaults to muted gray) */
+  /** Prefix positive amounts with "+", for movements in a sum */
+  signed?: boolean;
+  /** A total line, set in a heavier weight */
+  strong?: boolean;
+  /** A movement line, set smaller and lighter than the totals */
+  muted?: boolean;
+  /** Overrides the value's text colour */
   valueClassName?: string;
 }
 
-function PositionRow({
-  label,
-  date,
-  value,
-  detail,
-  valueClassName,
-}: PositionRowProps) {
+function Line({ label, value, signed, strong, muted, valueClassName }: LineProps) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <div className="min-w-0">
-        <div className="text-sm text-gray-600 dark:text-gray-400">
-          {label}
-          <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-            {formatDateShort(date)}
-          </span>
-        </div>
-        <div className="text-xs text-gray-400 dark:text-gray-500">{detail}</div>
-      </div>
+    <div
+      className={cn(
+        "flex items-baseline justify-between gap-3",
+        muted ? "text-xs" : "text-sm"
+      )}
+    >
+      <span className="text-gray-600 dark:text-gray-400">{label}</span>
       <span
         className={cn(
-          "text-sm font-medium whitespace-nowrap",
-          valueClassName ?? "text-gray-600 dark:text-gray-400"
+          "whitespace-nowrap tabular-nums",
+          strong ? "font-semibold" : "font-medium",
+          valueClassName ??
+            (muted
+              ? "text-gray-500 dark:text-gray-400"
+              : "text-gray-900 dark:text-gray-100")
         )}
       >
+        {signed && value > 0 ? "+" : ""}
         {formatCurrency(value)}
       </span>
     </div>
+  );
+}
+
+function DateNote({ date }: { date: string }) {
+  return (
+    <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+      {formatDateShort(date)}
+    </span>
   );
 }
