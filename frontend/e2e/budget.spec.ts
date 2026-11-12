@@ -33,13 +33,15 @@ test("budget page shows totals from seeded data", async ({ page, api }) => {
   const summary = page.locator("section", {
     has: page.getByRole("button", { name: "You have now" }),
   });
-  // Check the header total and the Cash row separately: with no card debt the
-  // two figures are equal, and one must not be able to vouch for the other.
+  // Check the header total and the cash line under it separately: with no
+  // card debt the two figures are equal, and one must not be able to vouch for
+  // the other. "€ cash" matches only that line; the in-the-hole warning reads
+  // "€ of cash".
   await expect(summary.locator(":scope > div").first()).toContainText(
     eur(totals.current_balance)
   );
-  const cashRow = summary.getByText("Cash", { exact: true }).locator("..");
-  await expect(cashRow).toContainText(eur(totals.cash_balance));
+  const cashLine = summary.getByText(/€ cash/);
+  await expect(cashLine).toContainText(eur(totals.cash_balance));
 });
 
 test("adds a budget line in the UI and archives it", async ({ page, api }) => {
