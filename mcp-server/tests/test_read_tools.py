@@ -78,6 +78,8 @@ async def test_get_budget_description_explains_income_totals(server):
     [
         ("get_budget", "charged once, on its first due day from today"),
         ("get_budget", "excluded from the period totals"),
+        ("get_budget", "balance at payday + `net` - `settled_early`"),
+        ("get_financial_summary", "ticked off early in the next period still counts"),
         ("get_budget", "frequency-normalized rates"),
         ("get_net_worth", "monthly, so this can lag the budget by weeks"),
         ("get_net_worth", "stored negative"),

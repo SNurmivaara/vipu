@@ -1,10 +1,13 @@
 """Tests for deadline calculation utilities."""
 
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from app.deadline_calc import (
     apply_occurrence_override,
+    calculate_period_flow,
     expense_window_start,
+    find_low_point,
     get_checkpoint_occurrence,
     get_last_day_of_month,
     get_latest_due_occurrence,
@@ -650,6 +653,110 @@ class TestGetOccurrencesInWindow:
             window_end=date(2026, 3, 1),
         )
         assert occurrences == [date(2026, 2, 28)]
+
+
+class TestSettledEarlyInPeriodFlow:
+    """An occurrence ticked off early still belongs to its own period.
+
+    Payday is the 15th and today the 13th, so next period runs 15th -> 15th.
+    The pay dated on the 15th and a bill due on the 20th are both ticked off
+    ahead of their day. Example figures only.
+    """
+
+    class _Item:
+        def __init__(self, **overrides):
+            self.name = "Item"
+            self.due_day = 15
+            self.frequency_value = 1
+            self.frequency_unit = "months"
+            self.start_date = None
+            self.end_date = None
+            self.is_ephemeral = False
+            self.archived_at = None
+            self.settled_occurrence = None
+            self.pending_occurrence = None
+            self.is_deduction = False
+            self.is_savings_goal = False
+            self.amount = Decimal("0")
+            self.net = Decimal("0")
+            self.__dict__.update(overrides)
+
+        def calculate_net(self, default_tax_pct):
+            return self.net
+
+    today = date(2026, 11, 13)
+
+    def flow(self, income, expenses, start, end, whole=False):
+        return calculate_period_flow(
+            income,
+            expenses,
+            [],
+            Decimal("25"),
+            15,
+            self.today,
+            start,
+            end,
+            whole=whole,
+        )
+
+    def items(self, pay_settled=False, bill_settled=False):
+        pay = self._Item(
+            name="Salary",
+            net=Decimal("3000"),
+            settled_occurrence=date(2026, 11, 15) if pay_settled else None,
+        )
+        rent = self._Item(name="Rent", due_day=16, amount=Decimal("1500"))
+        phone = self._Item(
+            name="Phone",
+            due_day=20,
+            amount=Decimal("200"),
+            settled_occurrence=date(2026, 11, 20) if bill_settled else None,
+        )
+        return [pay], [rent, phone]
+
+    def test_early_occurrences_still_count_in_their_period(self):
+        income, expenses = self.items(pay_settled=True, bill_settled=True)
+        following = self.flow(income, expenses, date(2026, 11, 15), date(2026, 12, 15))
+
+        assert following.money_in == Decimal("3000")
+        assert following.bills == Decimal("1700")
+        assert following.net == Decimal("1300")
+        assert following.settled_early_in == Decimal("3000")
+        assert following.settled_early_out == Decimal("200")
+        assert following.settled_early == Decimal("2800")
+        assert {m.label for m in following.cash_movements} == {"Rent"}
+
+    def test_ticking_leaves_the_period_net_unchanged(self):
+        unticked = self.flow(*self.items(), date(2026, 11, 15), date(2026, 12, 15))
+        ticked = self.flow(
+            *self.items(pay_settled=True, bill_settled=True),
+            date(2026, 11, 15),
+            date(2026, 12, 15),
+        )
+        assert ticked.net == unticked.net
+        assert unticked.settled_early == Decimal("0")
+
+    def test_the_cash_walk_skips_what_is_already_in_the_balance(self):
+        """5 000 € with the pay in: the low point is after rent, not 3 000 € more."""
+        following = self.flow(
+            *self.items(pay_settled=True), date(2026, 11, 15), date(2026, 12, 15)
+        )
+        low = find_low_point(
+            Decimal("5000"), list(following.cash_movements), self.today
+        )
+        assert low == (date(2026, 11, 20), Decimal("3300"))
+
+    def test_the_current_period_leaves_early_occurrences_out(self):
+        """Before payday the figures are cash still to move, as they were."""
+        phone = self._Item(
+            name="Phone",
+            due_day=14,
+            amount=Decimal("200"),
+            settled_occurrence=date(2026, 11, 14),
+        )
+        current = self.flow([], [phone], self.today, date(2026, 11, 15))
+        assert current.bills == Decimal("0")
+        assert current.settled_early == Decimal("0")
 
 
 class TestBudgetCalculationScenario:

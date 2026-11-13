@@ -234,6 +234,10 @@ def period_dict(period: PeriodFlow) -> dict:
         "money_in": float(period.money_in),
         "money_out": float(period.money_out),
         "net": float(period.net),
+        # Counted above but already in the balance, ticked off ahead of its day
+        "settled_early": float(period.settled_early),
+        "settled_early_in": float(period.settled_early_in),
+        "settled_early_out": float(period.settled_early_out),
     }
 
 
@@ -333,7 +337,8 @@ def build_budget_payload(session: Session, today: date) -> dict:
     # Both periods come out of the one calculator, so the summary card, the
     # section headers and the roadmap can't tell different stories about the
     # same days. A bill flagged as not debited yet is added back by the current
-    # period; a payment ticked off early drops out of whichever period it is in.
+    # period. A payment ticked off early drops out of the current period, whose
+    # figures are cash still to move, but stays in next period's allocation.
     def flow(start: date, end: date) -> PeriodFlow:
         return calculate_period_flow(
             active_income,
@@ -357,10 +362,11 @@ def build_budget_payload(session: Session, today: date) -> dict:
 
     # Where the balance actually bottoms out. A period can end comfortably and
     # still go under in the middle of itself, because bills land on their own
-    # days and the pay that covers them usually lands on one day.
+    # days and the pay that covers them usually lands on one day. Anything ticked
+    # off early is already in the opening balance, so it is left out of the walk.
     low_date, low_balance = find_low_point(
         cash_balance,
-        [*current_period.movements, *next_period.movements],
+        [*current_period.cash_movements, *next_period.cash_movements],
         today,
     )
 

@@ -655,11 +655,12 @@ class TestOccurrenceOverrides:
         assert data["totals"]["income_next_period"] == 3000.0
         assert data["totals"]["monthly_net_income"] == 3000.0
 
-    def test_payday_pay_received_early_leaves_the_next_period(
+    def test_payday_pay_received_early_stays_in_the_next_period(
         self, client, monkeypatch
     ):
-        """Pay dated on the coming payday belongs to the period it opens, so
-        ticking it off early takes it out of that period, not the current one."""
+        """Pay dated on the coming payday belongs to the period it opens, and
+        ticking it off early does not change that: it stays in that period's
+        money, marked as already in the balance."""
         self.freeze(monkeypatch, 2026, 6, 10)
 
         income_id = client.post(
@@ -677,8 +678,130 @@ class TestOccurrenceOverrides:
 
         data = client.get("/api/budget/current").json
         assert data["totals"]["income_before_payday"] == 0.0
-        assert data["totals"]["income_next_period"] == 0.0
+        assert data["totals"]["income_next_period"] == 3000.0
+        assert data["totals"]["period_next"]["settled_early"] == 3000.0
         assert data["income"][0]["is_settled"] is True
+
+    def _weekend_payday(self, client):
+        """Payday on the 15th, 3 000 € net pay and 1 500 € of bills next period.
+
+        The 15th falls on a weekend, so the pay lands on the 13th, when the cash
+        balance is set to 5 000 € with it included. Example figures only.
+        """
+        client.put("/api/settings", json={"payday_day": 15})
+        income_id = client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 3000,
+                "is_taxed": False,
+                "due_day": 15,
+            },
+        ).json["id"]
+        client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 1500, "due_day": 20}
+        )
+        client.post("/api/accounts", json={"name": "Checking", "balance": 5000})
+        return income_id
+
+    def test_pay_received_early_is_next_periods_unallocated(self, client, monkeypatch):
+        """Ticking the early pay leaves next period's own figures as they were."""
+        self.freeze(monkeypatch, 2026, 11, 13)
+        income_id = self._weekend_payday(client)
+
+        before = client.get("/api/budget/current").json["totals"]
+        assert before["period_next"]["net"] == 1500.0
+        assert before["period_next"]["settled_early"] == 0.0
+
+        response = self.settle(client, "income", income_id, "2026-11-15", True)
+        assert response.status_code == 200
+        after = client.get("/api/budget/current").json["totals"]
+
+        following = after["period_next"]
+        assert following["money_in"] == 3000.0
+        assert following["bills"] == 1500.0
+        assert following["net"] == 1500.0
+        assert following["settled_early"] == 3000.0
+        assert following["settled_early_in"] == 3000.0
+        assert following["settled_early_out"] == 0.0
+        assert after["unallocated_next_period"] == 1500.0
+        assert after["income_next_period"] == 3000.0
+
+        # The cash walk starts from a balance that already holds the pay.
+        assert after["cash_low_point"] == {"date": "2026-11-20", "balance": 3500.0}
+
+        # The current period and every period dict keep their cash figures.
+        assert after["period_current"] == before["period_current"]
+        assert after["period_current"]["settled_early"] == 0.0
+
+        # Cash at the end of next period, as the card derives it, is unchanged.
+        def cash_at_end(totals):
+            current, following = totals["period_current"], totals["period_next"]
+            return (
+                totals["cash_balance"]
+                + current["money_in"]
+                - current["money_out"]
+                + following["net"]
+                - following["settled_early"]
+            )
+
+        # 5 000 € less the 1 500 € of bills, as before this change: the tick
+        # moves Cash at the end only through the balance the user updated.
+        assert cash_at_end(after) == 3500.0
+
+        # Unticking puts the period back exactly where it was.
+        self.settle(client, "income", income_id, "2026-11-15", False)
+        untick = client.get("/api/budget/current").json["totals"]
+        assert untick["period_next"] == before["period_next"]
+        assert untick["unallocated_next_period"] == 1500.0
+
+    def test_bill_paid_early_stays_in_next_periods_bills(self, client, monkeypatch):
+        """A next-period bill paid early still counts against that period."""
+        self.freeze(monkeypatch, 2026, 11, 13)
+        client.put("/api/settings", json={"payday_day": 15})
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Phone", "amount": 200, "due_day": 20}
+        ).json["id"]
+        # The debit has already left the account.
+        client.post("/api/accounts", json={"name": "Checking", "balance": 800})
+
+        before = client.get("/api/budget/current").json["totals"]
+        assert before["period_next"]["bills"] == 200.0
+
+        response = self.settle(client, "expenses", expense_id, "2026-11-20", True)
+        assert response.status_code == 200
+        after = client.get("/api/budget/current").json["totals"]
+
+        following = after["period_next"]
+        assert following["bills"] == 200.0
+        assert following["net"] == -200.0
+        assert following["net"] == before["period_next"]["net"]
+        assert following["settled_early"] == -200.0
+        assert following["settled_early_out"] == 200.0
+        assert after["expenses_next_period"] == 200.0
+        assert after["cash_low_point"] == {"date": "2026-11-13", "balance": 800.0}
+
+    def test_on_payday_the_opening_period_is_not_double_counted(
+        self, client, monkeypatch
+    ):
+        """Once payday arrives the pay ticked off early is simply in the balance:
+        the period it opened reads as it did before the fix."""
+        self.freeze(monkeypatch, 2026, 11, 13)
+        income_id = self._weekend_payday(client)
+        self.settle(client, "income", income_id, "2026-11-15", True)
+
+        self.freeze(monkeypatch, 2026, 11, 15)
+        totals = client.get("/api/budget/current").json["totals"]
+
+        assert totals["period_current"]["start"] == "2026-11-15"
+        assert totals["period_current"]["money_in"] == 0.0
+        assert totals["period_current"]["bills"] == 1500.0
+        assert totals["period_current"]["settled_early"] == 0.0
+        assert totals["cash_low_point"] == {"date": "2026-11-20", "balance": 3500.0}
+
+        self.freeze(monkeypatch, 2026, 11, 16)
+        client.get("/api/budget/current")
+        assert client.get("/api/income").json[0]["settled_occurrence"] is None
 
     def test_income_not_received_yet(self, client, monkeypatch):
         """Pay that hasn't landed on its day still counts as incoming."""

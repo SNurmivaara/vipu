@@ -32,8 +32,13 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
   // Cash on hand carried forward through each period. Card debt is not netted
   // off up front: it leaves the account on the card's due day, which is when it
   // actually stops being spendable.
+  //
+  // Next period's lines count what was ticked off ahead of its day, since it
+  // is still that period's money, but the cash already holds it: the walk
+  // takes it back off rather than moving it twice.
   const atPayday = cash_balance + current.money_in - current.money_out;
-  const endOfNextPeriod = atPayday + next.money_in - next.money_out;
+  const endOfNextPeriod =
+    atPayday + next.money_in - next.money_out - next.settled_early;
 
   // Owing more on the cards than there is cash to cover them is worth saying
   // out loud: every projection below is being paid for out of a hole.
@@ -147,14 +152,33 @@ export function BudgetSummary({ data }: BudgetSummaryProps) {
   );
 }
 
+interface FlowLine {
+  label: string;
+  amount: number;
+  /** Says how much of the amount moved ahead of its day */
+  note?: string;
+}
+
 /** A period's movements as signed lines, zero amounts omitted. */
-function flowLines(period: PeriodFlow): [string, number][] {
-  const lines: [string, number][] = [
-    ["Pay", period.money_in],
-    ["Bills", -(period.bills + period.savings)],
-    ["Cards", -period.card_payments],
+function flowLines(period: PeriodFlow): FlowLine[] {
+  const lines: FlowLine[] = [
+    {
+      label: "Pay",
+      amount: period.money_in,
+      note: earlyNote(period.settled_early_in, "received"),
+    },
+    {
+      label: "Bills",
+      amount: -(period.bills + period.savings),
+      note: earlyNote(period.settled_early_out, "paid"),
+    },
+    { label: "Cards", amount: -period.card_payments },
   ];
-  return lines.filter(([, amount]) => amount !== 0);
+  return lines.filter(({ amount }) => amount !== 0);
+}
+
+function earlyNote(amount: number, verb: string): string | undefined {
+  return amount ? `${formatCurrency(amount)} ${verb} early` : undefined;
 }
 
 interface PeriodBlockProps {
@@ -187,8 +211,23 @@ function PeriodBlock({ title, dates, period, aside, children }: PeriodBlockProps
         )}
       </div>
 
-      {lines.map(([label, amount]) => (
-        <Line key={label} label={label} value={amount} signed muted />
+      {lines.map(({ label, amount, note }) => (
+        <Line
+          key={label}
+          label={
+            note ? (
+              <>
+                {label}
+                <Note>{note}</Note>
+              </>
+            ) : (
+              label
+            )
+          }
+          value={amount}
+          signed
+          muted
+        />
       ))}
 
       {children && (
@@ -245,9 +284,11 @@ function Line({ label, value, signed, strong, muted, valueClassName }: LineProps
 }
 
 function DateNote({ date }: { date: string }) {
+  return <Note>{formatDateShort(date)}</Note>;
+}
+
+function Note({ children }: { children: ReactNode }) {
   return (
-    <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-      {formatDateShort(date)}
-    </span>
+    <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">{children}</span>
   );
 }

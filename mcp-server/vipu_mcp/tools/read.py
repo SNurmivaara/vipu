@@ -22,9 +22,10 @@ frequency-normalized monthly rates, every income, account and expense line, the 
 financial roadmap, net worth and its trend, and the FIRE projection. It also \
 states the caveats that make those figures readable: the budget section is live \
 while the wealth section is a monthly snapshot and can lag it by weeks, a card \
-balance is charged once rather than in every period, settled occurrences are \
-listed but excluded from the period totals, and goal progress is zero-growth \
-linear while FIRE compounds.\
+balance is charged once rather than in every period, an occurrence settled in \
+the current period is listed but excluded from its totals while one ticked off \
+early in the next period still counts in that period and is noted as already in \
+the cash, and goal progress is zero-growth linear while FIRE compounds.\
 """
 
 BUDGET_DESCRIPTION = """\
@@ -42,9 +43,18 @@ How to read the result:
 - A card balance is charged once, on its first due day from today, not in every \
 period. `card_debt` is what the cards owe; `cash_balance` is what is actually \
 in the non-credit accounts.
-- Settled occurrences stay in the occurrence lists, flagged `is_settled`, but \
-are excluded from the period totals. The lines will not add up to the total, \
-and that is correct.
+- Settled occurrences stay in the occurrence lists, flagged `is_settled`. In \
+`period_current` they are excluded from the period totals, which are the cash \
+still to move before payday: the lines will not add up to the total, and that \
+is correct.
+- In `period_next`, an occurrence ticked off early still counts in `money_in`, \
+`money_out` and `net`, because the day the money moved does not change which \
+period it belongs to; `net` stays what that period leaves over. \
+`settled_early` is the signed part of `net` already in the balance \
+(`settled_early_in` received, `settled_early_out` paid), so cash at the end of \
+next period is the balance at payday + `net` - `settled_early`. Do not treat \
+early pay as missing, and do not take it off the cash a second time. It is 0 \
+in `period_current`. `cash_low_point` already leaves these occurrences out.
 - `cash_low_point.balance` below zero means the account goes under before the \
 pay that covers those bills arrives. The period can still end comfortably.
 - `total_expenses` is the face-value sum of every active expense line, one-time \
