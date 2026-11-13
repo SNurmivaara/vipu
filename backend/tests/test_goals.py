@@ -1708,6 +1708,43 @@ class TestRoadmap:
         assert eve["projected_completion_date"] == "2026-10-15"
         assert payday["projected_completion_date"] == "2026-10-15"
 
+    def test_pay_received_early_does_not_move_the_projection(self, client, monkeypatch):
+        """Ticking the next pay off early leaves the completion date alone.
+
+        The pay still funds the period it opens. The plan starts from a cash
+        balance it credits none of, so counting it there is not a double count.
+        """
+        from app.routes import income as income_route
+
+        self._freeze(monkeypatch, 2026, 9, 14)
+        self._payday_salary_budget(client)
+        self._goal(client, target=207.66)
+        unticked = client.get("/api/goals/roadmap").json["goals"][0]
+
+        income = client.get("/api/income").json[0]
+
+        class _FixedDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 9, 14)
+
+        monkeypatch.setattr(income_route, "date", _FixedDate)
+        response = client.put(
+            f"/api/income/{income['id']}/occurrence",
+            json={"occurrence_date": "2026-09-15", "settled": True},
+        )
+        assert response.status_code == 200
+        assert response.json["settled_occurrence"] == "2026-09-15"
+        ticked = client.get("/api/goals/roadmap").json["goals"][0]
+
+        # On payday the mark is still there until the day is over.
+        self._freeze(monkeypatch, 2026, 9, 15)
+        payday = client.get("/api/goals/roadmap").json["goals"][0]
+
+        assert unticked["projected_completion_date"] == "2026-10-15"
+        assert ticked["projected_completion_date"] == "2026-10-15"
+        assert payday["projected_completion_date"] == "2026-10-15"
+
 
 class TestSharedCategory:
     """Savings goals linked to the same category split its balance."""

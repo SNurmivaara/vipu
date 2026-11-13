@@ -97,6 +97,16 @@ export interface PeriodFlow {
   money_out: number;
   /** What the period leaves over, free to be swept out */
   net: number;
+  /**
+   * Signed sum of the occurrences counted above that were ticked off ahead of
+   * their day, so are already in the cash balance. A cash walk from the balance
+   * takes it off net. Always 0 for the current period, which leaves them out.
+   */
+  settled_early: number;
+  /** Of money_in, what was received early */
+  settled_early_in: number;
+  /** Of money_out, what was paid early (positive) */
+  settled_early_out: number;
 }
 
 /** The lowest the cash gets while the projected periods play out */

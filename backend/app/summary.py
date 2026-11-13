@@ -112,7 +112,9 @@ def occurrence_override(item: dict) -> str:
     if item.get("settled_occurrence"):
         return (
             f" [{item['settled_occurrence']} occurrence already settled ahead of "
-            "its day, so it is in the balance and excluded from the period figures]"
+            "its day, so it is in the balance. Before payday it is excluded from "
+            "what is still to happen; in next period it still counts as that "
+            "period's money, and the cash projections do not add it again]"
         )
     if item.get("pending_occurrence"):
         return (
@@ -138,20 +140,29 @@ def accounts_updated_at(accounts: list[dict]) -> str | None:
     return iso_date(stamps[-1]) if stamps else None
 
 
-def occurrence_lines(items: list[dict]) -> list[str]:
+def occurrence_lines(items: list[dict], settled_label: str) -> list[str]:
     """One line per dated occurrence in a period.
 
-    Settled occurrences stay on the list but are labelled, since they are
-    excluded from the totals above them: without the label the lines would look
-    like they should add up to the total and don't.
+    Settled occurrences stay on the list but are labelled with settled_label,
+    which says whether the totals above count them: without it the lines would
+    look like they should add up to the total and might not.
     """
     ordered = sorted(items, key=lambda i: i.get("next_occurrence_date") or "")
     return [
         f"  - {item.get('next_occurrence_date') or 'date unknown'}: {item['name']} "
         f"{eur(item['amount'])}"
-        f"{' (already paid, not counted above)' if item['is_settled'] else ''}"
+        f"{f' ({settled_label})' if item['is_settled'] else ''}"
         for item in ordered
     ]
+
+
+def early_note(amount: Decimal, verb: str) -> str:
+    """How much of a next-period line was settled ahead of its day, if any.
+
+    That much is already reflected in the cash balance, so the projected cash at
+    the end of the period does not move it again.
+    """
+    return f" ({eur(amount)} {verb} early)" if amount else ""
 
 
 def _as_of_section(lines: list[str], accounts: list[dict], latest: dict | None) -> None:
@@ -201,7 +212,14 @@ def _budget_section(lines: list[str], budget: dict) -> None:
     following = totals["period_next"]
     cash_balance = _dec(totals["cash_balance"])
     at_payday = cash_balance + _dec(current["money_in"]) - _dec(current["money_out"])
-    end_of_next = at_payday + _dec(following["money_in"]) - _dec(following["money_out"])
+    # Next period's figures count what was ticked off early, which the cash
+    # already holds, so the walk takes it back off.
+    end_of_next = (
+        at_payday
+        + _dec(following["money_in"])
+        - _dec(following["money_out"])
+        - _dec(following["settled_early"])
+    )
     current_balance = _dec(totals["current_balance"])
     low_point = totals["cash_low_point"]
 
@@ -222,7 +240,11 @@ def _budget_section(lines: list[str], budget: dict) -> None:
         f"{eur(_dec(current['bills']) + _dec(current['savings']))} of bills, "
         f"{eur(current['card_payments'])} of card payments"
     )
-    lines.extend(occurrence_lines(totals["expenses_before_payday_list"]))
+    lines.extend(
+        occurrence_lines(
+            totals["expenses_before_payday_list"], "already paid, not counted above"
+        )
+    )
     lines.append(
         f"- Lowest the cash gets between now and the end of next period: "
         f"{eur(low_point['balance'])} on {low_point['date']}"
@@ -239,11 +261,18 @@ def _budget_section(lines: list[str], budget: dict) -> None:
     )
     lines.append(
         f"- Next period ({following['start']} to {following['end']}): "
-        f"+{eur(following['money_in'])} pay, "
-        f"{eur(_dec(following['bills']) + _dec(following['savings']))} of bills, "
+        f"+{eur(following['money_in'])} pay"
+        f"{early_note(_dec(following['settled_early_in']), 'received')}, "
+        f"{eur(_dec(following['bills']) + _dec(following['savings']))} of bills"
+        f"{early_note(_dec(following['settled_early_out']), 'paid')}, "
         f"{eur(following['card_payments'])} of card payments"
     )
-    lines.extend(occurrence_lines(totals["expenses_next_period_list"]))
+    lines.extend(
+        occurrence_lines(
+            totals["expenses_next_period_list"],
+            "already paid early, counted above but already out of the cash",
+        )
+    )
     lines.append(f"- Projected cash at the end of it: {eur(end_of_next)}")
     lines.append(
         f"- Unallocated next period: {eur(following['net'])}. That is next "

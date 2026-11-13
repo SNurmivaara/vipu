@@ -248,9 +248,53 @@ class TestOccurrenceOverrides:
         markdown = seeded_client.get("/api/summary").json["markdown"]
         assert (
             f"[{row['next_occurrence_date']} occurrence already settled ahead of "
-            "its day, so it is in the balance and excluded from the period "
-            "figures]" in markdown
+            "its day, so it is in the balance. Before payday it is excluded from "
+            "what is still to happen; in next period it still counts as that "
+            "period's money, and the cash projections do not add it again]" in markdown
         )
+
+    def test_pay_received_early_stays_in_next_period(self, client, monkeypatch):
+        """The digest reports the card's next-period figures after an early tick.
+
+        Payday on the 15th falls on a weekend; the 3 000 € pay lands on the 13th
+        and is in the 5 000 € balance. Example figures only.
+        """
+        freeze(monkeypatch, 2026, 11, 13)
+        client.put("/api/settings", json={"payday_day": 15})
+        income_id = client.post(
+            "/api/income",
+            json={
+                "name": "Salary",
+                "gross_amount": 3000,
+                "is_taxed": False,
+                "due_day": 15,
+            },
+        ).json["id"]
+        expense_id = client.post(
+            "/api/expenses", json={"name": "Rent", "amount": 1500, "due_day": 20}
+        ).json["id"]
+        client.post("/api/accounts", json={"name": "Checking", "balance": 5000})
+        for path, item_id, day in (
+            ("income", income_id, "2026-11-15"),
+            ("expenses", expense_id, "2026-11-20"),
+        ):
+            client.put(
+                f"/api/{path}/{item_id}/occurrence",
+                json={"occurrence_date": day, "settled": True},
+            )
+
+        markdown = client.get("/api/summary").json["markdown"]
+        assert (
+            "): +3000.00 € pay (3000.00 € received early), 1500.00 € of bills "
+            "(1500.00 € paid early), 0.00 € of card payments" in markdown
+        )
+        assert (
+            "  - 2026-11-20: Rent 1500.00 € (already paid early, counted above "
+            "but already out of the cash)" in markdown
+        )
+        assert "- Unallocated next period: 1500.00 €." in markdown
+        # 5 000 € already holds both, so the end of the period is still 5 000 €.
+        assert "- Projected cash at the end of it: 5000.00 €" in markdown
 
     def test_a_pending_occurrence_is_annotated(self, seeded_client, monkeypatch):
         freeze(monkeypatch, 2026, 6, 10)

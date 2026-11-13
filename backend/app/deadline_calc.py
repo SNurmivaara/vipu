@@ -440,15 +440,14 @@ def income_movements(
 
     End-exclusive like the bills: pay landing on a payday belongs to the period
     that payday opens, together with the bills it is there to cover.
+
+    Pay ticked off as received early stays in, flagged settled_early: it is
+    still its own period's money, it just reached the balance ahead of its day.
     """
     movements: list[CashMovement] = []
 
     for item in income_items:
-        occurrences = [
-            occurrence
-            for occurrence in get_item_occurrences(item, window_start, window_end)
-            if occurrence != item.settled_occurrence
-        ]
+        occurrences = get_item_occurrences(item, window_start, window_end)
 
         # A payment marked "not received yet" sits before the window (its day has
         # passed), so it is added back rather than filtered in. It is dated to the
@@ -463,7 +462,13 @@ def income_movements(
         amount = item.calculate_net(default_tax_pct)
         kind = "deduction" if item.is_deduction else "pay"
         movements.extend(
-            CashMovement(occurrence, amount, item.name, kind)
+            CashMovement(
+                occurrence,
+                amount,
+                item.name,
+                kind,
+                settled_early=occurrence == item.settled_occurrence,
+            )
             for occurrence in occurrences
         )
 
@@ -499,7 +504,7 @@ def calculate_expenses_before_payday(
             for movement in expense_movements(
                 expense_items, today, next_payday, include_pending=include_pending
             )
-            if movement.kind == kind
+            if movement.kind == kind and not movement.settled_early
         ),
         Decimal("0"),
     )
@@ -511,15 +516,15 @@ def expense_movements(
     window_end: date,
     include_pending: bool = False,
 ) -> list["CashMovement"]:
-    """Each bill and savings transfer due in the window, on the day it debits."""
+    """Each bill and savings transfer due in the window, on the day it debits.
+
+    A bill ticked off as paid early stays in, flagged settled_early, like early
+    pay in income_movements.
+    """
     movements: list[CashMovement] = []
 
     for item in expense_items:
-        occurrences = [
-            occurrence
-            for occurrence in get_item_occurrences(item, window_start, window_end)
-            if occurrence != item.settled_occurrence
-        ]
+        occurrences = get_item_occurrences(item, window_start, window_end)
 
         # A bill marked "not paid yet" sits before the window (its due day has
         # passed), so it is added back rather than filtered in. It is dated to
@@ -533,7 +538,13 @@ def expense_movements(
 
         kind = "savings" if item.is_savings_goal else "bill"
         movements.extend(
-            CashMovement(occurrence, -item.amount, item.name, kind)
+            CashMovement(
+                occurrence,
+                -item.amount,
+                item.name,
+                kind,
+                settled_early=occurrence == item.settled_occurrence,
+            )
             for occurrence in occurrences
         )
 
@@ -554,6 +565,10 @@ class CashMovement:
     label: str
     #: "pay", "deduction", "bill", "savings" or "card"
     kind: str
+    #: Ticked off as paid or received ahead of its day, so the money is already
+    #: in the balance. It still belongs to its period's allocation; a walk of
+    #: the cash from the balance must skip it or move the same money twice.
+    settled_early: bool = False
 
 
 def find_low_point(
@@ -600,6 +615,12 @@ class PeriodFlow:
     about a period reads it from here: the summary card, the section headers and
     the roadmap projection. Two of them computing their own version is how they
     ended up disagreeing about the same period.
+
+    The totals answer "what does this period's own money leave over", so they
+    count an occurrence ticked off early: the day the money moved does not
+    change which period it belongs to. A cash walk that starts from the balance
+    answers "where is the balance" instead, and for it those occurrences are
+    already in: it subtracts settled_early, or walks cash_movements.
     """
 
     start: date
@@ -647,6 +668,35 @@ class PeriodFlow:
         """What the period leaves over: the amount free to be swept out."""
         return self.money_in - self.money_out
 
+    def _settled_early(self, kinds: tuple[str, ...]) -> Decimal:
+        return sum(
+            (m.amount for m in self.movements if m.settled_early and m.kind in kinds),
+            Decimal("0"),
+        )
+
+    @property
+    def settled_early_in(self) -> Decimal:
+        """Of money_in, what was ticked off as received early."""
+        return self._settled_early(("pay", "deduction"))
+
+    @property
+    def settled_early_out(self) -> Decimal:
+        """Of money_out, what was ticked off as paid early."""
+        return -self._settled_early(("bill", "savings"))
+
+    @property
+    def settled_early(self) -> Decimal:
+        """Signed sum of the movements already in the balance ahead of their day.
+
+        net less this is what the period still does to the balance.
+        """
+        return self.settled_early_in - self.settled_early_out
+
+    @property
+    def cash_movements(self) -> tuple[CashMovement, ...]:
+        """The movements still to reach the balance, for a walk starting from it."""
+        return tuple(m for m in self.movements if not m.settled_early)
+
 
 def calculate_period_flow(
     income_items: list["IncomeItem"],
@@ -664,10 +714,11 @@ def calculate_period_flow(
     Every movement is end-exclusive: the pay and the bills dated on the payday
     that closes the period both belong to the period it opens.
 
-    The part-period we are standing in is treated differently in one respect:
-    only it has occurrences behind us, which the user may have flagged as paid
-    early or not paid yet. Later periods are entirely ahead, so no override can
-    apply to them.
+    The part-period we are standing in is treated differently: only it has
+    occurrences behind us, which the user may have flagged as not paid yet, and
+    its figures are the cash still to move before payday. An occurrence in it
+    ticked off as paid early has already moved, so it drops out. A later period
+    keeps such an occurrence, flagged settled_early (see PeriodFlow).
 
     whole counts everything dated in the period even when it opens today,
     including the pay and bills that have already moved this morning. Only for
@@ -695,6 +746,8 @@ def calculate_period_flow(
         ),
         *card_movements(accounts, today, start, end),
     ]
+    if is_current:
+        movements = [m for m in movements if not m.settled_early]
 
     return PeriodFlow(start=start, end=end, movements=tuple(movements))
 
