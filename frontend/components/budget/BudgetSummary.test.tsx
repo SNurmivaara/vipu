@@ -74,6 +74,11 @@ function amountOf(scope: ReturnType<typeof within>, label: string): string {
   return scope.getByText(label).nextSibling?.textContent ?? "";
 }
 
+/** The note set beside a line's label, compared as raw text like amountOf. */
+function noteOf(scope: ReturnType<typeof within>, label: string): string {
+  return scope.getByText(label).querySelector("span")?.textContent ?? "";
+}
+
 const quietCurrentPeriod = period("2026-11-12", "2026-11-15", {});
 const nextPeriod = period("2026-11-15", "2026-12-15", {
   money_in: 3000,
@@ -125,9 +130,9 @@ describe("BudgetSummary", () => {
 
     const next = within(screen.getByRole("region", { name: "Next period" }));
     expect(amountOf(next, "Pay")).toBe(`+${formatCurrency(3000)}`);
-    expect(next.getByText(`${formatCurrency(3000)} received early`)).toBeInTheDocument();
+    expect(noteOf(next, "Pay")).toBe(`${formatCurrency(3000)} received early`);
     expect(amountOf(next, "Bills")).toBe(formatCurrency(-1500));
-    expect(next.queryByText(/paid early/)).not.toBeInTheDocument();
+    expect(noteOf(next, "Bills")).toBe("");
     expect(amountOf(next, "Unallocated")).toBe(formatCurrency(1500));
     expect(amountOf(next, "Cash at the end")).toBe(formatCurrency(3500));
   });
@@ -152,7 +157,7 @@ describe("BudgetSummary", () => {
 
     const next = within(screen.getByRole("region", { name: "Next period" }));
     expect(amountOf(next, "Bills")).toBe(formatCurrency(-1700));
-    expect(next.getByText(`${formatCurrency(200)} paid early`)).toBeInTheDocument();
+    expect(noteOf(next, "Bills")).toBe(`${formatCurrency(200)} paid early`);
     expect(amountOf(next, "Unallocated")).toBe(formatCurrency(1300));
     expect(amountOf(next, "Cash at the end")).toBe(formatCurrency(2300));
   });
